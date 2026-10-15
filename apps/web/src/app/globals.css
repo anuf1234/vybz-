@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/*
+ * VYBZ design tokens. Neon is reserved for live and winner states only,
+ * so it keeps its meaning; everything else is flat surfaces and album art.
+ */
+@theme {
+  --color-ink: #0b0614;
+  --color-surface-1: #140c22;
+  --color-surface-2: #1d1230;
+  --color-surface-3: #2a1a44;
+  --color-line: #33224f;
+  --color-plum: #2a0e4f;
+  --color-violet: #8b5cf6;
+  --color-violet-soft: #c4b5fd;
+  --color-text: #f4f0fb;
+  --color-muted: #a59cbb;
+  --color-live: #39ff88;
+  --color-win: #39ff88;
+  --color-lose: #6b6280;
+
+  --font-display: "Arial Narrow", "Roboto Condensed", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
