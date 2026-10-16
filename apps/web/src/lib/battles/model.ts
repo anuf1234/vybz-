@@ -1,118 +1,170 @@
-import {
-  type BattleModel,
-  type BattleRules,
-  BattleRulesSchema,
-  type RoundModel,
-  type Side,
-  current,
-} from "@vybz/core";
-import type { Prisma, PrismaClient } from "@vybz/db";
+import { type BattleState, type Side, type Transition, nextDeadline, tally } from "@vybz/core";
+import type { Prisma } from "@vybz/db";
+import { awardXP, grantBadge } from "../progression";
 
-/** Prisma client or an interactive transaction. */
-export type Db = PrismaClient | Prisma.TransactionClient;
+type Tx = Prisma.TransactionClient;
 
-const battleInclude = {
-  rounds: { orderBy: { index: "asc" }, include: { submissions: { select: { side: true } } } },
-  participants: true,
+const lockInclude = {
+  participants: { select: { id: true, userId: true, side: true, lineupLockedAt: true } },
 } as const;
 
-export type BattleRow = Prisma.BattleGetPayload<{ include: typeof battleInclude }>;
+export type LockedBattle = Prisma.BattleGetPayload<{ include: typeof lockInclude }>;
 
-/** Locks the battle row for the rest of the transaction, then loads it as an engine model. */
-export async function lockBattle(tx: Prisma.TransactionClient, battleId: string) {
+/** Locks the battle row for the rest of the transaction and loads it. */
+export async function lockBattle(tx: Tx, battleId: string): Promise<LockedBattle | null> {
   const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM battles WHERE id = ${battleId} FOR UPDATE`;
   if (locked.length === 0) return null;
-  const row = await tx.battle.findUniqueOrThrow({ where: { id: battleId }, include: battleInclude });
-
-  const voting = row.rounds.find((r) => r.status === "VOTING_OPEN");
-  const live: [number, number] = [0, 0];
-  if (voting) {
-    const counts = await tx.vote.groupBy({ by: ["side"], where: { roundId: voting.id }, _count: { _all: true } });
-    for (const c of counts) live[c.side as Side] = c._count._all;
-  }
-  return { row, model: toModel(row, voting?.id ?? null, live) };
+  return tx.battle.findUniqueOrThrow({ where: { id: battleId }, include: lockInclude });
 }
 
-export function parseRules(json: Prisma.JsonValue): BattleRules {
-  return BattleRulesSchema.parse(json);
-}
-
-function toModel(row: BattleRow, votingRoundId: string | null, live: [number, number]): BattleModel {
+export function toState(b: LockedBattle): BattleState {
+  const lockedSide = (s: Side) => Boolean(b.participants.find((p) => p.side === s)?.lineupLockedAt);
   return {
-    status: row.status,
-    rules: parseRules(row.rules),
-    createdAt: row.createdAt,
-    expiresAt: row.expiresAt,
-    startedAt: row.startedAt,
-    endedAt: row.endedAt,
-    winnerSide: (row.winnerSide as Side | null) ?? null,
-    rounds: row.rounds.map(
-      (r): RoundModel => ({
-        index: r.index,
-        status: r.status,
-        suddenDeath: r.suddenDeath,
-        openedAt: r.openedAt,
-        submissionsCloseAt: r.submissionsCloseAt,
-        votingClosesAt: r.votingClosesAt,
-        submittedSides: r.submissions.map((s) => s.side as Side),
-        votes: r.id === votingRoundId ? live : [r.votes0, r.votes1],
-        winnerSide: (r.winnerSide as Side | null) ?? null,
-        outcome: r.outcome,
-      }),
-    ),
+    status: b.status,
+    type: b.type,
+    roundCount: b.roundCount,
+    votingDurationMs: b.votingDurationMs,
+    revealIntervalMs: b.revealIntervalMs,
+    scheduledFor: b.scheduledFor,
+    sentAt: b.sentAt,
+    expiresAt: b.expiresAt,
+    acceptedAt: b.acceptedAt,
+    lineupDueAt: b.lineupDueAt,
+    startsAt: b.startsAt,
+    votingEndsAt: b.votingEndsAt,
+    completedAt: b.completedAt,
+    cancelledAt: b.cancelledAt,
+    cancelReason: b.cancelReason,
+    lineupLocked: [lockedSide(0), lockedSide(1)],
   };
 }
 
-/** The next moment this battle needs advancing, for the deadline sweep. */
-export function nextDeadline(b: BattleModel): Date | null {
-  if (b.status === "OPEN" || b.status === "PENDING_ACCEPT") return b.expiresAt;
-  if (b.status !== "IN_PROGRESS") return null;
-  const r = current(b);
-  if (!r) return null;
-  return r.status === "SUBMISSIONS_OPEN" ? r.submissionsCloseAt : r.votingClosesAt;
+/**
+ * Writes a new state back, logs each transition, and runs the side effects a
+ * transition owns (results, XP, notifications). Lineup locks are written by
+ * the caller, which knows which participant locked.
+ */
+export async function persist(
+  tx: Tx,
+  battle: LockedBattle,
+  state: BattleState,
+  transitions: Transition[],
+  actorId: string | null = null,
+): Promise<void> {
+  // Results first: the database only accepts COMPLETED with final scores in place.
+  if (transitions.some((t) => t.to === "COMPLETED")) await finalize(tx, battle);
+  await tx.battle.update({
+    where: { id: battle.id },
+    data: {
+      status: state.status,
+      sentAt: state.sentAt,
+      expiresAt: state.expiresAt,
+      acceptedAt: state.acceptedAt,
+      lineupDueAt: state.lineupDueAt,
+      startsAt: state.startsAt,
+      votingEndsAt: state.votingEndsAt,
+      completedAt: state.completedAt,
+      cancelledAt: state.cancelledAt,
+      cancelReason: state.cancelReason,
+      nextDeadline: nextDeadline(state),
+    },
+  });
+  if (transitions.length > 0) {
+    await tx.battleEvent.createMany({
+      data: transitions.map((t) => ({
+        battleId: battle.id,
+        kind: `${t.from}->${t.to}`,
+        actorId,
+        createdAt: t.at,
+      })),
+    });
+  }
+  for (const t of transitions) await onTransition(tx, battle, t);
 }
 
-/** Writes an advanced model back: battle fields, changed rounds, new rounds. */
-export async function persist(tx: Prisma.TransactionClient, row: BattleRow, model: BattleModel): Promise<void> {
+async function onTransition(tx: Tx, battle: LockedBattle, t: Transition): Promise<void> {
+  const players = battle.participants.map((p) => p.userId);
+  if (t.to === "ACTIVE") {
+    await tx.notification.createMany({
+      data: players.map((recipientId) => ({ recipientId, type: "BATTLE_LIVE" as const, battleId: battle.id })),
+    });
+  }
+  if (t.to === "CANCELLED" && t.from === "ACCEPTED") {
+    await tx.notification.createMany({
+      data: players.map((recipientId) => ({
+        recipientId,
+        type: "BATTLE_RESULT" as const,
+        battleId: battle.id,
+        data: { cancelled: "LINEUP_MISSED" },
+      })),
+    });
+  }
+}
+
+/** Counts votes, decides rounds and the battle, and stores the result permanently. */
+async function finalize(tx: Tx, battle: LockedBattle): Promise<void> {
+  const rounds = await tx.battleRound.findMany({
+    where: { battleId: battle.id },
+    select: { id: true, index: true, submissions: { select: { id: true, side: true } } },
+    orderBy: { index: "asc" },
+  });
+  const counts = await tx.vote.groupBy({
+    by: ["roundId", "selection"],
+    where: { battleId: battle.id },
+    _count: { _all: true },
+  });
+  const votesFor = (roundId: string, side: number) =>
+    counts.find((c) => c.roundId === roundId && c.selection === side)?._count._all ?? 0;
+
+  const result = tally(
+    rounds.map((r) => ({
+      index: r.index,
+      votes: [votesFor(r.id, 0), votesFor(r.id, 1)],
+      submissionIds: [r.submissions.find((s) => s.side === 0)?.id ?? "", r.submissions.find((s) => s.side === 1)?.id ?? ""],
+    })),
+  );
+  const voters = await tx.vote.findMany({ where: { battleId: battle.id }, distinct: ["voterId"], select: { voterId: true } });
+
+  for (const r of rounds) {
+    const rr = result.rounds.find((x) => x.index === r.index)!;
+    await tx.battleRound.update({
+      where: { id: r.id },
+      data: { votesA: rr.votes[0], votesB: rr.votes[1], winnerSide: rr.winnerSide },
+    });
+  }
+  const favorite = result.crowdFavorite?.submissionId || null;
   await tx.battle.update({
-    where: { id: row.id },
+    where: { id: battle.id },
     data: {
-      status: model.status,
-      startedAt: model.startedAt,
-      endedAt: model.endedAt,
-      winnerSide: model.winnerSide,
-      nextDeadline: nextDeadline(model),
+      scoreA: result.score[0],
+      scoreB: result.score[1],
+      winnerSide: result.winnerSide,
+      totalVoters: voters.length,
+      crowdFavoriteId: favorite,
     },
   });
 
-  for (const r of model.rounds) {
-    const existing = row.rounds.find((x) => x.index === r.index);
-    const fields = {
-      status: r.status,
-      votingClosesAt: r.votingClosesAt,
-      winnerSide: r.winnerSide,
-      outcome: r.outcome,
-      // Final counts are frozen when a round closes; live counts stay in `votes`.
-      ...(r.status === "CLOSED" ? { votes0: r.votes[0], votes1: r.votes[1] } : {}),
-    };
-    if (existing) {
-      const changed =
-        existing.status !== r.status ||
-        existing.votingClosesAt?.getTime() !== r.votingClosesAt?.getTime() ||
-        existing.winnerSide !== r.winnerSide ||
-        existing.outcome !== r.outcome;
-      if (changed) await tx.battleRound.update({ where: { id: existing.id }, data: fields });
-    } else {
-      await tx.battleRound.create({
-        data: {
-          battleId: row.id,
-          index: r.index,
-          suddenDeath: r.suddenDeath,
-          openedAt: r.openedAt,
-          submissionsCloseAt: r.submissionsCloseAt,
-          ...fields,
-        },
-      });
+  for (const p of battle.participants) {
+    await awardXP(tx, p.userId, "BATTLE_COMPLETED", battle.id);
+    await grantBadge(tx, p.userId, "FIRST_BATTLE", battle.id);
+    if (result.winnerSide === p.side) {
+      await awardXP(tx, p.userId, "BATTLE_WON", battle.id);
+      await grantBadge(tx, p.userId, "FIRST_WIN", battle.id);
+    }
+    await tx.notification.create({
+      data: {
+        recipientId: p.userId,
+        type: "BATTLE_RESULT",
+        battleId: battle.id,
+        data: { score: result.score, winnerSide: result.winnerSide, yourSide: p.side },
+      },
+    });
+  }
+  if (favorite) {
+    const sub = await tx.battleSubmission.findUnique({ where: { id: favorite }, select: { participant: { select: { userId: true } } } });
+    if (sub) {
+      await awardXP(tx, sub.participant.userId, "CROWD_FAVORITE", battle.id);
+      await grantBadge(tx, sub.participant.userId, "CROWD_FAVORITE", battle.id);
     }
   }
 }

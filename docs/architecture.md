@@ -581,28 +581,32 @@ When a challenger submits a track:
 
 The engine is **pure TypeScript in `packages/core/battles`**: a state machine plus scoring functions with no I/O. A thin service layer in `apps/web` loads state, calls the engine, persists the result, and writes outbox events in one transaction. Inngest drives time-based transitions. This makes the rules exhaustively unit-testable and replayable.
 
-### 6.2 Battle state machine
+### 6.2 Battle state machine (as built in Phase 1)
 
 ```
-DRAFT ──publish──▶ OPEN_CHALLENGE ──accept──▶ ACCEPTED ──start──▶ IN_PROGRESS
-   │                    │                         │                   │
-   │              (direct invite)                 │            all rounds SCORED
-   │                    ▼                         │                   ▼
-   │             PENDING_ACCEPT ──decline/expire──┴──▶ CANCELLED / EXPIRED
-   │                                                          FINALIZING
-   └──delete──▶ (removed)                                         │
-                                                         fraud check, ratings, XP
-                                                                  ▼
-                               moderator ──void──▶ VOIDED    COMPLETE ──rematch──▶ new DRAFT
+DRAFT ─create─▶ CHALLENGE_SENT ─accept─▶ ACCEPTED ─opponent locks lineup─▶ SCHEDULED ─startsAt─▶ ACTIVE ─all rounds revealed─▶ VOTING ─votingEndsAt─▶ COMPLETED
+                     │                        │                                │                                                                   │
+           expire (3 days) /           lineup window (2 days)            (premiere time,                                                    rematch ─▶ new CHALLENGE_SENT
+           decline / withdraw          missed / back out                  optional)
+                     ▼                        ▼
+                 CANCELLED  ◀─────────────────┘        (moderator cancel from any non-final state)
 ```
 
-### 6.3 Round state machine
+- The challenger's lineup is locked when the challenge is created, so DRAFT → CHALLENGE_SENT happens in one transaction. The opponent locks theirs after accepting.
+- **SCHEDULED** lasts until the optional premiere time; with none, the battle moves straight on.
+- **ACTIVE** is the premiere: with a reveal interval (10 minutes or 1 hour) rounds unlock one at a time and are votable as soon as they drop. With no interval every round opens at once and the battle goes directly to VOTING.
+- **VOTING** means every round is open; it ends at `votingEndsAt` = start + (rounds − 1) × interval + voting duration (1 h to 3 days).
+- Deadlines are applied lazily whenever anyone loads or acts on a battle (row lock, then every due transition at its own deadline time), plus the cron sweep `GET /api/cron/advance-battles`.
+- Results (round winners, score, winner, total voters, crowd favourite) are computed once on the server in the COMPLETED transition and stored permanently; a database CHECK refuses COMPLETED without scores.
 
-```
-PENDING ─▶ SUBMISSIONS_OPEN ─(both submitted | deadline)─▶ VOTING_OPEN ─(deadline | live host)─▶ CLOSED ─▶ SCORED
-                     │                                                                          
-              missing submission at deadline ─▶ round forfeited by that side (rules decide: forfeit round or battle)
-```
+### 6.3 Battle types
+
+| Type | Rounds | Each side brings | Status |
+|---|---|---|---|
+| SONG_FOR_SONG | 3, 5, 7, 10, 15 or 20 (Quick Battle offers 5/10/20) | one track per round | built |
+| PLAYLIST | 1 | a 3, 5, 7 or 10 track playlist, voted as a whole | built |
+| DJ_MIX | 1 | one uploaded mix (rights attested, type-checked, private R2 storage, signed playback) | built |
+| LIVE_DJ | — | a live set | design only (6.9) |
 
 ### 6.4 Rules configuration (validated by Zod in core)
 
@@ -644,6 +648,14 @@ Defaults for the example ("2000s R&B, 10 rounds"): `PER_ROUND`, blind voting on,
 - All transitions run in one DB transaction with optimistic locking on `Battle.version`.
 - Inngest jobs are idempotent: closing an already-closed round is a no-op.
 - Votes are written to Postgres first (source of truth), then a Redis counter is incremented for live display. The final tally is always recomputed from Postgres at round close.
+
+### 6.9 Live DJ battles (design only, not built)
+
+- **Shape:** two DJs, a host, a scheduled start, 2–4 timed sets per DJ (e.g. 10 minutes), the crowd votes after each pair of sets. Same Battle model with `type = LIVE_DJ`, `scheduledFor`, and one BattleRound per set pair.
+- **Media:** DJs stream with WebRTC ingest (OBS/WHIP) to a managed provider (LiveKit or Mux Live); viewers get LL-HLS. VYBZ never relays raw audio itself. Recording is off by default; replays need the DJ's explicit opt-in and rights attestation, like uploaded mixes.
+- **Rights:** live DJ sets of commercial music need a public-performance licence (venue-style blanket licence or a licensed partner platform). This is the gating item: no launch until it is in place for the target markets.
+- **Engine:** the host advances rounds (`ACTIVE` with host-driven reveals instead of a timer); voting windows are short (60–120 s) and reuse the same server-side vote rules, with "listened" measured as time connected to the stream during the set.
+- **Realtime:** presence, live tallies (when not hidden) and reactions over a pub/sub channel (Ably or Pusher), Postgres stays the source of truth.
 
 ---
 

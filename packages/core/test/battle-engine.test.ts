@@ -1,204 +1,198 @@
 import { describe, expect, it } from "vitest";
 import {
-  type BattleModel,
-  type BattleRules,
   BattleRuleError,
-  BattleRulesSchema,
-  BattleThemeSchema,
-  type Side,
+  BattleSetupSchema,
+  type BattleState,
+  CHALLENGE_TTL_MS,
+  LINEUP_WINDOW_MS,
   accept,
   advance,
-  assertVotingOpen,
+  assertRoundVotable,
   cancel,
   creditListen,
-  current,
   eraLabel,
   fitsEra,
-  leftSideFor,
-  newChallenge,
+  lineupSize,
+  lockLineup,
+  newDraft,
+  nextDeadline,
   requiredListenMs,
-  scoreboard,
-  submit,
+  revealedRounds,
+  send,
+  tally,
 } from "../src";
 
-const H = 60 * 60 * 1000;
+const MIN = 60_000;
+const H = 60 * MIN;
 const t0 = new Date("2026-10-16T00:00:00Z");
-const at = (hours: number) => new Date(t0.getTime() + hours * H);
-const rules = (over: Partial<BattleRules> = {}): BattleRules => ({
-  roundCount: 3,
-  pace: "QUICK", // 1h picks, 1h voting
-  eraFrom: null,
-  eraTo: null,
-  ...over,
-});
+const at = (ms: number) => new Date(t0.getTime() + ms);
 
-function started(r = rules()): BattleModel {
-  return accept(newChallenge(r, t0, false), t0);
+function draft(over: Partial<BattleState> = {}): BattleState {
+  return { ...newDraft({ type: "SONG_FOR_SONG", roundCount: 5, votingDurationMs: 24 * H, revealIntervalMs: 0, scheduledFor: null }), ...over };
 }
 
-/** Both sides pick at `h`, then voting runs with the given counts. */
-function playRound(b: BattleModel, h: number, votes: [number, number]): BattleModel {
-  const index = current(b)!.index;
-  let next = submit(b, 0, index, at(h));
-  next = submit(next, 1, index, at(h));
-  const round = current(next)!;
-  return { ...next, rounds: next.rounds.map((r) => (r.index === round.index ? { ...r, votes } : r)) };
+/** Challenger locks and sends at t0, opponent accepts at +1h and locks at +2h. */
+function live(over: Partial<BattleState> = {}): BattleState {
+  let s = send(lockLineup(draft(over), 0, t0), t0);
+  s = accept(s, at(1 * H));
+  return lockLineup(s, 1, at(2 * H));
 }
 
-describe("challenges", () => {
-  it("opens, is accepted and starts round 1 with a pick deadline", () => {
-    const b = started();
-    expect(b.status).toBe("IN_PROGRESS");
-    expect(b.rounds).toHaveLength(1);
-    expect(current(b)).toMatchObject({ index: 0, status: "SUBMISSIONS_OPEN", submissionsCloseAt: at(1) });
+describe("battle lifecycle", () => {
+  it("goes DRAFT → CHALLENGE_SENT → ACCEPTED → SCHEDULED → ACTIVE → VOTING → COMPLETED", () => {
+    let s = draft();
+    expect(() => send(s, t0)).toThrow(BattleRuleError); // no picks yet
+    s = lockLineup(s, 0, t0);
+    s = send(s, t0);
+    expect(s).toMatchObject({ status: "CHALLENGE_SENT", expiresAt: at(CHALLENGE_TTL_MS) });
+    s = accept(s, at(H));
+    expect(s).toMatchObject({ status: "ACCEPTED", lineupDueAt: at(H + LINEUP_WINDOW_MS) });
+    s = lockLineup(s, 1, at(2 * H));
+    expect(s).toMatchObject({ status: "SCHEDULED", startsAt: at(2 * H), votingEndsAt: at(26 * H) });
+
+    const { state, transitions } = advance(s, at(30 * H));
+    expect(transitions.map((t) => `${t.from}→${t.to}@${(t.at.getTime() - t0.getTime()) / H}h`)).toEqual([
+      "SCHEDULED→ACTIVE@2h",
+      "ACTIVE→VOTING@2h",
+      "VOTING→COMPLETED@26h",
+    ]);
+    expect(state).toMatchObject({ status: "COMPLETED", completedAt: at(26 * H) });
+    expect(nextDeadline(state)).toBeNull();
   });
 
-  it("expires after 72 hours without an opponent", () => {
-    const b = advance(newChallenge(rules(), t0, true), at(72));
-    expect(b).toMatchObject({ status: "EXPIRED", endedAt: at(72) });
-    expect(() => accept(newChallenge(rules(), t0, false), at(73))).toThrow(BattleRuleError);
+  it("waits for a scheduled premiere", () => {
+    const s = live({ scheduledFor: at(10 * H) });
+    expect(s).toMatchObject({ status: "SCHEDULED", startsAt: at(10 * H) });
+    expect(advance(s, at(9 * H)).state.status).toBe("SCHEDULED");
+    expect(advance(s, at(10 * H)).state.status).toBe("VOTING");
   });
 
-  it("can't be accepted twice, and can only be cancelled before it starts", () => {
-    const b = started();
-    expect(() => accept(b, t0)).toThrow("isn't waiting");
-    expect(() => cancel(b, t0)).toThrow("haven't started");
-    expect(cancel(newChallenge(rules(), t0, false), t0).status).toBe("CANCELLED");
+  it("reveals rounds one at a time and votes only on unlocked rounds", () => {
+    const s = live({ revealIntervalMs: 10 * MIN }); // starts at +2h, 5 rounds
+    const at1 = advance(s, at(2 * H + 15 * MIN)).state;
+    expect(at1.status).toBe("ACTIVE");
+    expect(revealedRounds(at1, at(2 * H + 15 * MIN))).toBe(2);
+    expect(() => assertRoundVotable(at1, 1, at(2 * H + 15 * MIN))).not.toThrow();
+    expect(() => assertRoundVotable(at1, 2, at(2 * H + 15 * MIN))).toThrow(BattleRuleError);
+
+    const allIn = advance(s, at(2 * H + 40 * MIN)).state;
+    expect(allIn.status).toBe("VOTING");
+    // Voting window starts once the last round is revealed.
+    expect(allIn.votingEndsAt).toEqual(at(2 * H + 40 * MIN + 24 * H));
+  });
+
+  it("closes voting at the deadline", () => {
+    const s = advance(live(), at(3 * H)).state;
+    expect(() => assertRoundVotable(s, 0, at(25 * H))).not.toThrow();
+    const done = advance(s, at(26 * H)).state;
+    expect(() => assertRoundVotable(done, 0, at(26 * H))).toThrow(BattleRuleError);
+  });
+
+  it("expires unanswered challenges and missed lineups", () => {
+    const sent = send(lockLineup(draft(), 0, t0), t0);
+    expect(advance(sent, at(CHALLENGE_TTL_MS)).state).toMatchObject({ status: "CANCELLED", cancelReason: "EXPIRED" });
+    expect(() => accept(sent, at(CHALLENGE_TTL_MS + 1))).toThrow(BattleRuleError);
+
+    const accepted = accept(sent, at(H));
+    const late = advance(accepted, at(H + LINEUP_WINDOW_MS)).state;
+    expect(late).toMatchObject({ status: "CANCELLED", cancelReason: "LINEUP_MISSED" });
+    expect(() => lockLineup(accepted, 1, at(H + LINEUP_WINDOW_MS))).toThrow(BattleRuleError);
+  });
+
+  it("only lets each side lock once, in its own phase", () => {
+    const s = lockLineup(draft(), 0, t0);
+    expect(() => lockLineup(s, 0, t0)).toThrow(BattleRuleError);
+    expect(() => lockLineup(s, 1, t0)).toThrow(BattleRuleError);
+  });
+
+  it("can be called off before it goes live, and only moderated after", () => {
+    const sent = send(lockLineup(draft(), 0, t0), t0);
+    expect(cancel(sent, "DECLINED", at(1))).toMatchObject({ status: "CANCELLED", cancelReason: "DECLINED" });
+    const running = live();
+    expect(() => cancel(running, "WITHDRAWN", at(3 * H))).toThrow(BattleRuleError);
+    expect(cancel(running, "MODERATED", at(3 * H)).status).toBe("CANCELLED");
   });
 });
 
-describe("rounds", () => {
-  it("opens voting once both sides pick, and rejects a second pick", () => {
-    let b = submit(started(), 0, 0, at(0.5));
-    expect(current(b)!.status).toBe("SUBMISSIONS_OPEN");
-    expect(() => submit(b, 0, 0, at(0.5))).toThrow("already picked");
-    b = submit(b, 1, 0, at(0.75));
-    expect(current(b)).toMatchObject({ status: "VOTING_OPEN", votingClosesAt: at(1.75) });
-    expect(() => assertVotingOpen(b, 0, at(1))).not.toThrow();
-    expect(() => assertVotingOpen(b, 0, at(1.75))).toThrow("closed");
+describe("tally", () => {
+  const r = (index: number, a: number, b: number) => ({ index, votes: [a, b] as [number, number], submissionIds: [`a${index}`, `b${index}`] as [string, string] });
+
+  it("scores rounds and names the crowd favorite", () => {
+    const res = tally([r(0, 5, 3), r(1, 2, 9), r(2, 4, 4), r(3, 7, 1)]);
+    expect(res.score).toEqual([2, 1]);
+    expect(res.rounds.map((x) => x.winnerSide)).toEqual([0, 1, null, 0]);
+    expect(res.winnerSide).toBe(0);
+    expect(res.crowdFavorite).toEqual({ submissionId: "b1", votes: 9 });
   });
 
-  it("closes voting at the deadline, scores it and opens the next round at that moment", () => {
-    const b = advance(playRound(started(), 0.5, [7, 3]), at(1.5));
-    expect(b.rounds[0]).toMatchObject({ status: "CLOSED", winnerSide: 0, outcome: "VOTES" });
-    expect(b.rounds[1]).toMatchObject({ status: "SUBMISSIONS_OPEN", openedAt: at(1.5), submissionsCloseAt: at(2.5) });
-  });
-
-  it("gives the round to the only side that picked", () => {
-    const b = advance(submit(started(), 1, 0, at(0.2)), at(1));
-    expect(b.rounds[0]).toMatchObject({ status: "CLOSED", winnerSide: 1, outcome: "FORFEIT" });
-  });
-
-  it("voids a round nobody picked for, and a tied vote is a draw", () => {
-    expect(advance(started(), at(1)).rounds[0]).toMatchObject({ winnerSide: null, outcome: "VOID" });
-    expect(advance(playRound(started(), 0, [4, 4]), at(1)).rounds[0]).toMatchObject({ winnerSide: null, outcome: "VOTES" });
-  });
-
-  it("rejects a pick for a round whose deadline passed, even if nobody has looked at the battle", () => {
-    expect(() => submit(started(), 0, 0, at(1))).toThrow("closed");
-    expect(() => submit(started(), 0, 1, at(0.5))).toThrow("closed");
+  it("breaks level rounds on total votes, then calls a draw", () => {
+    expect(tally([r(0, 5, 3), r(1, 2, 9)]).winnerSide).toBe(1);
+    expect(tally([r(0, 5, 3), r(1, 3, 5)]).winnerSide).toBeNull();
+    expect(tally([r(0, 0, 0)])).toMatchObject({ winnerSide: null, crowdFavorite: null });
   });
 });
 
-describe("results", () => {
-  function playAll(results: [number, number][]): BattleModel {
-    let b = started(rules({ roundCount: results.length as 3 }));
-    for (const votes of results) {
-      const openedAt = (current(b)!.openedAt.getTime() - t0.getTime()) / H;
-      b = advance(playRound(b, openedAt, votes), at(openedAt + 1));
-    }
-    return b;
-  }
-
-  it("declares the side with more rounds the winner", () => {
-    const b = playAll([
-      [5, 1],
-      [2, 6],
-      [9, 8],
-    ]);
-    expect(b).toMatchObject({ status: "COMPLETE", winnerSide: 0 });
-    expect(scoreboard(b).roundsWon).toEqual([2, 1]);
+describe("listening credit", () => {
+  it("needs 10 seconds, or a short clip to its end", () => {
+    expect(requiredListenMs(30_000)).toBe(10_000);
+    expect(requiredListenMs(6_000)).toBe(5_000);
+    expect(requiredListenMs(null)).toBe(10_000);
   });
 
-  it("goes to one sudden-death round when level on rounds", () => {
-    const b = playAll([
-      [5, 1],
-      [2, 6],
-      [3, 3],
-    ]);
-    expect(b.status).toBe("IN_PROGRESS");
-    expect(current(b)).toMatchObject({ suddenDeath: true, index: 3 });
-
-    const openedAt = (current(b)!.openedAt.getTime() - t0.getTime()) / H;
-    const done = advance(playRound(b, openedAt, [1, 4]), at(openedAt + 1));
-    expect(done).toMatchObject({ status: "COMPLETE", winnerSide: 1 });
-    expect(scoreboard(done).roundsWon).toEqual([1, 1]); // sudden death isn't a regular round win
+  it("caps credit by time since this pick started", () => {
+    const c = creditListen({ previousMs: 0, reportedMs: 30_000, startedAt: t0, otherCreditMs: 0, battleStartedAt: t0, now: at(3_000) });
+    expect(c).toBe(5_000);
   });
 
-  it("falls back to total votes, then a draw, if sudden death is drawn", () => {
-    let b = playAll([
-      [5, 1],
-      [2, 3],
-      [3, 3],
-    ]);
-    const openedAt = (current(b)!.openedAt.getTime() - t0.getTime()) / H;
-    b = advance(playRound(b, openedAt, [2, 2]), at(openedAt + 1));
-    expect(b).toMatchObject({ status: "COMPLETE", winnerSide: 0 }); // 12 votes to 9
-
-    let even = playAll([
-      [3, 1],
-      [1, 3],
-      [2, 2],
-    ]);
-    const o2 = (current(even)!.openedAt.getTime() - t0.getTime()) / H;
-    even = advance(playRound(even, o2, [0, 0]), at(o2 + 1));
-    expect(even).toMatchObject({ status: "COMPLETE", winnerSide: null });
+  it("gives nothing extra for playing several picks at once", () => {
+    // 12s into the battle, 11s already credited on the other side: only ~3s left to give.
+    const c = creditListen({ previousMs: 0, reportedMs: 12_000, startedAt: t0, otherCreditMs: 11_000, battleStartedAt: t0, now: at(12_000) });
+    expect(c).toBe(3_000);
   });
 
-  it("settles an abandoned battle in one call with the same timeline as a watched one", () => {
-    const b = advance(started(rules({ roundCount: 3 })), at(100));
-    expect(b.status).toBe("COMPLETE");
-    // 3 void rounds, then a void sudden death, then 0–0 on votes: a draw at hour 4.
-    expect(b.rounds.map((r) => r.outcome)).toEqual(["VOID", "VOID", "VOID", "VOID"]);
-    expect(b).toMatchObject({ winnerSide: null, endedAt: at(4) });
+  it("never lowers credit", () => {
+    expect(creditListen({ previousMs: 8_000, reportedMs: 0, startedAt: t0, otherCreditMs: 0, battleStartedAt: t0, now: at(9_000) })).toBe(8_000);
   });
 });
 
-describe("rules", () => {
-  it("validates round counts, eras and themes", () => {
-    expect(BattleRulesSchema.safeParse(rules({ roundCount: 4 as 3 })).success).toBe(false);
-    expect(BattleRulesSchema.safeParse(rules({ eraFrom: 2009, eraTo: 2000 })).success).toBe(false);
-    expect(BattleThemeSchema.parse("  2000s R&B\u0007 ")).toBe("2000s R&B");
-    expect(BattleThemeSchema.safeParse("ok").success).toBe(false);
+describe("setup", () => {
+  const base = {
+    type: "SONG_FOR_SONG" as const,
+    mode: "OPEN" as const,
+    title: "2000s R&B Battle",
+    theme: "2000s R&B",
+    genre: "R&B" as const,
+    tagline: null,
+    roundCount: 10,
+    playlistLength: null,
+    visibility: "PUBLIC" as const,
+    votingDurationMs: 24 * H,
+    revealIntervalMs: 0,
+    hideTotals: true,
+    eraFrom: 2000,
+    eraTo: 2009,
+    scheduledFor: null,
+  };
+
+  it("accepts a song battle and sizes the lineup", () => {
+    const s = BattleSetupSchema.parse(base);
+    expect(lineupSize(s)).toBe(10);
+    expect(eraLabel(s)).toBe("2000–2009");
+    expect(fitsEra(s, 2004)).toBe(true);
+    expect(fitsEra(s, 2012)).toBe(false);
   });
 
-  it("checks release years against the era and labels it", () => {
-    const r = rules({ eraFrom: 2000, eraTo: 2009 });
-    expect([fitsEra(r, 1999), fitsEra(r, 2004), fitsEra(r, 2010), fitsEra(r, null)]).toEqual([false, true, false, true]);
-    expect(eraLabel(r)).toBe("2000–2009");
-    expect(eraLabel(rules({ eraFrom: 2010 }))).toBe("2010 or later");
-    expect(eraLabel(rules())).toBeNull();
-  });
-});
-
-describe("listening and presentation", () => {
-  it("requires 20 seconds, or the whole of a shorter clip", () => {
-    expect(requiredListenMs(null)).toBe(20_000);
-    expect(requiredListenMs(30_000)).toBe(20_000);
-    expect(requiredListenMs(12_000)).toBe(11_000);
+  it("makes playlist and mix battles a single round", () => {
+    expect(BattleSetupSchema.safeParse({ ...base, type: "PLAYLIST", roundCount: 1, playlistLength: 5 }).success).toBe(true);
+    expect(lineupSize({ type: "PLAYLIST", roundCount: 1, playlistLength: 5 })).toBe(5);
+    expect(BattleSetupSchema.safeParse({ ...base, type: "PLAYLIST", roundCount: 10, playlistLength: 5 }).success).toBe(false);
+    expect(BattleSetupSchema.safeParse({ ...base, type: "DJ_MIX", roundCount: 1 }).success).toBe(true);
   });
 
-  it("never credits more listening than wall-clock time allows", () => {
-    const startedAt = new Date(0);
-    expect(creditListen({ previousMs: 0, reportedMs: 30_000, startedAt, now: new Date(3_000) })).toBe(5_000);
-    expect(creditListen({ previousMs: 0, reportedMs: 15_000, startedAt, now: new Date(60_000) })).toBe(15_000);
-    expect(creditListen({ previousMs: 18_000, reportedMs: 2_000, startedAt, now: new Date(60_000) })).toBe(18_000);
-    expect(creditListen({ previousMs: 0, reportedMs: -5, startedAt, now: new Date(60_000) })).toBe(0);
-  });
-
-  it("shows sides in a stable order per voter that differs across voters", () => {
-    expect(leftSideFor("u1", "r1")).toBe(leftSideFor("u1", "r1"));
-    const sides = new Set<Side>(Array.from({ length: 20 }, (_, i) => leftSideFor(`user${i}`, "r1")));
-    expect(sides).toEqual(new Set([0, 1]));
+  it("rejects live DJ battles, odd round counts, bad durations and markup-ish whitespace", () => {
+    expect(BattleSetupSchema.safeParse({ ...base, type: "LIVE_DJ", roundCount: 1 }).success).toBe(false);
+    expect(BattleSetupSchema.safeParse({ ...base, roundCount: 4 }).success).toBe(false);
+    expect(BattleSetupSchema.safeParse({ ...base, votingDurationMs: 123 }).success).toBe(false);
+    expect(BattleSetupSchema.parse({ ...base, title: "  Big\n\tbattle  " }).title).toBe("Big battle");
   });
 });

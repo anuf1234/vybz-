@@ -2,11 +2,8 @@ import "server-only";
 import { prisma } from "@vybz/db";
 import { matchYouTube } from "../catalog";
 import { apple, defaultStorefront, youtube } from "../providers";
-import { type CatalogPort, battleService } from "./service";
-
-export { BattleError } from "./service";
-
-export const battles = battleService({ prisma });
+import type { CatalogPort } from "./lineup";
+import { battleService } from "./service";
 
 /** Picks are looked up in Apple Music (or the sample catalog in development), never taken from the client. */
 export const catalogPort: CatalogPort | null = buildCatalogPort();
@@ -19,3 +16,5 @@ function buildCatalogPort(): CatalogPort | null {
     ...(youtube ? { matchYouTube: (t) => matchYouTube(t.externalId, defaultStorefront) } : {}),
   };
 }
+
+export const battles = battleService({ prisma, catalog: catalogPort });

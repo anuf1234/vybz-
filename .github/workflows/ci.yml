@@ -37,6 +37,7 @@ jobs:
         run: pnpm --filter @vybz/db migrate:deploy
       - name: Check schema and migrations agree
         run: pnpm --filter @vybz/db exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+      - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build

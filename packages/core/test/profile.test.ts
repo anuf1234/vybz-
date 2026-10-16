@@ -23,12 +23,17 @@ describe("HandleSchema", () => {
 
 describe("ProfileUpdateSchema", () => {
   it("trims, strips control characters and turns an empty bio into null", () => {
-    expect(ProfileUpdateSchema.parse({ name: "  Nate \u0007 ", bio: "   " })).toEqual({ name: "Nate", bio: null });
+    expect(ProfileUpdateSchema.parse({ name: "  Nate \u0007 ", bio: "   " })).toEqual({ name: "Nate", bio: null, favoriteGenres: [] });
   });
 
   it("keeps newlines in bios and enforces limits", () => {
     expect(ProfileUpdateSchema.parse({ name: "N", bio: "line 1\nline 2" }).bio).toBe("line 1\nline 2");
     expect(ProfileUpdateSchema.safeParse({ name: "N", bio: "x".repeat(161) }).success).toBe(false);
     expect(ProfileUpdateSchema.safeParse({ name: "   ", bio: "" }).success).toBe(false);
+  });
+
+  it("accepts up to five known genres", () => {
+    expect(ProfileUpdateSchema.parse({ name: "N", bio: "", favoriteGenres: ["R&B", "Soul"] }).favoriteGenres).toEqual(["R&B", "Soul"]);
+    expect(ProfileUpdateSchema.safeParse({ name: "N", bio: "", favoriteGenres: ["Polka"] }).success).toBe(false);
   });
 });

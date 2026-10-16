@@ -8,10 +8,10 @@ The full architecture and roadmap live in [docs/architecture.md](docs/architectu
 
 | Path | What it is |
 |---|---|
-| `packages/db` | Prisma schema and migrations (Postgres). Users, sessions, login accounts, verification tokens, rate limits; tracks and provider refs; battles, rounds, picks, votes and listening progress. |
-| `packages/core` | Framework-free domain rules: the `can()` authorization policy and profile validation (handles, display names, bios), and the song battle engine (rounds, deadlines, scoring, fair-listen rules) as pure functions. |
+| `packages/db` | Prisma schema and migrations (Postgres): users, profiles, accounts, sessions; music connections, tracks and provider refs, playlists; battles, participants, rounds, submissions, votes, listening progress and an event log; comments, reactions, follows, notifications; XP ledger, badges; uploads. Database CHECK and unique constraints back the important rules. |
+| `packages/core` | Framework-free domain rules: the `can()` authorization policy, profile validation, and the battle engine (types, states, deadlines, reveals, tally, fair-listen credit) as pure functions. |
 | `packages/providers` | Provider abstraction. Apple Music adapter (catalog search, ISRC lookup, previews, MusicKit developer tokens), YouTube adapter (music search, embeddability), Apple→YouTube matcher, a development-only sample catalog, and per-viewer playback resolution with battle playback parity. |
-| `apps/web` | Next.js app: sign-up and sign-in (email/password and Google), email verification, password reset, handle onboarding, public profiles at `/u/<handle>`, profile settings, song battles at `/battles`, and a catalog search page that plays Apple Music previews and YouTube embeds. |
+| `apps/web` | Next.js app. Pages: `/`, `/login`, `/signup`, `/onboarding`, `/discover`, `/battle` (vote now + open challenges), `/battle/create` (Quick Battle), `/battle/[id]`, `/battle/[id]/results`, `/battles/my`, `/profile/[username]`, `/settings`, `/notifications`. Server actions and API routes for battles, voting, comments, reactions, follows and uploads; JSON logging; DB-backed rate limits. |
 | `packages/config` | Shared TypeScript config. |
 
 ### Music rules this code enforces
@@ -39,20 +39,28 @@ Without `RESEND_API_KEY`, verification and password-reset emails are printed to 
 
 - **Email/password:** passwords of at least 10 characters, checked against known breaches (Have I Been Pwned). Accounts must confirm their email before they can sign in.
 - **Google:** optional. Create an OAuth client ID (type Web) in Google Cloud, add `{BETTER_AUTH_URL}/api/auth/callback/google` as a redirect URI, and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. The button appears once both are set.
-- After first sign-in everyone picks a permanent @handle.
+- After first sign-in everyone picks a permanent @username (their profile lives at `/profile/<username>`).
 - Sessions live in Postgres and are checked on every request, so signing out, resetting a password or a ban takes effect immediately.
 
-### Song battles
+### Battles
 
-Two people battle over a theme (say, 2000s R&B) for 3, 5, 7 or 10 rounds. Each round both pick one track without seeing the other's pick, then the crowd votes.
+Tap **+ Battle** anywhere: pick who (a friend, a matched opponent, or an open challenge anyone can accept), a theme (90s R&B, Cookout Classics… or your own), 5/10/20 rounds, and your songs. That's a challenge. More options cover playlist and DJ-mix battles, era limits, privacy, voting length, round-by-round premieres and hidden vote counts.
 
-- **Challenges:** open (anyone can accept) or direct to an @handle. Unaccepted challenges expire after 72 hours. Optional era limits are checked against Apple Music release years.
-- **Pace:** quick (1 hour to pick, 1 to vote), standard (a day each) or relaxed (two days each). Missing the pick deadline forfeits the round to the side that picked.
-- **Voting is blind and earned:** picks show as A and B (order varies per voter) until the round closes, battlers can't vote, and a vote only counts after the voter has heard 20 seconds of both tracks. The server caps listening credit by real elapsed time.
-- **Winning:** most rounds wins. Level after the last round means one sudden-death round, then total votes.
-- **Deadlines** are applied whenever anyone opens a battle or the list. `GET /api/cron/advance-battles` with `Authorization: Bearer $CRON_SECRET` sweeps the rest; point Vercel Cron or any scheduler at it.
+- **Lifecycle:** challenge sent → accepted → opponent picks → (optional premiere) → voting → completed, with expiry, decline, withdraw and missed-pick cancellations. See `docs/architecture.md` §6.2.
+- **Voting happens on the server:** one vote per person per round (database unique key), players can't vote, a voter must have played 10 seconds of both sides (credit capped by real elapsed time across the whole battle, so parallel or replayed listens don't count), and counts come only from stored votes.
+- **Results** (round winners, final score, crowd favourite, total voters) are computed once when voting closes and stored. Rematch, share and follow live on the results page.
+- **Deadlines** are applied whenever anyone opens a battle or their list; `GET /api/cron/advance-battles` with `Authorization: Bearer $CRON_SECRET` sweeps the rest.
 
-Battles pick from Apple Music. Without Apple keys, set `MUSIC_FIXTURES=1` in development to use a sample catalog of 24 real songs with generated tones instead of audio. It never turns on in production or when an Apple key is set.
+Songs come from Apple Music. Without Apple keys, set `MUSIC_FIXTURES=1` in development to use a sample catalog of 24 real songs with generated tones instead of audio. It never turns on in production or when an Apple key is set.
+
+### Sample data
+
+```bash
+pnpm --filter @vybz/web db:seed          # needs MUSIC_FIXTURES=1 to hear the tracks
+pnpm --filter @vybz/web db:seed --reset  # wipe app data first (refuses to run in production)
+```
+
+Log in as `marcus`, `nia`, `dj_kay`, `fan` or `tasha` at `@example.com` with password `vybz-demo-pass`. You get a finished battle, a live one, Marcus's open "90s R&B playlist" challenge and a challenge waiting on Marcus.
 
 ### Music provider keys
 
@@ -64,8 +72,9 @@ The app runs with either provider alone. With both, Apple Music supplies metadat
 ## Scripts
 
 ```bash
-pnpm test        # unit tests; auth and battle integration tests also run when DATABASE_URL is set
+pnpm lint
 pnpm typecheck
+pnpm test        # unit tests; auth and battle integration tests also run when DATABASE_URL is set
 pnpm build
 ```
 

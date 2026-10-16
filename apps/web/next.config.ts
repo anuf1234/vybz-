@@ -10,9 +10,10 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://*.mzstatic.com https://i.ytimg.com",
-  "media-src 'self' https://*.itunes.apple.com https://*.apple.com",
+  // R2: signed links for uploaded DJ mixes (playback and the browser's direct upload).
+  "media-src 'self' https://*.itunes.apple.com https://*.apple.com https://*.r2.cloudflarestorage.com",
   "frame-src https://www.youtube-nocookie.com",
-  "connect-src 'self'",
+  "connect-src 'self' https://*.r2.cloudflarestorage.com",
   "font-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",

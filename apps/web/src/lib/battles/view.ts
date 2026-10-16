@@ -1,13 +1,15 @@
 import "server-only";
 import {
   type Actor,
-  type BattleRules,
-  PACE_PRESETS,
+  type BattleType,
+  BATTLE_TYPE_LABELS,
   type Side,
   can,
   eraLabel,
-  leftSideFor,
   requiredListenMs,
+  revealedRounds,
+  roundRevealAt,
+  votingDurationLabel,
 } from "@vybz/core";
 import { prisma } from "@vybz/db";
 import {
@@ -19,22 +21,28 @@ import {
   sourceForTier,
 } from "@vybz/providers";
 import { defaultStorefront, registry } from "../providers";
+import { REACTIONS } from "../social/service";
+import { storage } from "../uploads/storage";
 import { guestViewer } from "../viewer";
-import { parseRules } from "./model";
 import { battles } from "./index";
+import { toState } from "./model";
 
 /**
- * What the battle page may show. Built on the server so nothing secret
- * reaches the browser: while a round is being voted on, picks carry no side,
- * and live vote counts stay hidden until the round closes.
+ * Everything a battle page may show, built on the server so nothing secret
+ * reaches the browser: lineups stay hidden until their round is revealed,
+ * and (with hidden totals) a round's votes only show once you've voted on it.
  */
 
-export interface Person {
-  handle: string;
-  name: string;
+export interface PlayerView {
+  side: Side;
+  userId: string;
+  username: string;
+  displayName: string;
+  isYou: boolean;
+  lineupLocked: boolean;
 }
 
-export interface PickView {
+export interface TrackView {
   title: string;
   artistName: string;
   releaseYear: number | null;
@@ -43,232 +51,310 @@ export interface PickView {
   source: PlaybackSource | null;
 }
 
-export type RoundView =
-  | {
-      kind: "closed";
-      index: number;
-      suddenDeath: boolean;
-      outcome: "VOTES" | "FORFEIT" | "VOID";
-      winnerSide: Side | null;
-      votes: [number, number];
-      picks: [PickView | null, PickView | null];
-    }
-  | {
-      kind: "voting";
-      index: number;
-      suddenDeath: boolean;
-      closesAt: Date;
-      /** Left and right, in this viewer's order. No sides. */
-      cards: Array<PickView & { submissionId: string; playedMs: number; requiredMs: number }>;
-      votedFor: string | null;
-      /** Why this viewer can't vote, if they can't. */
-      voteBlock: "SIGN_IN" | "BATTLER" | "NOT_ELIGIBLE" | null;
-    }
-  | {
-      kind: "picking";
-      index: number;
-      suddenDeath: boolean;
-      closesAt: Date;
-      picked: [boolean, boolean];
-      myPick: PickView | null;
-    };
+export type EntryView =
+  | ({ kind: "track"; submissionId: string } & TrackView)
+  | { kind: "playlist"; submissionId: string; title: string; tracks: TrackView[] }
+  | { kind: "mix"; submissionId: string; title: string; url: string | null };
+
+export interface RoundView {
+  index: number;
+  revealed: boolean;
+  revealAt: Date | null;
+  entries: [EntryView | null, EntryView | null];
+  myVote: Side | null;
+  /** Null while hidden from this viewer. */
+  votes: [number, number] | null;
+  winnerSide: Side | null;
+  reactions: { kind: string; emoji: string; label: string; count: number; mine: boolean }[];
+  listened: [number, number];
+  requiredMs: number;
+}
+
+export type VoteBlock = "SIGN_IN" | "PLAYER" | "NOT_ELIGIBLE" | "CLOSED" | null;
 
 export interface BattleView {
   id: string;
+  title: string;
   theme: string;
-  status: "OPEN" | "PENDING_ACCEPT" | "IN_PROGRESS" | "COMPLETE" | "CANCELLED" | "EXPIRED";
-  rules: BattleRules;
-  ruleSummary: string;
-  sides: [Person, Person | null];
-  invited: Person | null;
-  expiresAt: Date;
-  winnerSide: Side | null;
-  roundsWon: [number, number];
-  totalVotes: [number, number];
+  genre: string | null;
+  tagline: string | null;
+  type: BattleType;
+  typeLabel: string;
+  status: "DRAFT" | "CHALLENGE_SENT" | "ACCEPTED" | "SCHEDULED" | "ACTIVE" | "VOTING" | "COMPLETED" | "CANCELLED";
+  cancelReason: string | null;
+  visibility: "PUBLIC" | "PRIVATE";
+  mode: "DIRECT" | "OPEN" | "MATCHMAKING";
+  roundCount: number;
+  playlistLength: number | null;
+  era: string | null;
+  eraFrom: number | null;
+  eraTo: number | null;
+  votingLabel: string;
+  hideTotals: boolean;
+  revealIntervalMs: number;
+  players: [PlayerView, PlayerView | null];
+  invited: { username: string } | null;
+  expiresAt: Date | null;
+  lineupDueAt: Date | null;
+  startsAt: Date | null;
+  votingEndsAt: Date | null;
+  completedAt: Date | null;
+  result: {
+    score: [number, number];
+    winnerSide: Side | null;
+    totalVoters: number;
+    totalVotes: [number, number];
+    crowdFavorite: { side: Side; roundIndex: number; title: string; subtitle: string; votes: number } | null;
+  } | null;
   rounds: RoundView[];
+  /** Your own picks, visible to you before they're revealed. */
+  myLineup: EntryView[];
   rematchId: string | null;
   rematchOfId: string | null;
   viewer: {
     signedIn: boolean;
+    userId: string | null;
     side: Side | null;
     canAccept: boolean;
     canCancel: boolean;
+    needsLineup: boolean;
+    voteBlock: VoteBlock;
+    canComment: boolean;
+    followsOpponent: boolean;
   };
 }
 
-export function ruleSummary(rules: BattleRules): string {
-  const era = eraLabel(rules);
-  return [`${rules.roundCount} rounds`, PACE_PRESETS[rules.pace].label.toLowerCase() + " pace", era]
-    .filter(Boolean)
-    .join(" · ");
-}
+const entryInclude = {
+  track: { include: { refs: true } },
+  playlist: { include: { tracks: { orderBy: { position: "asc" }, include: { track: { include: { refs: true } } } } } },
+  upload: { select: { id: true, storageKey: true, status: true, originalName: true } },
+} as const;
 
 export async function loadBattleView(battleId: string, actor: Actor | null): Promise<BattleView | null> {
   // Lazy advancement: whoever looks at a battle moves it past any passed deadline.
   try {
     await battles.advance(battleId);
   } catch (err) {
-    if (err instanceof Error && err.name === "BattleError") return null;
+    if ((err as { code?: string }).code === "NOT_FOUND") return null;
     throw err;
   }
 
   const row = await prisma.battle.findUnique({
     where: { id: battleId },
     include: {
-      participants: { include: { user: { select: { handle: true, name: true } } } },
-      invitedUser: { select: { handle: true, name: true } },
+      participants: { include: { user: { select: { profile: { select: { username: true, displayName: true } } } } } },
+      invitedUser: { select: { profile: { select: { username: true } } } },
       rematches: { select: { id: true }, orderBy: { createdAt: "desc" }, take: 1 },
       rounds: {
         orderBy: { index: "asc" },
         include: {
-          submissions: { include: { track: { include: { refs: true } } } },
-          ...(actor
-            ? {
-                votes: { where: { voterId: actor.id }, select: { side: true } },
-                listens: { where: { userId: actor.id }, select: { submissionId: true, playedMs: true } },
-              }
-            : {}),
+          submissions: { include: entryInclude },
+          reactions: { select: { kind: true, userId: true } },
+          ...(actor ? { votes: { where: { voterId: actor.id }, select: { selection: true } } } : {}),
         },
       },
     },
   });
-  if (!row) return null;
+  if (!row || row.status === "DRAFT") return null;
 
-  const rules = parseRules(row.rules);
-  const person = (u: { handle: string | null; name: string }): Person => ({ handle: u.handle ?? "unknown", name: u.name });
-  const bySide = (s: Side) => row.participants.find((p) => p.side === s);
-  const creator = bySide(0)!;
-  const challenger = bySide(1);
-  const mySide = (actor && (row.participants.find((p) => p.userId === actor.id)?.side as Side | undefined)) ?? null;
-  const target = { creatorId: row.creatorId, invitedUserId: row.invitedUserId };
+  const now = new Date();
+  const state = toState({ ...row, participants: row.participants });
+  const revealed = revealedRounds(state, now);
   const viewer = guestViewer(defaultStorefront);
+  const mySide = actor ? ((row.participants.find((p) => p.userId === actor.id)?.side as Side | undefined) ?? null) : null;
+  const done = row.status === "COMPLETED";
 
-  const roundsWon: [number, number] = [0, 0];
-  const totalVotes: [number, number] = [0, 0];
+  const listens = actor
+    ? await prisma.listenProgress.findMany({ where: { battleId, userId: actor.id }, select: { submissionId: true, playedMs: true } })
+    : [];
 
-  const rounds = row.rounds.map((r): RoundView => {
-    const subFor = (s: Side) => r.submissions.find((x) => x.side === s) ?? null;
-
-    if (r.status === "CLOSED") {
-      const votes: [number, number] = [r.votes0, r.votes1];
-      if (r.winnerSide !== null && !r.suddenDeath) roundsWon[r.winnerSide as Side]++;
-      totalVotes[0] += votes[0];
-      totalVotes[1] += votes[1];
-      const [a, b] = [subFor(0), subFor(1)];
-      return {
-        kind: "closed",
-        index: r.index,
-        suddenDeath: r.suddenDeath,
-        outcome: r.outcome ?? "VOID",
-        winnerSide: (r.winnerSide as Side | null) ?? null,
-        votes,
-        picks: [a && pickView(a.track, bestSource(a.track.refs, viewer)), b && pickView(b.track, bestSource(b.track.refs, viewer))],
-      };
-    }
-
-    if (r.status === "VOTING_OPEN") {
-      const [a, b] = [subFor(0)!, subFor(1)!];
-      // Same kind of playback on both sides, so neither pick wins on presentation.
-      // Votes need a measurable listen, so voting rounds use the preview clips.
-      const [sa, sb] = [previewSources(a.track.refs, viewer), previewSources(b.track.refs, viewer)];
-      const tier = bestCommonTier(sa, sb);
-      const left = leftSideFor(actor?.id ?? "guest", r.id);
-      const ordered = left === 0 ? [a, b] : [b, a];
-      const listens = "listens" in r ? (r.listens as { submissionId: string; playedMs: number }[]) : [];
-      const myVote = "votes" in r ? (r.votes as { side: number }[])[0] : undefined;
-      const voteBlock = !actor
-        ? "SIGN_IN"
-        : mySide !== null
-          ? "BATTLER"
-          : !can(actor, { type: "vote.cast" }).allow
-            ? "NOT_ELIGIBLE"
-            : null;
-      return {
-        kind: "voting",
-        index: r.index,
-        suddenDeath: r.suddenDeath,
-        closesAt: r.votingClosesAt!,
-        cards: ordered.map((s) => {
-          const sources = s === a ? sa : sb;
-          return {
-            ...pickView(s.track, tier ? sourceForTier(sources, tier) : null),
-            submissionId: s.id,
-            playedMs: listens.find((l) => l.submissionId === s.id)?.playedMs ?? 0,
-            requiredMs: requiredListenMs(s.track.durationMs),
-          };
-        }),
-        votedFor: myVote ? (myVote.side === a.side ? a.id : b.id) : null,
-        voteBlock,
-      };
-    }
-
-    const mine = mySide !== null ? subFor(mySide) : null;
+  const player = (side: Side): PlayerView | null => {
+    const p = row.participants.find((x) => x.side === side);
+    if (!p) return null;
     return {
-      kind: "picking",
-      index: r.index,
-      suddenDeath: r.suddenDeath,
-      closesAt: r.submissionsCloseAt,
-      picked: [Boolean(subFor(0)), Boolean(subFor(1))],
-      myPick: mine ? pickView(mine.track, bestSource(mine.track.refs, viewer)) : null,
+      side,
+      userId: p.userId,
+      username: p.user.profile?.username ?? "player",
+      displayName: p.user.profile?.displayName ?? "Player",
+      isYou: p.userId === actor?.id,
+      lineupLocked: Boolean(p.lineupLockedAt),
     };
-  });
+  };
+
+  const votingOpen = (row.status === "ACTIVE" || row.status === "VOTING") && row.votingEndsAt !== null && now < row.votingEndsAt;
+  const gate = actor ? can(actor, { type: "vote.cast" }) : null;
+  const voteBlock: VoteBlock = !actor
+    ? "SIGN_IN"
+    : mySide !== null
+      ? "PLAYER"
+      : !gate?.allow
+        ? "NOT_ELIGIBLE"
+        : !votingOpen
+          ? "CLOSED"
+          : null;
+
+  const myLineup: EntryView[] = [];
+  const rounds: RoundView[] = [];
+  const totals: [number, number] = [0, 0];
+  for (const r of row.rounds) {
+    const isRevealed = r.index < revealed;
+    const subs = ([0, 1] as const).map((s) => r.submissions.find((x) => x.side === s) ?? null) as [Sub | null, Sub | null];
+    // Same kind of playback on both sides, so neither pick wins on presentation.
+    const parity = parityTier(subs, viewer);
+    const entries = (await Promise.all(subs.map((s) => (s ? entryView(s, parity, viewer) : null)))) as [EntryView | null, EntryView | null];
+    if (mySide !== null && entries[mySide]) myLineup.push(entries[mySide]!);
+
+    const myVote = "votes" in r && Array.isArray(r.votes) && r.votes[0] ? (r.votes[0].selection as Side) : null;
+    let votes: [number, number] | null = null;
+    if (done) votes = [r.votesA, r.votesB];
+    else if (isRevealed && (!row.hideTotals ? true : myVote !== null && mySide === null)) votes = await liveCounts(r.id);
+    if (done) {
+      totals[0] += r.votesA;
+      totals[1] += r.votesB;
+    }
+
+    rounds.push({
+      index: r.index,
+      revealed: isRevealed,
+      revealAt: roundRevealAt(state, r.index),
+      entries: isRevealed ? entries : [null, null],
+      myVote,
+      votes,
+      winnerSide: done ? ((r.winnerSide as Side | null) ?? null) : null,
+      reactions: REACTIONS.map((x) => ({
+        ...x,
+        count: r.reactions.filter((y) => y.kind === x.kind).length,
+        mine: actor ? r.reactions.some((y) => y.kind === x.kind && y.userId === actor.id) : false,
+      })),
+      listened: subs.map((s) => listens.find((l) => l.submissionId === s?.id)?.playedMs ?? 0) as [number, number],
+      requiredMs: requiredListenMs(null),
+    });
+  }
+
+  let crowdFavorite: NonNullable<BattleView["result"]>["crowdFavorite"] = null;
+  if (done && row.crowdFavoriteId) {
+    for (const r of rounds) {
+      const side = ([0, 1] as const).find((s) => r.entries[s]?.submissionId === row.crowdFavoriteId);
+      if (side !== undefined) {
+        const e = r.entries[side]!;
+        crowdFavorite = {
+          side,
+          roundIndex: r.index,
+          title: e.title,
+          subtitle: e.kind === "track" ? e.artistName : e.kind === "playlist" ? `${e.tracks.length} tracks` : "DJ mix",
+          votes: r.votes?.[side] ?? 0,
+        };
+      }
+    }
+  }
+
+  const target = { creatorId: row.creatorId, invitedUserId: row.invitedUserId };
+  const opponent = mySide !== null ? row.participants.find((p) => p.side !== mySide) : null;
+  const followsOpponent =
+    actor && opponent
+      ? Boolean(await prisma.follow.findUnique({ where: { followerId_followeeId: { followerId: actor.id, followeeId: opponent.userId } } }))
+      : false;
 
   return {
     id: row.id,
+    title: row.title,
     theme: row.theme,
+    genre: row.genre,
+    tagline: row.tagline,
+    type: row.type,
+    typeLabel: BATTLE_TYPE_LABELS[row.type],
     status: row.status,
-    rules,
-    ruleSummary: ruleSummary(rules),
-    sides: [person(creator.user), challenger ? person(challenger.user) : null],
-    invited: row.invitedUser ? person(row.invitedUser) : null,
+    cancelReason: row.cancelReason,
+    visibility: row.visibility,
+    mode: row.mode,
+    roundCount: row.roundCount,
+    playlistLength: row.playlistLength,
+    era: eraLabel(row),
+    eraFrom: row.eraFrom,
+    eraTo: row.eraTo,
+    votingLabel: votingDurationLabel(row.votingDurationMs),
+    hideTotals: row.hideTotals,
+    revealIntervalMs: row.revealIntervalMs,
+    players: [player(0)!, player(1)],
+    invited: row.invitedUser?.profile ? { username: row.invitedUser.profile.username } : null,
     expiresAt: row.expiresAt,
-    winnerSide: (row.winnerSide as Side | null) ?? null,
-    roundsWon,
-    totalVotes,
+    lineupDueAt: row.lineupDueAt,
+    startsAt: row.startsAt,
+    votingEndsAt: row.votingEndsAt,
+    completedAt: row.completedAt,
+    result: done
+      ? {
+          score: [row.scoreA ?? 0, row.scoreB ?? 0],
+          winnerSide: (row.winnerSide as Side | null) ?? null,
+          totalVoters: row.totalVoters ?? 0,
+          totalVotes: totals,
+          crowdFavorite,
+        }
+      : null,
     rounds,
+    myLineup: row.status === "CANCELLED" ? [] : myLineup,
     rematchId: row.rematches[0]?.id ?? null,
     rematchOfId: row.rematchOfId,
     viewer: {
       signedIn: actor !== null,
+      userId: actor?.id ?? null,
       side: mySide,
-      canAccept:
-        (row.status === "OPEN" || row.status === "PENDING_ACCEPT") && can(actor, { type: "battle.accept", target }).allow,
+      canAccept: row.status === "CHALLENGE_SENT" && can(actor, { type: "battle.accept", target }).allow,
       canCancel:
-        (row.status === "OPEN" || row.status === "PENDING_ACCEPT") && can(actor, { type: "battle.cancel", target }).allow,
+        (row.status === "CHALLENGE_SENT" && (mySide === 0 || (actor !== null && actor.id === row.invitedUserId))) ||
+        (row.status === "ACCEPTED" && mySide !== null),
+      needsLineup: row.status === "ACCEPTED" && mySide === 1 && !row.participants.find((p) => p.side === 1)?.lineupLockedAt,
+      voteBlock,
+      canComment: can(actor, { type: "comment.create" }).allow,
+      followsOpponent,
     },
   };
 }
 
-type DbRef = {
-  provider: "APPLE_MUSIC" | "YOUTUBE";
-  externalId: string;
-  externalUrl: string | null;
-  previewUrl: string | null;
-  embeddable: boolean | null;
+type Sub = {
+  id: string;
+  side: number;
+  track: (TrackRow & { refs: DbRef[] }) | null;
+  playlist: { title: string; tracks: { track: TrackRow & { refs: DbRef[] } }[] } | null;
+  upload: { id: string; storageKey: string; status: string; originalName: string | null } | null;
 };
+type TrackRow = { title: string; artistName: string; releaseYear: number | null; artworkUrl: string | null };
+type DbRef = { provider: "APPLE_MUSIC" | "YOUTUBE" | "SPOTIFY"; externalId: string; externalUrl: string | null; previewUrl: string | null; embeddable: boolean | null };
+
+async function liveCounts(roundId: string): Promise<[number, number]> {
+  const counts = await prisma.vote.groupBy({ by: ["selection"], where: { roundId }, _count: { _all: true } });
+  const out: [number, number] = [0, 0];
+  for (const c of counts) out[c.selection as Side] = c._count._all;
+  return out;
+}
 
 function toRefs(refs: DbRef[]): TrackProviderRef[] {
-  return refs.map((r) => ({
-    provider: r.provider,
-    externalId: r.externalId,
-    ...(r.externalUrl ? { externalUrl: r.externalUrl } : {}),
-    ...(r.previewUrl ? { previewUrl: r.previewUrl } : {}),
-    ...(r.embeddable !== null ? { embeddable: r.embeddable } : {}),
-  }));
+  return refs
+    .filter((r): r is DbRef & { provider: "APPLE_MUSIC" | "YOUTUBE" } => r.provider !== "SPOTIFY")
+    .map((r) => ({
+      provider: r.provider,
+      externalId: r.externalId,
+      ...(r.externalUrl ? { externalUrl: r.externalUrl } : {}),
+      ...(r.previewUrl ? { previewUrl: r.previewUrl } : {}),
+      ...(r.embeddable !== null ? { embeddable: r.embeddable } : {}),
+    }));
 }
 
-function bestSource(refs: DbRef[], viewer: ReturnType<typeof guestViewer>): PlaybackSource | null {
-  return resolvePlayback(toRefs(refs), viewer, registry).find((s) => s.tier !== "LINK_OUT") ?? null;
+type Viewer = ReturnType<typeof guestViewer>;
+
+/** Votes need a measurable listen, so battle rounds prefer previews both sides share. */
+function parityTier(subs: [Sub | null, Sub | null], viewer: Viewer) {
+  const [a, b] = subs;
+  if (!a?.track || !b?.track) return null;
+  const sa = resolvePlayback(toRefs(a.track.refs), viewer, registry).filter((s) => s.tier === "PREVIEW");
+  const sb = resolvePlayback(toRefs(b.track.refs), viewer, registry).filter((s) => s.tier === "PREVIEW");
+  return bestCommonTier(sa, sb);
 }
 
-function previewSources(refs: DbRef[], viewer: ReturnType<typeof guestViewer>): PlaybackSource[] {
-  return resolvePlayback(toRefs(refs), viewer, registry).filter((s) => s.tier === "PREVIEW");
-}
-
-function pickView(
-  t: { title: string; artistName: string; releaseYear: number | null; artworkUrl: string | null; refs: DbRef[] },
-  source: PlaybackSource | null,
-): PickView {
+function trackView(t: TrackRow & { refs: DbRef[] }, viewer: Viewer, tier: ReturnType<typeof bestCommonTier> | "best"): TrackView {
+  const sources = resolvePlayback(toRefs(t.refs), viewer, registry);
+  const source =
+    tier === "best" ? (sources.find((s) => s.tier === "PREVIEW") ?? null) : tier ? sourceForTier(sources, tier) : null;
   const apple = t.refs.find((r) => r.provider === "APPLE_MUSIC");
   return {
     title: t.title,
@@ -278,4 +364,14 @@ function pickView(
     externalUrl: apple?.externalUrl ?? null,
     source,
   };
+}
+
+async function entryView(s: Sub, parity: ReturnType<typeof bestCommonTier>, viewer: Viewer): Promise<EntryView> {
+  if (s.track) return { kind: "track", submissionId: s.id, ...trackView(s.track, viewer, parity ?? "best") };
+  if (s.playlist) {
+    return { kind: "playlist", submissionId: s.id, title: s.playlist.title, tracks: s.playlist.tracks.map((x) => trackView(x.track, viewer, "best")) };
+  }
+  const u = s.upload!;
+  const url = storage && u.status === "READY" ? await storage.playbackUrl(u.storageKey, u.id) : null;
+  return { kind: "mix", submissionId: s.id, title: u.originalName?.replace(/\.[a-z0-9]+$/i, "") || "DJ mix", url };
 }

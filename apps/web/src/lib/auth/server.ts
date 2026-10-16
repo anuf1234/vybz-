@@ -53,19 +53,28 @@ export const getActor = cache(async (): Promise<Actor | null> => {
   const session = await getSession();
   if (!session) return null;
   const u = session.user;
+  const profile = await prisma.profile.findUnique({ where: { userId: u.id }, select: { username: true } });
   return {
     id: u.id,
     role: u.role as Role,
     status: u.status as UserStatus,
     emailVerified: u.emailVerified,
-    handle: u.handle ?? null,
+    handle: profile?.username ?? null,
   };
 });
 
-/** For pages that need a signed-in, onboarded user. */
-export async function requireActor(opts: { allowMissingHandle?: boolean } = {}): Promise<Actor> {
+/** Only same-site relative paths, so `?next=` can't redirect off-site. */
+export function safeNext(next: string | null | undefined, fallback = "/"): string {
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return fallback;
+  return next;
+}
+
+/** For pages that need a signed-in, onboarded user. `next` is where to return after signing in. */
+export async function requireActor(opts: { allowMissingHandle?: boolean; next?: string } = {}): Promise<Actor> {
   const actor = await getActor();
-  if (!actor) redirect("/sign-in");
-  if (!actor.handle && !opts.allowMissingHandle) redirect("/onboarding");
+  if (!actor) redirect(opts.next ? `/login?next=${encodeURIComponent(safeNext(opts.next))}` : "/login");
+  if (!actor.handle && !opts.allowMissingHandle) {
+    redirect(opts.next ? `/onboarding?next=${encodeURIComponent(safeNext(opts.next))}` : "/onboarding");
+  }
   return actor;
 }

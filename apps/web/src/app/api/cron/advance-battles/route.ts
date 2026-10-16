@@ -14,6 +14,6 @@ export async function GET(req: Request) {
   if (!secret || given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const advanced = await battles.advanceDue(200);
+  const advanced = await battles.advanceDue({ limit: 200 });
   return NextResponse.json({ advanced });
 }

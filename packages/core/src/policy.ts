@@ -28,6 +28,10 @@ export type Action =
   | { type: "battle.accept"; target: { creatorId: string; invitedUserId: string | null } }
   | { type: "battle.cancel"; target: { creatorId: string; invitedUserId: string | null } }
   | { type: "vote.cast" }
+  | { type: "comment.create" }
+  | { type: "reaction.add" }
+  | { type: "comment.moderate" }
+  | { type: "user.follow"; target: { id: string } }
   | { type: "media.upload" };
 
 export type Decision = { allow: true } | { allow: false; reason: DenyReason };
@@ -83,7 +87,17 @@ export function can(actor: MaybeActor, action: Action): Decision {
 
     case "battle.create":
     case "vote.cast":
+    case "comment.create":
+    case "reaction.add":
       return participationGate(actor);
+
+    case "comment.moderate":
+      return hasRole(actor, "MODERATOR") ? allow : deny("INSUFFICIENT_ROLE");
+
+    case "user.follow": {
+      if (actor.id === action.target.id) return deny("NOT_OWNER");
+      return participationGate(actor);
+    }
 
     case "battle.accept": {
       if (actor.id === action.target.creatorId) return deny("NOT_OWNER");

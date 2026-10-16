@@ -31,9 +31,9 @@ export function ResetForm({ token }: { token: string }) {
   if (state === "done") {
     return (
       <FormMessage tone="success">
-        Password updated, and you've been signed out everywhere else.{" "}
-        <Link href="/sign-in" className="underline">
-          Sign in
+        Password updated, and you&apos;ve been signed out everywhere else.{" "}
+        <Link href="/login" className="underline">
+          Log in
         </Link>
       </FormMessage>
     );

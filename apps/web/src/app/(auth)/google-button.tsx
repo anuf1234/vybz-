@@ -4,7 +4,7 @@ import { useState } from "react";
 import { authClient } from "@/lib/auth/client";
 import { Button } from "@/components/ui/form";
 
-export function GoogleButton({ label }: { label: string }) {
+export function GoogleButton({ label, callbackURL = "/onboarding" }: { label: string; callbackURL?: string }) {
   const [pending, setPending] = useState(false);
   return (
     <Button
@@ -13,8 +13,8 @@ export function GoogleButton({ label }: { label: string }) {
       disabled={pending}
       onClick={async () => {
         setPending(true);
-        // New Google users land on onboarding to pick a handle; returning users skip it there.
-        await authClient.signIn.social({ provider: "google", callbackURL: "/onboarding" });
+        // New Google users land on onboarding to pick a username; returning users pass straight through.
+        await authClient.signIn.social({ provider: "google", callbackURL });
       }}
     >
       <svg aria-hidden viewBox="0 0 24 24" className="size-4">
