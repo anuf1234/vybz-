@@ -438,17 +438,17 @@ All auth access goes through `packages/core/auth` so the library can be swapped 
 
 ### 4.2 Login methods
 
-- **Email + password:** passwords hashed with scrypt/argon2id (library default, never custom). Email verification is required before voting or battling. Reset tokens are single-use with a 30-minute expiry. Breached-password check (k-anonymity HIBP API) at sign-up and reset.
+- **Email + password:** passwords hashed with scrypt/argon2id (library default, never custom). Email verification is required before an account can sign in at all. Reset tokens are single-use with a 30-minute expiry. Breached-password check (k-anonymity HIBP API) at sign-up and reset.
 - **Google OAuth:** OIDC with PKCE and `state`. Accounts are linked automatically only when Google asserts a verified email matching an existing verified account.
 - **Apple (later):** Same `Account` table, new `providerId`. Handles Apple's private relay emails and the "name only on first login" behavior.
 - **Music provider connections are not logins.** Connecting Spotify creates a `ProviderConnection`, not an `Account`. This keeps login working if a provider changes its API.
 
 ### 4.3 Sessions
 
-- Database sessions. The cookie holds an opaque random token, stored hashed in the DB.
+- Database sessions. The cookie holds a random token signed with the server secret; the token is stored in the `sessions` table (Better Auth's default; it is not hashed at rest, so DB read access must stay tightly restricted).
 - Cookie: `__Host-vybz_session`, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, no `Domain` (bound to `urexp.com`).
 - 30-day sliding expiry, rotated on privilege change and on login. "Sign out everywhere" deletes all sessions.
-- Short cookie cache (signed, about 5 minutes) avoids a DB hit on every request. Revocation therefore takes effect within that window, except for bans, which purge immediately.
+- No cookie cache: every request checks the session row, so sign-out, password resets and bans take effect immediately. Revisit with Redis if session lookups show up in latency.
 - Moderators and admins: **2FA required** (TOTP or passkey), 12-hour sessions, re-auth for destructive actions.
 
 ### 4.4 Roles and authorization
