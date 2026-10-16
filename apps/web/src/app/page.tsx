@@ -22,9 +22,12 @@ export default function Home() {
       </p>
       <div className="mt-8 flex gap-3">
         <Link
-          href="/search"
+          href="/battles"
           className="rounded-full bg-violet px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-violet/85"
         >
+          Start a battle
+        </Link>
+        <Link href="/search" className="rounded-full border border-line px-6 py-3 text-sm font-semibold hover:border-violet">
           Find a track
         </Link>
       </div>

@@ -28,6 +28,12 @@ export default async function ProfilePage({ params }: Params) {
   if (!user || !can(actor, { type: "profile.view", target: user }).allow) notFound();
 
   const isOwner = actor?.id === user.id;
+  const finished = await prisma.battleParticipant.findMany({
+    where: { userId: user.id, battle: { status: "COMPLETE" } },
+    select: { side: true, battle: { select: { winnerSide: true } } },
+  });
+  const wins = finished.filter((p) => p.battle.winnerSide === p.side).length;
+  const losses = finished.filter((p) => p.battle.winnerSide !== null && p.battle.winnerSide !== p.side).length;
   const joined = user.createdAt.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   return (
@@ -55,6 +61,14 @@ export default async function ProfilePage({ params }: Params) {
         </div>
       </div>
 
+      {!isOwner && actor && (
+        <Link
+          href={`/battles/new?opponent=${user.handle}`}
+          className="mt-6 mr-2 inline-block rounded-full bg-violet px-4 py-2 text-xs font-semibold text-white hover:bg-violet/85"
+        >
+          Challenge @{user.handle}
+        </Link>
+      )}
       {isOwner && (
         <Link
           href="/settings/profile"
@@ -66,9 +80,9 @@ export default async function ProfilePage({ params }: Params) {
 
       <section aria-label="Battle record" className="mt-10 grid grid-cols-3 gap-2">
         {[
-          ["Wins", "0"],
-          ["Losses", "0"],
-          ["Battles", "0"],
+          ["Wins", String(wins)],
+          ["Losses", String(losses)],
+          ["Battles", String(finished.length)],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-line bg-surface-1 p-4">
             <p className="font-display text-3xl font-bold tabular-nums">{value}</p>

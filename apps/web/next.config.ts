@@ -10,7 +10,7 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://*.mzstatic.com https://i.ytimg.com",
-  "media-src https://*.itunes.apple.com https://*.apple.com",
+  "media-src 'self' https://*.itunes.apple.com https://*.apple.com",
   "frame-src https://www.youtube-nocookie.com",
   "connect-src 'self'",
   "font-src 'self'",

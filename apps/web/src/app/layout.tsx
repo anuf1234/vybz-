@@ -27,6 +27,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               VYBZ
             </Link>
             <div className="flex items-center gap-4">
+              <Link href="/battles" className="text-sm text-muted transition-colors hover:text-text">
+                Battles
+              </Link>
               <Link href="/search" className="text-sm text-muted transition-colors hover:text-text">
                 Search
               </Link>

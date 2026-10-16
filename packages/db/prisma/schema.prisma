@@ -1,6 +1,7 @@
 // VYBZ database schema.
-// Phase 0: identity (Better Auth tables + profile fields) and rate limiting.
-// Battles, catalog and media arrive in later phases (see docs/architecture.md §3).
+// Identity (Better Auth tables + profile fields), rate limiting, catalog and
+// song battles. Media, social and competition tables arrive in later phases
+// (see docs/architecture.md §3).
 
 generator client {
   provider     = "prisma-client"
@@ -45,6 +46,12 @@ model User {
 
   sessions Session[]
   accounts Account[]
+
+  battlesCreated     Battle[]            @relation("BattleCreator")
+  battleInvites      Battle[]            @relation("BattleInvite")
+  battleParticipants BattleParticipant[]
+  votes              Vote[]
+  listens            ListenProgress[]
 
   @@map("users")
 }
@@ -108,4 +115,207 @@ model RateLimit {
   lastRequest BigInt
 
   @@map("rate_limits")
+}
+
+// ─── Catalog ──────────────────────────────────────────────────────────────
+// Metadata only. Playback is resolved per viewer at request time and audio is
+// never stored or proxied (architecture §5).
+
+enum ProviderKind {
+  APPLE_MUSIC
+  YOUTUBE
+}
+
+/// Canonical track. Created from Apple Music metadata when someone picks it.
+model Track {
+  id          String   @id @default(cuid())
+  title       String
+  artistName  String
+  albumName   String?
+  isrc        String?  @unique
+  releaseYear Int?
+  durationMs  Int?
+  artworkUrl  String?
+  explicit    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  refs        TrackProviderRef[]
+  submissions Submission[]
+
+  @@map("tracks")
+}
+
+model TrackProviderRef {
+  id          String       @id @default(cuid())
+  trackId     String
+  track       Track        @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  provider    ProviderKind
+  externalId  String
+  externalUrl String?
+  previewUrl  String?
+  embeddable  Boolean?
+  /// For matched refs (YouTube), how confident the matcher was (0–1).
+  matchScore  Float?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([provider, externalId])
+  @@unique([trackId, provider])
+  @@map("track_provider_refs")
+}
+
+// ─── Battles ──────────────────────────────────────────────────────────────
+
+enum BattleType {
+  SONG
+}
+
+enum BattleStatus {
+  OPEN
+  PENDING_ACCEPT
+  IN_PROGRESS
+  COMPLETE
+  CANCELLED
+  EXPIRED
+}
+
+enum RoundStatus {
+  SUBMISSIONS_OPEN
+  VOTING_OPEN
+  CLOSED
+}
+
+enum RoundOutcome {
+  VOTES
+  FORFEIT
+  VOID
+}
+
+model Battle {
+  id            String       @id @default(cuid())
+  type          BattleType   @default(SONG)
+  status        BattleStatus
+  theme         String
+  /// Validated by @vybz/core BattleRulesSchema.
+  rules         Json
+  roundCount    Int
+  creatorId     String
+  creator       User         @relation("BattleCreator", fields: [creatorId], references: [id])
+  /// Set for direct challenges; null for open ones anyone can accept.
+  invitedUserId String?
+  invitedUser   User?        @relation("BattleInvite", fields: [invitedUserId], references: [id])
+  rematchOfId   String?
+  rematchOf     Battle?      @relation("Rematch", fields: [rematchOfId], references: [id])
+  rematches     Battle[]     @relation("Rematch")
+  expiresAt     DateTime
+  startedAt     DateTime?
+  endedAt       DateTime?
+  /// 0 or 1; null while running, or for a draw.
+  winnerSide    Int?
+  /// Earliest moment a transition (deadline) is due. Lets a sweep find battles to advance.
+  nextDeadline  DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  participants BattleParticipant[]
+  rounds       BattleRound[]
+
+  @@index([status, nextDeadline])
+  @@index([creatorId])
+  @@index([invitedUserId])
+  @@map("battles")
+}
+
+model BattleParticipant {
+  id       String   @id @default(cuid())
+  battleId String
+  battle   Battle   @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  side     Int
+  joinedAt DateTime @default(now())
+
+  submissions Submission[]
+
+  @@unique([battleId, userId])
+  @@unique([battleId, side])
+  @@index([userId])
+  @@map("battle_participants")
+}
+
+model BattleRound {
+  id                 String        @id @default(cuid())
+  battleId           String
+  battle             Battle        @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  index              Int
+  status             RoundStatus
+  suddenDeath        Boolean       @default(false)
+  openedAt           DateTime
+  submissionsCloseAt DateTime
+  votingClosesAt     DateTime?
+  winnerSide         Int?
+  outcome            RoundOutcome?
+  /// Final counts, written when the round closes. Live counts come from votes.
+  votes0             Int           @default(0)
+  votes1             Int           @default(0)
+
+  submissions Submission[]
+  votes       Vote[]
+  listens     ListenProgress[]
+
+  @@unique([battleId, index])
+  @@map("battle_rounds")
+}
+
+model Submission {
+  id            String            @id @default(cuid())
+  roundId       String
+  round         BattleRound       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  /// Denormalized so the same track can't be used twice in one battle.
+  battleId      String
+  participantId String
+  participant   BattleParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  side          Int
+  trackId       String
+  track         Track             @relation(fields: [trackId], references: [id])
+  createdAt     DateTime          @default(now())
+
+  listens ListenProgress[]
+
+  @@unique([roundId, side])
+  @@unique([battleId, trackId])
+  @@map("submissions")
+}
+
+model Vote {
+  id        String      @id @default(cuid())
+  roundId   String
+  round     BattleRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  voterId   String
+  voter     User        @relation(fields: [voterId], references: [id])
+  side      Int
+  createdAt DateTime    @default(now())
+
+  /// One vote per person per round, enforced by the database.
+  @@unique([roundId, voterId])
+  @@index([roundId, side])
+  @@map("votes")
+}
+
+/// Evidence a listener heard a submission before voting (architecture §9.2).
+model ListenProgress {
+  id           String      @id @default(cuid())
+  roundId      String
+  round        BattleRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission   Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt    DateTime    @default(now())
+  playedMs     Int         @default(0)
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([submissionId, userId])
+  @@map("listen_progress")
 }
