@@ -1,6 +1,7 @@
-// VYBZ database schema.
-// Phase 0: identity (Better Auth tables + profile fields) and rate limiting.
-// Battles, catalog and media arrive in later phases (see docs/architecture.md §3).
+// VYBZ database schema (Phase 1).
+// Identity (Better Auth tables), profiles, music catalog and connections,
+// playlists, battles, social (comments, reactions, follows, notifications),
+// progression (XP, badges) and uploads. See docs/architecture.md §3.
 
 generator client {
   provider     = "prisma-client"
@@ -25,26 +26,41 @@ enum UserStatus {
   BANNED
 }
 
-/// Better Auth core user, extended with VYBZ profile fields.
+/// Better Auth core user plus account-level controls. Public identity lives in Profile.
 model User {
-  id            String     @id
+  id            String   @id
   name          String // display name
-  email         String     @unique
-  emailVerified Boolean    @default(false)
+  email         String   @unique
+  emailVerified Boolean  @default(false)
   image         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  /// Public @handle. Null until the user finishes onboarding (e.g. after Google sign-up).
-  handle        String?    @unique
-  bio           String?
-  role          Role       @default(USER)
-  status        UserStatus @default(ACTIVE)
+  role       Role       @default(USER)
+  status     UserStatus @default(ACTIVE)
   /// 0–100. Drives vote weighting and eligibility later (architecture §9.2).
-  trustScore    Int        @default(50)
+  trustScore Int        @default(50)
 
   sessions Session[]
   accounts Account[]
+
+  profile            Profile?
+  musicConnections   MusicConnection[]
+  playlists          Playlist[]
+  battlesCreated     Battle[]            @relation("BattleCreator")
+  battleInvites      Battle[]            @relation("BattleInvite")
+  battleParticipants BattleParticipant[]
+  votes              Vote[]
+  listens            ListenProgress[]
+  comments           Comment[]
+  reactions          Reaction[]
+  following          Follow[]            @relation("Follower")
+  followers          Follow[]            @relation("Followee")
+  notifications      Notification[]      @relation("NotificationRecipient")
+  notificationsSent  Notification[]      @relation("NotificationActor")
+  xpEvents           XPEvent[]
+  badges             UserBadge[]
+  uploads            Upload[]
 
   @@map("users")
 }
@@ -108,4 +124,547 @@ model RateLimit {
   lastRequest BigInt
 
   @@map("rate_limits")
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────
+
+/// Public identity. Created at onboarding when the user claims a username.
+model Profile {
+  userId         String   @id
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Permanent @username: lowercase a–z, 0–9, underscore, 3–20 chars (DB check).
+  username       String   @unique
+  displayName    String
+  bio            String?
+  avatarUploadId String?  @unique
+  avatar         Upload?  @relation("ProfileAvatar", fields: [avatarUploadId], references: [id], onDelete: SetNull)
+  favoriteGenres String[] @default([])
+  /// Denormalized from XPEvent for fast leaderboards; XPEvent is the ledger.
+  xp             Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([xp])
+  @@map("profiles")
+}
+
+// ─── Music ────────────────────────────────────────────────────────────────
+// Metadata only. Playback is resolved per viewer at request time; provider
+// audio is never stored or proxied (architecture §5).
+
+enum ProviderKind {
+  APPLE_MUSIC
+  YOUTUBE
+  SPOTIFY
+}
+
+enum MusicConnectionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+/// A user's link to a streaming service, for full-track playback where they
+/// subscribe. Tokens are encrypted at rest (AES-256-GCM, MUSIC_TOKEN_KEY) and
+/// never sent to the browser.
+model MusicConnection {
+  id                String                @id @default(cuid())
+  userId            String
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          ProviderKind
+  status            MusicConnectionStatus @default(ACTIVE)
+  externalUserId    String?
+  storefront        String?
+  accessTokenEnc    String?
+  refreshTokenEnc   String?
+  tokenExpiresAt    DateTime?
+  scopes            String[]              @default([])
+  hasPlaybackRights Boolean               @default(false)
+  lastVerifiedAt    DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([userId, provider])
+  @@map("music_connections")
+}
+
+/// One canonical recording, deduplicated by ISRC where known.
+model MusicTrack {
+  id          String   @id @default(cuid())
+  title       String
+  artistName  String
+  albumName   String?
+  isrc        String?  @unique
+  releaseYear Int?
+  durationMs  Int?
+  artworkUrl  String?
+  explicit    Boolean  @default(false)
+  genres      String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  refs        MusicTrackRef[]
+  submissions BattleSubmission[]
+  playlists   PlaylistTrack[]
+
+  @@map("music_tracks")
+}
+
+/// Where a track lives at a provider. A preview URL is a provider-hosted link, not a copy.
+model MusicTrackRef {
+  id          String       @id @default(cuid())
+  trackId     String
+  track       MusicTrack   @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  provider    ProviderKind
+  externalId  String
+  externalUrl String?
+  previewUrl  String?
+  embeddable  Boolean?
+  /// For matched refs (YouTube), how confident the matcher was (0–1).
+  matchScore  Float?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([provider, externalId])
+  @@unique([trackId, provider])
+  @@map("music_track_refs")
+}
+
+enum PlaylistKind {
+  /// A user's own collection.
+  PERSONAL
+  /// A lineup entered into a PLAYLIST battle. Frozen once the lineup is locked.
+  BATTLE_ENTRY
+}
+
+model Playlist {
+  id          String       @id @default(cuid())
+  ownerId     String
+  owner       User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  kind        PlaylistKind @default(PERSONAL)
+  title       String
+  description String?
+  isPublic    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  tracks      PlaylistTrack[]
+  submissions BattleSubmission[]
+
+  @@index([ownerId])
+  @@map("playlists")
+}
+
+model PlaylistTrack {
+  id         String     @id @default(cuid())
+  playlistId String
+  playlist   Playlist   @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  trackId    String
+  track      MusicTrack @relation(fields: [trackId], references: [id])
+  position   Int
+  addedAt    DateTime   @default(now())
+
+  @@unique([playlistId, position])
+  @@unique([playlistId, trackId])
+  @@map("playlist_tracks")
+}
+
+// ─── Battles ──────────────────────────────────────────────────────────────
+// State machine in @vybz/core (battle/engine.ts). Every write locks the battle
+// row and applies due transitions first, so deadlines can't be raced.
+
+enum BattleType {
+  SONG_FOR_SONG
+  PLAYLIST
+  DJ_MIX
+  /// Designed, not yet available (docs/architecture.md §6.6).
+  LIVE_DJ
+}
+
+enum BattleStatus {
+  DRAFT
+  CHALLENGE_SENT
+  ACCEPTED
+  SCHEDULED
+  ACTIVE
+  VOTING
+  COMPLETED
+  CANCELLED
+}
+
+enum BattleVisibility {
+  PUBLIC
+  /// Unlisted: only people with the link can see and vote.
+  PRIVATE
+}
+
+enum ChallengeMode {
+  /// A named opponent.
+  DIRECT
+  /// Anyone can accept.
+  OPEN
+  /// Posted to matchmaking; also listed as open.
+  MATCHMAKING
+}
+
+enum CancelReason {
+  WITHDRAWN
+  DECLINED
+  EXPIRED
+  LINEUP_MISSED
+  MODERATED
+}
+
+model Battle {
+  id               String           @id @default(cuid())
+  type             BattleType
+  status           BattleStatus
+  visibility       BattleVisibility @default(PUBLIC)
+  mode             ChallengeMode
+  title            String
+  theme            String
+  genre            String?
+  /// Open challenge brag line, e.g. "Nobody beats my 90s R&B."
+  tagline          String?
+  roundCount       Int
+  /// Tracks per side in a PLAYLIST battle.
+  playlistLength   Int?
+  eraFrom          Int?
+  eraTo            Int?
+  votingDurationMs Int
+  /// 0 reveals every round at once; otherwise one round per interval (a premiere).
+  revealIntervalMs Int              @default(0)
+  /// Hide each round's totals until the viewer has voted on it.
+  hideTotals       Boolean          @default(true)
+  creatorId        String
+  creator          User             @relation("BattleCreator", fields: [creatorId], references: [id])
+  invitedUserId    String?
+  invitedUser      User?            @relation("BattleInvite", fields: [invitedUserId], references: [id])
+  rematchOfId      String?
+  rematchOf        Battle?          @relation("Rematch", fields: [rematchOfId], references: [id])
+  rematches        Battle[]         @relation("Rematch")
+
+  sentAt       DateTime?
+  expiresAt    DateTime?
+  acceptedAt   DateTime?
+  lineupDueAt  DateTime?
+  /// Requested premiere time; null means as soon as both lineups are in.
+  scheduledFor DateTime?
+  startsAt     DateTime?
+  votingEndsAt DateTime?
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason CancelReason?
+  /// Earliest moment a transition is due, for the deadline sweep.
+  nextDeadline DateTime?
+
+  // Results, written once at completion and never changed.
+  scoreA          Int?
+  scoreB          Int?
+  /// 0 = player A, 1 = player B, null = draw (or not finished).
+  winnerSide      Int?
+  totalVoters     Int?
+  crowdFavoriteId String?           @unique
+  crowdFavorite   BattleSubmission? @relation("CrowdFavorite", fields: [crowdFavoriteId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants BattleParticipant[]
+  rounds       BattleRound[]
+  submissions  BattleSubmission[]
+  votes        Vote[]
+  comments     Comment[]
+  events       BattleEvent[]
+  listens      ListenProgress[]
+
+  @@index([status, nextDeadline])
+  @@index([status, visibility, createdAt])
+  @@index([creatorId])
+  @@index([invitedUserId])
+  @@map("battles")
+}
+
+model BattleParticipant {
+  id             String    @id @default(cuid())
+  battleId       String
+  battle         Battle    @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  /// 0 = player A (challenger), 1 = player B.
+  side           Int
+  lineupLockedAt DateTime?
+  joinedAt       DateTime  @default(now())
+
+  submissions BattleSubmission[]
+
+  @@unique([battleId, userId])
+  @@unique([battleId, side])
+  @@index([userId])
+  @@map("battle_participants")
+}
+
+model BattleRound {
+  id         String @id @default(cuid())
+  battleId   String
+  battle     Battle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  /// 0-based.
+  index      Int
+  /// Final counts, frozen at completion. Live counts come from votes.
+  votesA     Int    @default(0)
+  votesB     Int    @default(0)
+  winnerSide Int?
+
+  submissions BattleSubmission[]
+  votes       Vote[]
+  reactions   Reaction[]
+  comments    Comment[]
+
+  @@unique([battleId, index])
+  @@map("battle_rounds")
+}
+
+/// One side's entry in one round: a track (SONG_FOR_SONG), a playlist
+/// (PLAYLIST) or an uploaded mix (DJ_MIX). Exactly one is set (DB check).
+model BattleSubmission {
+  id            String            @id @default(cuid())
+  battleId      String
+  battle        Battle            @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  roundId       String
+  round         BattleRound       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   BattleParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  side          Int
+  trackId       String?
+  track         MusicTrack?       @relation(fields: [trackId], references: [id])
+  playlistId    String?
+  playlist      Playlist?         @relation(fields: [playlistId], references: [id])
+  uploadId      String?
+  upload        Upload?           @relation(fields: [uploadId], references: [id])
+  createdAt     DateTime          @default(now())
+
+  listens         ListenProgress[]
+  crowdFavoriteOf Battle?          @relation("CrowdFavorite")
+
+  @@unique([roundId, side])
+  /// Each side can play a track only once per battle. (Both sides may pick the
+  /// same song; checking across sides would leak the other lineup.)
+  @@unique([battleId, side, trackId])
+  @@map("battle_submissions")
+}
+
+model Vote {
+  id        String      @id @default(cuid())
+  battleId  String
+  battle    Battle      @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  roundId   String
+  round     BattleRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  voterId   String
+  voter     User        @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  /// 0 = player A, 1 = player B.
+  selection Int
+  createdAt DateTime    @default(now())
+
+  /// One vote per person per round.
+  @@unique([roundId, voterId])
+  @@index([battleId, voterId])
+  @@map("votes")
+}
+
+/// Server-credited listening, so votes can require hearing both sides.
+model ListenProgress {
+  id           String           @id @default(cuid())
+  battleId     String
+  battle       Battle           @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  submissionId String
+  submission   BattleSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt    DateTime         @default(now())
+  playedMs     Int              @default(0)
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([submissionId, userId])
+  @@index([battleId, userId])
+  @@map("listen_progress")
+}
+
+/// Append-only audit log of state changes and moderation actions.
+model BattleEvent {
+  id        String   @id @default(cuid())
+  battleId  String
+  battle    Battle   @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  kind      String
+  actorId   String?
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([battleId, createdAt])
+  @@map("battle_events")
+}
+
+// ─── Social ───────────────────────────────────────────────────────────────
+
+enum CommentStatus {
+  VISIBLE
+  HIDDEN
+  DELETED
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  battleId  String
+  battle    Battle        @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  roundId   String?
+  round     BattleRound?  @relation(fields: [roundId], references: [id], onDelete: SetNull)
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  /// Plain text, rendered escaped.
+  body      String
+  status    CommentStatus @default(VISIBLE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([battleId, createdAt])
+  @@map("comments")
+}
+
+enum ReactionKind {
+  FIRE
+  HEART
+  LAUGH
+  MIND_BLOWN
+  CLAP
+}
+
+model Reaction {
+  id        String       @id @default(cuid())
+  roundId   String
+  round     BattleRound  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      ReactionKind
+  createdAt DateTime     @default(now())
+
+  @@unique([roundId, userId, kind])
+  @@map("reactions")
+}
+
+model Follow {
+  followerId String
+  follower   User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followeeId String
+  followee   User     @relation("Followee", fields: [followeeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([followerId, followeeId])
+  @@index([followeeId])
+  @@map("follows")
+}
+
+enum NotificationType {
+  CHALLENGE_RECEIVED
+  CHALLENGE_ACCEPTED
+  CHALLENGE_DECLINED
+  LINEUP_NEEDED
+  BATTLE_LIVE
+  BATTLE_RESULT
+  NEW_FOLLOWER
+  BADGE_EARNED
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  recipientId String
+  recipient   User             @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  type        NotificationType
+  battleId    String?
+  data        Json?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([recipientId, readAt, createdAt])
+  @@map("notifications")
+}
+
+// ─── Progression ──────────────────────────────────────────────────────────
+
+/// XP ledger. The unique key makes every award idempotent.
+model XPEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  amount    Int
+  sourceId  String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, kind, sourceId])
+  @@index([userId, createdAt])
+  @@map("xp_events")
+}
+
+model Badge {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String
+  icon        String
+  createdAt   DateTime @default(now())
+
+  holders UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  /// What earned it, e.g. a battle id.
+  sourceId  String?
+  awardedAt DateTime @default(now())
+
+  @@id([userId, badgeId])
+  @@map("user_badges")
+}
+
+// ─── Uploads ──────────────────────────────────────────────────────────────
+
+enum UploadKind {
+  AVATAR
+  MIX
+}
+
+enum UploadStatus {
+  PENDING
+  READY
+  REJECTED
+}
+
+/// User media in our own bucket (R2 in production, local disk in development).
+/// Only original or licensed content; the uploader attests to rights.
+model Upload {
+  id               String       @id @default(cuid())
+  ownerId          String
+  owner            User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  kind             UploadKind
+  status           UploadStatus @default(PENDING)
+  storageKey       String       @unique
+  contentType      String
+  sizeBytes        Int
+  originalName     String?
+  rightsAttestedAt DateTime?
+  rejectReason     String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  avatarOf    Profile?           @relation("ProfileAvatar")
+  submissions BattleSubmission[]
+
+  @@index([ownerId, kind])
+  @@map("uploads")
 }

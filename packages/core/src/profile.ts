@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GENRES } from "./battle/rules";
 
 /**
  * Handles that would impersonate staff, collide with routes, or confuse
@@ -12,6 +13,12 @@ const RESERVED_HANDLES = new Set([
   "auth",
   "battle",
   "battles",
+  "create",
+  "discover",
+  "my",
+  "notifications",
+  "profile",
+  "results",
   "help",
   "login",
   "logout",
@@ -63,6 +70,7 @@ export const DisplayNameSchema = plainText(40).pipe(z.string().min(1, "Add a dis
 export const ProfileUpdateSchema = z.object({
   name: DisplayNameSchema,
   bio: plainText(160).transform((s) => (s.length === 0 ? null : s)),
+  favoriteGenres: z.array(z.enum(GENRES)).max(5, "Pick up to 5 genres.").default([]),
 });
 
 export type ProfileUpdate = z.infer<typeof ProfileUpdateSchema>;

@@ -15,3 +15,4 @@ export {
   watchUrl,
   type YouTubeAdapterConfig,
 } from "./youtube/adapter";
+export { FIXTURE_TRACKS, FixtureMusicAdapter } from "./fixture/adapter";

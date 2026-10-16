@@ -25,7 +25,13 @@ export type Action =
   | { type: "user.setRole"; target: { id: string } }
   | { type: "user.suspend"; target: { id: string; role: Role } }
   | { type: "battle.create" }
+  | { type: "battle.accept"; target: { creatorId: string; invitedUserId: string | null } }
+  | { type: "battle.cancel"; target: { creatorId: string; invitedUserId: string | null } }
   | { type: "vote.cast" }
+  | { type: "comment.create" }
+  | { type: "reaction.add" }
+  | { type: "comment.moderate" }
+  | { type: "user.follow"; target: { id: string } }
   | { type: "media.upload" };
 
 export type Decision = { allow: true } | { allow: false; reason: DenyReason };
@@ -81,7 +87,31 @@ export function can(actor: MaybeActor, action: Action): Decision {
 
     case "battle.create":
     case "vote.cast":
+    case "comment.create":
+    case "reaction.add":
       return participationGate(actor);
+
+    case "comment.moderate":
+      return hasRole(actor, "MODERATOR") ? allow : deny("INSUFFICIENT_ROLE");
+
+    case "user.follow": {
+      if (actor.id === action.target.id) return deny("NOT_OWNER");
+      return participationGate(actor);
+    }
+
+    case "battle.accept": {
+      if (actor.id === action.target.creatorId) return deny("NOT_OWNER");
+      if (action.target.invitedUserId !== null && action.target.invitedUserId !== actor.id) return deny("NOT_OWNER");
+      return participationGate(actor);
+    }
+
+    case "battle.cancel":
+      // The creator can withdraw; an invited opponent can decline; staff can clean up.
+      return actor.id === action.target.creatorId ||
+        actor.id === action.target.invitedUserId ||
+        hasRole(actor, "MODERATOR")
+        ? allow
+        : deny("NOT_OWNER");
 
     case "media.upload": {
       const gate = participationGate(actor);

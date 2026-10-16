@@ -75,11 +75,10 @@ export function createAuth(deps: AuthDeps) {
     },
 
     user: {
-      // VYBZ fields live on the user row; none of them can be set by the client
-      // through auth endpoints. Profile edits go through validated server actions.
+      // Account controls live on the user row and can't be set through auth
+      // endpoints. Public identity (username, bio) is the Profile table, written
+      // only by validated server actions.
       additionalFields: {
-        handle: { type: "string", required: false, input: false },
-        bio: { type: "string", required: false, input: false },
         role: { type: "string", required: false, input: false, defaultValue: "USER" },
         status: { type: "string", required: false, input: false, defaultValue: "ACTIVE" },
         trustScore: { type: "number", required: false, input: false, defaultValue: 50, returned: false },

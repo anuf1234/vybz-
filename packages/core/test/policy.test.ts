@@ -67,4 +67,17 @@ describe("can()", () => {
     expect(can(mod, { type: "user.suspend", target: { id: "u2", role: "ADMIN" } }).allow).toBe(false);
     expect(can(user({ role: "ADMIN" }), { type: "user.suspend", target: { id: "u2", role: "MODERATOR" } }).allow).toBe(true);
   });
+
+  it("lets the right people accept and cancel challenges", () => {
+    const open = { creatorId: "u2", invitedUserId: null };
+    expect(can(user(), { type: "battle.accept", target: open }).allow).toBe(true);
+    expect(can(user({ id: "u2" }), { type: "battle.accept", target: open }).allow).toBe(false);
+    expect(can(user(), { type: "battle.accept", target: { creatorId: "u2", invitedUserId: "u3" } }).allow).toBe(false);
+    expect(can(user({ emailVerified: false }), { type: "battle.accept", target: open }).allow).toBe(false);
+
+    expect(can(user(), { type: "battle.cancel", target: { creatorId: "u1", invitedUserId: null } }).allow).toBe(true);
+    expect(can(user(), { type: "battle.cancel", target: { creatorId: "u2", invitedUserId: "u1" } }).allow).toBe(true);
+    expect(can(user(), { type: "battle.cancel", target: { creatorId: "u2", invitedUserId: null } }).allow).toBe(false);
+    expect(can(user({ role: "MODERATOR" }), { type: "battle.cancel", target: { creatorId: "u2", invitedUserId: null } }).allow).toBe(true);
+  });
 });

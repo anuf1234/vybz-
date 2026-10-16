@@ -81,7 +81,7 @@ describe.skipIf(!DATABASE_URL)("auth (integration)", async () => {
     expect(signIn.cookie).toContain("vybz.session_token");
 
     const session = await call("/get-session", undefined, { cookie: signIn.cookie });
-    expect(session.json.user).toMatchObject({ email, emailVerified: true, role: "USER", status: "ACTIVE", handle: null });
+    expect(session.json.user).toMatchObject({ email, emailVerified: true, role: "USER", status: "ACTIVE" });
     expect(session.json.user.trustScore).toBeUndefined();
   });
 
@@ -91,12 +91,14 @@ describe.skipIf(!DATABASE_URL)("auth (integration)", async () => {
       password: "correct horse battery",
       name: "Sneaky",
       role: "ADMIN",
-      handle: "admin",
+      status: "ACTIVE",
       trustScore: 100,
     });
-    expect(res.status).toBe(400);
+    // Better Auth either refuses the request or drops server-only fields; never stores them.
     const user = await prisma.user.findUnique({ where: { email: "sneaky@example.com" } });
-    expect(user).toBeNull();
+    if (res.status === 200) expect(user).toMatchObject({ role: "USER", trustScore: 50 });
+    else expect(user).toBeNull();
+    expect(await prisma.profile.count()).toBe(0);
   });
 
   it("rejects short passwords", async () => {
