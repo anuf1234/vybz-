@@ -4,43 +4,54 @@ Competitive social music: song, playlist and DJ battles where the audience liste
 
 The full architecture and roadmap live in [docs/architecture.md](docs/architecture.md).
 
-## What's here so far
-
-Phase 1 groundwork, focused on the two launch music providers:
+## What's here
 
 | Path | What it is |
 |---|---|
-| `packages/providers` | Provider abstraction. Apple Music adapter (catalog search, ISRC lookup, previews, MusicKit developer tokens), YouTube adapter (music search, embeddability), Apple→YouTube matcher, and per-viewer playback resolution with battle playback parity. |
-| `apps/web` | Next.js app: home page and a catalog search page that plays Apple Music previews and YouTube embeds. |
-| `packages/config` | Shared TypeScript config. |
+| `packages/core` | Battle engine: state machine, scoring with sudden death, fair-listen vote gate, eligibility, authorization policy, shared API types. Pure TypeScript, no I/O. |
+| `packages/db` | Drizzle schema and SQL migrations for auth, catalog, battles, votes and listen proofs. |
+| `packages/providers` | Apple Music and YouTube adapters, Apple→YouTube matcher, per-viewer playback resolution with battle parity, and a demo catalog for development. |
+| `apps/web` | Next.js app: the website (installable PWA), Better Auth (`/api/auth`), the public API (`/api/v1`) used by the website and the mobile app, and the round scheduler (`/api/cron/advance`). |
+| `apps/mobile` | Expo app for iOS and Android. See [apps/mobile/README.md](apps/mobile/README.md). |
+
+### What works end to end
+
+Sign up (email/password or Google), challenge someone (or post an open challenge), accept, pick tracks per round (sealed until voting opens), audience listens to both picks at the same playback tier, votes unlock only after enough real listening, rounds close on their deadlines (with forfeits, vote-window extensions and a sudden-death round when level), results, rankings, profiles and rematches.
 
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.
 - No audio is downloaded, proxied or re-hosted. Apple previews and artwork load straight from Apple; YouTube plays only in its visible embedded player.
-- Everyone can hear something without connecting an account: a YouTube embed or a 30-second Apple Music preview.
+- Everyone can hear something without connecting an account: a YouTube embed or a 30-second Apple Music preview. A track that a guest can't hear can't be submitted to a battle.
 
 ## Getting started
 
-Requires Node 22 and pnpm 10.
+Requires Node 22, pnpm 10 and PostgreSQL 16.
 
 ```bash
 pnpm install
-cp apps/web/.env.example apps/web/.env.local   # add your keys
+cp apps/web/.env.example apps/web/.env.local   # set DATABASE_URL and BETTER_AUTH_SECRET at least
+DATABASE_URL=postgres://postgres@localhost:5432/vybz pnpm --filter @vybz/db migrate
 pnpm dev                                       # http://localhost:3000
 ```
 
-Keys:
+With `VYBZ_DEMO_CATALOG=true`, search returns eight synthesized demo tracks, so you can play a full battle without any provider keys. For real music:
 
 - **Apple Music:** an Apple Developer Program membership. Create a key with MusicKit enabled under Certificates, IDs & Profiles → Keys, then set `APPLE_MUSIC_TEAM_ID`, `APPLE_MUSIC_KEY_ID` and `APPLE_MUSIC_PRIVATE_KEY` (the .p8 contents).
-- **YouTube:** a Google Cloud project with the YouTube Data API v3 enabled and an API key restricted to that API. The default quota is 10,000 units/day and each search costs 100, so results are cached.
+- **YouTube:** a Google Cloud project with the YouTube Data API v3 enabled and an API key restricted to that API. The default quota is 10,000 units/day and each search costs 100, so results are cached and each Apple track is matched to YouTube once, when it's first submitted.
 
-The app runs with either provider alone. With both, Apple Music supplies metadata and each track can be matched to its YouTube video.
+Then run the mobile app: see [apps/mobile/README.md](apps/mobile/README.md).
+
+### Deploying
+
+- Run `pnpm --filter @vybz/db migrate` against production as a release step (not during `next build`).
+- `apps/web/vercel.json` schedules `/api/cron/advance` every minute (needs `CRON_SECRET`; per-minute crons need Vercel Pro). Battles also advance whenever they're viewed, so a missed tick only delays closing rounds nobody is watching.
+- Set `AUTH_REQUIRE_EMAIL_VERIFICATION=true` and `RESEND_API_KEY` in production. `VYBZ_DEMO_CATALOG` is refused on the live site.
 
 ## Scripts
 
 ```bash
-pnpm test        # unit tests (Vitest)
+pnpm test        # unit tests; DB integration tests run when DATABASE_URL_TEST / DATABASE_URL_TEST_WEB are set
 pnpm typecheck
 pnpm build
 ```

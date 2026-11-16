@@ -1,6 +1,6 @@
 # VYBZ — Production Architecture & Implementation Plan
 
-**Status:** Draft v1.1. Launch providers set to **YouTube and Apple Music** (Baba, 2026-10-15). Spotify is deferred.
+**Status:** Draft v1.2. Launch providers set to **YouTube and Apple Music** (Baba, 2026-10-15). Spotify is deferred. Backend core and the native app were built 2026-11-15; see "Changes during implementation" below.
 **Date:** 2026-10-15
 **Domain:** urexp.com
 
@@ -15,7 +15,7 @@
 | App framework | **Next.js (App Router) + React + TypeScript + Tailwind** | Matches your preference. Server Components and Server Actions cover most backend needs. |
 | Backend shape | **Modular monolith inside Next.js**, plus **durable background jobs (Inngest)** and **one small media worker container** | Battle timers and audio processing need work that outlives a request. A separate Node API is not justified until Live DJ battles. |
 | Repo layout | **pnpm + Turborepo monorepo** (`apps/web`, `apps/worker`, `packages/core`, `packages/db`, `packages/providers`, `packages/ui`) | Keeps battle rules and provider logic as pure, testable TypeScript, independent of Next.js. |
-| Database | **PostgreSQL on Neon**, **Prisma** ORM | Serverless-friendly pooling, a database branch per preview deploy, point-in-time recovery. |
+| Database | **PostgreSQL on Neon**, **Drizzle** ORM (was Prisma; see changes above) | Serverless-friendly pooling, a database branch per preview deploy, point-in-time recovery. |
 | Cache / rate limits / live tallies | **Upstash Redis** | HTTP-based, works from serverless and edge. |
 | Auth | **Better Auth** (Prisma adapter, database sessions) | Email/password, Google now and Apple later as plugins. User table stays in our Postgres. Built-in rate limiting and 2FA. |
 | Realtime | **Ably** behind a `RealtimeBus` interface | Managed WebSockets with presence, history, and server-issued, capability-scoped tokens. The server publishes and clients only subscribe. |
@@ -45,6 +45,19 @@ The provider terms below shape the product more than any technical choice. Befor
 - **DJ mixes** of commercial tracks are the hardest case. Hosting them ourselves needs licenses (in the US, PRO blanket licenses plus sound-recording rights). Mixcloud and SoundCloud embeds rely on their own licenses.
 
 This is why the provider layer (Section 5) treats **metadata** and **playback rights** as separate concerns resolved per viewer, and why the app still works when nobody connects Spotify.
+
+### Changes during implementation (2026-11-15)
+
+| Plan | Built | Why |
+|---|---|---|
+| Prisma ORM | **Drizzle ORM** (`packages/db`), SQL migrations in the repo | Pure TypeScript with no engine binaries to download, so it runs in any CI or sandbox; Better Auth supports it directly. Schema and constraints follow Section 3. |
+| Inngest for round timers | **Lazy advance + scheduler route.** Every read or write of a battle applies due transitions first; `/api/cron/advance` (Vercel Cron, every minute) catches battles nobody is viewing | No extra service for Phase 1. The engine exposes `nextDeadline()`, so moving to Inngest `sleepUntil` later is a small change. |
+| Ably realtime | **Polling** (battle screen every 8s, lists every 15–30s) | Enough for async battles. Live battles (Phase 5) still need Ably or similar. |
+| Native apps in Phase 6 | **Expo app now** (`apps/mobile`), sharing `packages/core` types and the `/api/v1` API | Requested by Baba. MusicKit full playback stays web-only for now (needs a native module). |
+| Upstash rate limits | Better Auth's limiter on auth routes; DB unique constraints on votes and submissions | Remaining limits (votes per minute, battle creation per day) are still to do. |
+| Fair-listen proof with signed nonces | Server records when a listener started each track and caps reported play time at elapsed wall-clock time; both sides must be heard at the same tier | Same cost-raising goal, fewer moving parts. |
+
+Not built yet from Phase 1: Apple Music account connection (MusicKit) for `PROVIDER_FULL`, realtime channels, email "your turn" notifications, share cards (OG images), reporting/moderation queue, web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
 
 ---
 
