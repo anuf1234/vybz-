@@ -8,7 +8,8 @@
  *                   request, never stored, never proxied or re-hosted.
  */
 
-export type ProviderKind = "APPLE_MUSIC" | "YOUTUBE";
+/** VYBZ_DEMO: a built-in catalog of synthesized tracks for development. Never enabled in production. */
+export type ProviderKind = "APPLE_MUSIC" | "YOUTUBE" | "VYBZ_DEMO";
 
 /** Ordered best → worst. See `TIER_RANK`. */
 export type PlaybackTier =
@@ -89,6 +90,13 @@ export interface PlaybackRestrictions {
 }
 
 export type PlaybackSource =
+  | {
+      tier: "HOSTED_FULL";
+      provider: "VYBZ_DEMO";
+      url: string;
+      attribution: Attribution;
+      restrictions: PlaybackRestrictions;
+    }
   | {
       tier: "PROVIDER_FULL";
       provider: "APPLE_MUSIC";

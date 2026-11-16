@@ -11,7 +11,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@better-auth/expo": "^1.7.25",
+    "@vybz/core": "workspace:*",
+    "@vybz/db": "workspace:*",
     "@vybz/providers": "workspace:*",
+    "better-auth": "^1.7.25",
     "next": "16.4.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

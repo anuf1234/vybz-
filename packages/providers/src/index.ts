@@ -15,3 +15,4 @@ export {
   watchUrl,
   type YouTubeAdapterConfig,
 } from "./youtube/adapter";
+export { DemoCatalog, DEMO_TRACKS, type DemoCatalogConfig } from "./demo/adapter";
