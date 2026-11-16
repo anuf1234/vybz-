@@ -208,6 +208,17 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
     await expect(acceptBattle(deps, users.alice!, id)).rejects.toMatchObject({ code: "NOT_OPEN" });
   });
 
+  it("doesn't demand verified emails for voting when the deployment doesn't verify", async () => {
+    const lax = { ...deps, requireVerifiedEmail: false };
+    const { id } = await createBattle(lax, users.alice!, { title: "Lax", rules: { roundCount: 3, fairListen: { minPlayedMs: 0 } } });
+    await acceptBattle(lax, users.bob!, id);
+    await submitPick(lax, users.alice!, id, 0, "VYBZ_DEMO:neon-hallway");
+    await submitPick(lax, users.bob!, id, 0, "VYBZ_DEMO:midnight-static");
+    const v = await getBattleView(lax, users.dave!, id); // dave never verified
+    expect(v.rounds[0]!.viewer.voteBlockedReason).toBe("LISTEN_REQUIRED");
+    expect((await getBattleView(deps, users.dave!, id)).rounds[0]!.viewer.voteBlockedReason).toBe("EMAIL_NOT_VERIFIED");
+  });
+
   it("keeps suspended accounts out", async () => {
     await h.db.update(schema.user).set({ status: "SUSPENDED" }).where(eq(schema.user.id, users.carol!.id));
     const [carol] = await h.db.select().from(schema.user).where(eq(schema.user.id, users.carol!.id));

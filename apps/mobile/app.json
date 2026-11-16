@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "VYBZ",
+    "slug": "vybz",
+    "scheme": "vybz",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0614",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.urexp.vybz",
+      "infoPlist": { "UIBackgroundModes": ["audio"] }
+    },
+    "android": {
+      "package": "com.urexp.vybz",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0614",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
+      ["expo-audio", { "microphonePermission": false }],
+      "expo-image"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

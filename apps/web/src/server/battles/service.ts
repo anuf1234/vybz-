@@ -12,7 +12,6 @@ import {
   type RankingEntry,
   type UserSummary,
   type ViewerAction,
-  type VoterFacts,
   acceptBattle as engineAccept,
   advance,
   cancelBattle as engineCancel,
@@ -31,6 +30,7 @@ import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
 import { z } from "zod";
 import { type CatalogDeps, CatalogError, ensureTrack, guestViewer, refsForTracks } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
+import { voterFacts } from "./eligibility";
 import { buildBattleView, type ViewData } from "./view";
 
 export interface BattleDeps {
@@ -272,9 +272,6 @@ export async function recordListen(deps: BattleDeps, actor: UserRow | null, id: 
   });
 }
 
-export function voterFacts(u: UserRow | null): VoterFacts | null {
-  return u ? { userId: u.id, emailVerified: u.emailVerified, createdAt: u.createdAt, status: u.status } : null;
-}
 
 export async function castVote(deps: BattleDeps, actor: UserRow | null, id: string, roundIndex: number, submissionId: unknown) {
   if (typeof submissionId !== "string") throw new ServiceError(400, "INVALID_REQUEST", "submissionId is required");
@@ -298,7 +295,7 @@ export async function castVote(deps: BattleDeps, actor: UserRow | null, id: stri
       const reason = checkVote({
         battle: agg,
         roundIndex,
-        voter: voterFacts(actor),
+        voter: voterFacts(actor, deps.requireVerifiedEmail),
         submissionId,
         alreadyVoted: voted.length > 0,
         proofs: proofs.map((p) => ({ submissionId: p.submissionId, playedMs: p.playedMs, tier: p.tier as PlaybackTier })),
@@ -373,6 +370,7 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
     proofs: proofs.map((p) => ({ roundId: p.roundId, submissionId: p.submissionId, playedMs: p.playedMs, tier: p.tier as PlaybackTier })),
     votes,
     viewer,
+    deploymentVerifiesEmail: deps.requireVerifiedEmail,
     now: now(deps),
     playback: deps.catalog.playback,
     storefront: deps.catalog.storefront,
@@ -471,7 +469,7 @@ async function toListItems(deps: BattleDeps, viewer: UserRow | null, rows: (type
       currentRoundIndex: cur?.index ?? null,
       currentRoundStatus: cur?.status ?? null,
       deadline: (r.nextDeadlineAt ?? null)?.toISOString() ?? null,
-      participants: ps.map((x) => ({ side: x.side as 0 | 1, user: users.get(x.userId)!, roundsWon: x.roundsWon })),
+      participants: ps.map((x) => ({ id: x.id, side: x.side as 0 | 1, user: users.get(x.userId)!, roundsWon: x.roundsWon })),
       winnerParticipantId: r.winnerParticipantId,
       creator: users.get(r.creatorId)!,
       invited: r.invitedUserId ? (users.get(r.invitedUserId) ?? null) : null,

@@ -46,7 +46,11 @@ export function getAuth(): Auth {
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } }
       : {}),
-    trustedOrigins: process.env.NODE_ENV === "production" ? [] : ["exp://", "http://localhost:8081"],
+    trustedOrigins: [
+      ...(process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+      // Development only: Expo Go and the Expo web dev server.
+      ...(process.env.NODE_ENV === "production" ? [] : ["exp://", "exp://**", "exp://192.168.*.*:*/**", "http://localhost:8081"]),
+    ],
   });
   return g.__vybzAuth;
 }

@@ -24,6 +24,7 @@ import {
   sourceForTier,
 } from "@vybz/providers";
 import { guestViewer, toTrackView } from "../catalog";
+import { voterFacts } from "./eligibility";
 
 /**
  * Builds what one viewer may see of a battle. Visibility rules live here:
@@ -42,6 +43,7 @@ export interface ViewData {
   proofs: { roundId: string; submissionId: string; playedMs: number; tier: PlaybackTier }[];
   votes: { roundId: string; submissionId: string }[];
   viewer: (typeof schema.user.$inferSelect) | null;
+  deploymentVerifiesEmail: boolean;
   now: Date;
   playback: ProviderRegistry;
   storefront: string;
@@ -113,7 +115,7 @@ export function buildBattleView(d: ViewData): BattleView {
       voteBlockedReason = checkVote({
         battle: agg,
         roundIndex: r.index,
-        voter: viewer ? { userId: viewer.id, emailVerified: viewer.emailVerified, createdAt: viewer.createdAt, status: viewer.status } : null,
+        voter: voterFacts(viewer, d.deploymentVerifiesEmail),
         alreadyVoted: Boolean(voted),
         proofs: d.proofs.filter((p) => p.roundId === r.id),
         submissions: subs.map((s) => ({ submissionId: s.id, durationMs: d.tracks.get(s.trackId)?.durationMs ?? null })),

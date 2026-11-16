@@ -21,7 +21,9 @@ export function assertSameOrigin(req: Request): void {
   const origin = req.headers.get("origin");
   if (!origin) return;
   const allowed = new Set([publicOrigin(), new URL(req.url).origin]);
-  if (process.env.NODE_ENV !== "production") allowed.add("http://localhost:8081");
+  for (const o of (process.env.CORS_ORIGINS ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:8081")).split(",")) {
+    if (o.trim()) allowed.add(o.trim());
+  }
   if (!allowed.has(origin)) throw new ServiceError(403, "BAD_ORIGIN");
 }
 

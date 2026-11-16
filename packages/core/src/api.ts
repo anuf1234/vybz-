@@ -135,7 +135,7 @@ export interface BattleListItem {
   currentRoundStatus: RoundStatus | null;
   /** Deadline of whatever is happening now. */
   deadline: string | null;
-  participants: { side: 0 | 1; user: UserSummary; roundsWon: number }[];
+  participants: { id: string; side: 0 | 1; user: UserSummary; roundsWon: number }[];
   winnerParticipantId: string | null;
   creator: UserSummary;
   invited: UserSummary | null;
