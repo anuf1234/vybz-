@@ -38,6 +38,11 @@ export function Scoreboard({ battle }: { battle: BattleView }) {
           return <View key={r.index} style={[styles.pip, { backgroundColor: fill }, r.suddenDeath && styles.suddenDeath, r.index === battle.currentRoundIndex && styles.current]} />;
         })}
       </View>
+      {battle.aiScorecard && battle.rules.judging.mode === "SEPARATE" ? (
+        <Text style={[type.small, { textAlign: "center" }]}>
+          AI's card {battle.aiScorecard[a?.id ?? ""] ?? 0}–{battle.aiScorecard[b?.id ?? ""] ?? 0}
+        </Text>
+      ) : null}
       <Text style={[type.label, { textAlign: "center" }]}>
         {final ? "Final" : battle.currentRoundIndex !== null ? `Round ${battle.currentRoundIndex + 1} / ${battle.rounds.length}${battle.rounds[battle.currentRoundIndex]?.suddenDeath ? " · Sudden death" : ""}` : ""}
       </Text>

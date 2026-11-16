@@ -3,4 +3,4 @@ export * from "./ids";
 export * as schema from "./schema";
 export * from "./schema";
 // Query helpers re-exported so every app uses this package's drizzle instance.
-export { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, not, or, sql } from "drizzle-orm";
+export { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, not, notInArray, or, sql } from "drizzle-orm";

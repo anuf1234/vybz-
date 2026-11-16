@@ -1,6 +1,6 @@
 import "server-only";
 import { schema, eq } from "@vybz/db";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { ServiceError, type UserRow } from "./battles/service";
 import { getAuth, publicOrigin } from "./context";
 import { getDb } from "./db";
@@ -67,3 +67,16 @@ export function parseRoundIndex(raw: string): number {
 }
 
 export const noStore = { headers: { "Cache-Control": "no-store" } };
+
+/**
+ * Runs work after the response is sent (Next's `after`). Outside a request
+ * scope (scripts, tests) it runs right away instead.
+ */
+export function background(fn: () => Promise<unknown>): void {
+  const run = () => fn().catch((err) => console.error("background task failed", err));
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}

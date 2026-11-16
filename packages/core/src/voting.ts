@@ -36,6 +36,7 @@ export type VoteBlockReason =
   | "ACCOUNT_TOO_NEW"
   | "PARTICIPANT"
   | "VOTING_CLOSED"
+  | "AI_JUDGED"
   | "ALREADY_VOTED"
   | "UNKNOWN_SUBMISSION"
   | "LISTEN_REQUIRED"
@@ -48,6 +49,7 @@ export const VOTE_BLOCK_MESSAGES: Record<VoteBlockReason, string> = {
   ACCOUNT_TOO_NEW: "Your account is too new to vote in this battle.",
   PARTICIPANT: "You can't vote in your own battle.",
   VOTING_CLOSED: "Voting isn't open for this round.",
+  AI_JUDGED: "The AI judge decides this battle. Listen along and see its verdict when the round closes.",
   ALREADY_VOTED: "You already voted this round.",
   UNKNOWN_SUBMISSION: "That pick isn't in this round.",
   LISTEN_REQUIRED: "Listen to both tracks to unlock your vote.",
@@ -97,6 +99,7 @@ export function checkVote(input: VoteCheckInput): VoteBlockReason | null {
   const round = currentRound(battle);
   if (!round || round.index !== input.roundIndex || round.status !== "VOTING_OPEN") return "VOTING_CLOSED";
   if (round.votingClosesAt && now >= round.votingClosesAt) return "VOTING_CLOSED";
+  if (battle.rules.judging.mode === "AI") return "AI_JUDGED";
   if (input.alreadyVoted) return "ALREADY_VOTED";
 
   const subs = submissionsFor(battle, round.id);

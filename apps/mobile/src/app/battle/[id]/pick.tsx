@@ -1,20 +1,28 @@
-import type { CatalogHit } from "@vybz/core";
+import { type CatalogHit, themeLabel } from "@vybz/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
-import { Artwork, EmptyState, ErrorBanner, Pill } from "@/components/ui";
+import { Artwork, Button, EmptyState, ErrorBanner, Pill } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { TIER_LABEL } from "@/lib/format";
+import { useResource } from "@/lib/use-resource";
 
-/** Catalog search for a round pick. Each hit shows how a guest would hear it. */
+/**
+ * Catalog search for a round's picks: select the agreed number of tracks, in
+ * play order, then lock them in. Each hit shows how a guest would hear it.
+ */
 export default function Pick() {
   const { id, round } = useLocalSearchParams<{ id: string; round: string }>();
   const router = useRouter();
   const [q, setQ] = useState("");
   const [items, setItems] = useState<CatalogHit[]>([]);
   const [searching, setSearching] = useState(false);
-  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [picked, setPicked] = useState<CatalogHit[]>([]);
+  const battle = useResource(() => api.battle(id), [id]);
+  const need = battle.data?.rules.tracksPerRound ?? 1;
+  const theme = battle.data ? themeLabel(battle.data.rules.constraints) : null;
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
 
@@ -43,16 +51,25 @@ export default function Pick() {
     return () => clearTimeout(t);
   }, [q]);
 
-  async function pick(hit: CatalogHit) {
-    setSubmitting(hit.catalogId);
+  function toggle(hit: CatalogHit) {
+    setError(null);
+    setPicked((cur) => {
+      if (cur.some((p) => p.catalogId === hit.catalogId)) return cur.filter((p) => p.catalogId !== hit.catalogId);
+      if (need === 1) return [hit];
+      return cur.length >= need ? cur : [...cur, hit];
+    });
+  }
+
+  async function lockIn() {
+    setSubmitting(true);
     setError(null);
     try {
-      await api.submit(id, Number(round), hit.catalogId);
+      await api.submit(id, Number(round), picked.map((p) => p.catalogId));
       router.back();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : "Couldn't submit that pick.");
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't submit those picks.");
     } finally {
-      setSubmitting(null);
+      setSubmitting(false);
     }
   }
 
@@ -69,6 +86,7 @@ export default function Pick() {
         autoCorrect={false}
         accessibilityLabel="Search songs"
       />
+      {theme ? <Text style={type.small}>This battle is {theme}. Picks must fit.</Text> : null}
       {error ? <ErrorBanner message={error} /> : null}
       <FlatList
         data={items}
@@ -81,19 +99,21 @@ export default function Pick() {
           ) : q.trim().length >= 2 ? (
             <EmptyState title="No matches" body="Try the artist name or a different spelling." />
           ) : (
-            <EmptyState title="Find your pick" body="Your opponent won't see it until voting opens." />
+            <EmptyState title={need > 1 ? `Find your ${need} picks` : "Find your pick"} body={`Your opponent won't see ${need > 1 ? "them" : "it"} until voting opens.${need > 1 ? " They play in the order you pick them." : ""}`} />
           )
         }
         renderItem={({ item }) => {
           const best = item.sources[0];
           const playable = item.sources.some((s) => s.tier !== "LINK_OUT");
+          const order = picked.findIndex((p) => p.catalogId === item.catalogId);
           return (
             <Pressable
-              onPress={() => void pick(item)}
-              disabled={!!submitting || !playable}
-              style={({ pressed }) => [styles.row, pressed && { opacity: 0.8 }, !playable && { opacity: 0.5 }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Pick ${item.title} by ${item.artistName}`}
+              onPress={() => toggle(item)}
+              disabled={submitting || !playable}
+              style={({ pressed }) => [styles.row, order >= 0 && styles.rowPicked, pressed && { opacity: 0.8 }, !playable && { opacity: 0.5 }]}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: order >= 0, disabled: !playable }}
+              accessibilityLabel={`${item.title} by ${item.artistName}`}
             >
               <Artwork uri={item.artworkUrl} size={52} />
               <View style={{ flex: 1, gap: 2 }}>
@@ -105,10 +125,22 @@ export default function Pick() {
                   {item.releaseYear ? ` · ${item.releaseYear}` : ""}
                 </Text>
               </View>
-              {submitting === item.catalogId ? <ActivityIndicator color={color.violet} /> : best ? <Pill text={TIER_LABEL[best.tier]} /> : null}
+              {order >= 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{need > 1 ? order + 1 : "✓"}</Text>
+                </View>
+              ) : best ? (
+                <Pill text={TIER_LABEL[best.tier]} />
+              ) : null}
             </Pressable>
           );
         }}
+      />
+      <Button
+        title={picked.length === need ? (need === 1 ? "Lock in pick" : `Lock in ${need} picks`) : `Pick ${need - picked.length} more`}
+        disabled={picked.length !== need}
+        loading={submitting}
+        onPress={() => void lockIn()}
       />
     </View>
   );
@@ -116,5 +148,8 @@ export default function Pick() {
 
 const styles = StyleSheet.create({
   search: { minHeight: 50, borderRadius: radius.md, borderWidth: 1, borderColor: color.line, backgroundColor: color.surface2, color: color.text, paddingHorizontal: space.md, fontSize: 17 },
+  rowPicked: { borderColor: color.violet, backgroundColor: color.plum },
+  badge: { width: 28, height: 28, borderRadius: 14, backgroundColor: color.violet, alignItems: "center", justifyContent: "center" },
+  badgeText: { color: "#fff", fontWeight: "800" },
   row: { flexDirection: "row", alignItems: "center", gap: space.md, backgroundColor: color.surface1, borderRadius: radius.md, borderWidth: 1, borderColor: color.line, padding: space.sm },
 });

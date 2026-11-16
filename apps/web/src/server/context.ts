@@ -2,6 +2,7 @@ import "server-only";
 import type { MetadataProvider, ProviderRegistry } from "@vybz/providers";
 import { DemoCatalog } from "@vybz/providers";
 import { apple, defaultStorefront, registry, youtube } from "@/lib/providers";
+import { type AiJudge, AnthropicJudge, DemoJudge } from "./ai-judge";
 import { type Auth, createAuth } from "./auth";
 import type { BattleDeps } from "./battles/service";
 import type { CatalogDeps } from "./catalog";
@@ -29,8 +30,15 @@ export function getCatalogDeps(): CatalogDeps {
   return g.__vybzCatalog;
 }
 
+/** Claude when a key is set; the demo stand-in only alongside the demo catalog; otherwise none. */
+export function getAiJudge(): AiJudge | null {
+  const env = serverEnv();
+  if (env.ANTHROPIC_API_KEY) return new AnthropicJudge({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_JUDGE_MODEL });
+  return env.VYBZ_DEMO_CATALOG ? new DemoJudge() : null;
+}
+
 export function getBattleDeps(): BattleDeps {
-  return { db: getDb(), catalog: getCatalogDeps(), requireVerifiedEmail: serverEnv().AUTH_REQUIRE_EMAIL_VERIFICATION };
+  return { db: getDb(), catalog: getCatalogDeps(), requireVerifiedEmail: serverEnv().AUTH_REQUIRE_EMAIL_VERIFICATION, aiJudge: getAiJudge() };
 }
 
 export function getAuth(): Auth {

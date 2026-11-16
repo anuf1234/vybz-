@@ -1,8 +1,15 @@
 import {
   type BattleAggregate,
   type BattleView,
+  type AiVerdictView,
+  type EntryTrackView,
   type EntryView,
   type RoundView,
+  aiScorecard,
+  awaitingResponseFrom,
+  canRespond,
+  roundWinner,
+  usesCrowd,
   type UserSummary,
   type ViewerAction,
   checkVote,
@@ -18,8 +25,8 @@ import {
   type PlaybackSource,
   type PlaybackTier,
   type ProviderRegistry,
+  TIER_RANK,
   type TrackProviderRef,
-  bestCommonTier,
   resolvePlayback,
   sourceForTier,
 } from "@vybz/providers";
@@ -42,6 +49,7 @@ export interface ViewData {
   refs: Map<string, TrackProviderRef[]>;
   proofs: { roundId: string; submissionId: string; playedMs: number; tier: PlaybackTier }[];
   votes: { roundId: string; submissionId: string }[];
+  verdicts: (typeof schema.aiVerdict.$inferSelect)[];
   viewer: (typeof schema.user.$inferSelect) | null;
   deploymentVerifiesEmail: boolean;
   now: Date;
@@ -70,44 +78,59 @@ export function buildBattleView(d: ViewData): BattleView {
         (agg.rules.revealTallies === "AT_BATTLE_END" && agg.status === "COMPLETE"));
     const tally = agg.tallies[r.id] ?? {};
 
-    // Sources per submission, then the parity tier both share.
+    // Sources per submission, then the best tier every track in the round shares (playback parity).
     const sourcesBySub = new Map<string, PlaybackSource[]>();
     for (const s of subs) sourcesBySub.set(s.id, resolvePlayback(d.refs.get(s.trackId) ?? [], viewerCtx, d.playback));
-    const [a, b] = subs;
-    const parityTier = a && b ? bestCommonTier(sourcesBySub.get(a.id) ?? [], sourcesBySub.get(b.id) ?? []) : null;
+    const sides = new Set(subs.map((s) => s.participantId));
+    const parityTier = sides.size === 2 ? commonTier([...sourcesBySub.values()]) : null;
 
     const entries: EntryView[] = [];
     if (votingStarted) {
       const order = entryOrder(r.id, agg.rules.blindVoting);
-      const bySide = (side: 0 | 1) => {
-        const p = agg.participants.find((x) => x.side === side);
-        return p ? subs.find((s) => s.participantId === p.id) : undefined;
-      };
       for (const side of order) {
-        const s = bySide(side);
-        if (!s) continue;
-        const track = d.tracks.get(s.trackId);
-        if (!track) continue;
-        const sources = sourcesBySub.get(s.id) ?? [];
-        const proof = d.proofs.find((p) => p.roundId === r.id && p.submissionId === s.id);
-        const tier = parityTier ?? proof?.tier ?? sources[0]?.tier ?? null;
+        const p = agg.participants.find((x) => x.side === side);
+        const set = p ? subs.filter((s) => s.participantId === p.id).sort((x, y) => x.position - y.position) : [];
+        if (!p || !set.length) continue;
+        const tracks: EntryTrackView[] = [];
+        for (const s of set) {
+          const track = d.tracks.get(s.trackId);
+          if (!track) continue;
+          const sources = sourcesBySub.get(s.id) ?? [];
+          const proof = d.proofs.find((x) => x.roundId === r.id && x.submissionId === s.id);
+          const tier = parityTier ?? proof?.tier ?? sources[0]?.tier ?? null;
+          tracks.push({
+            submissionId: s.id,
+            track: toTrackView(track),
+            playback: (parityTier ? sourceForTier(sources, parityTier) : null) ?? sources[0] ?? null,
+            listen: {
+              playedMs: proof && (!parityTier || proof.tier === parityTier) ? proof.playedMs : 0,
+              requiredMs: requiredListenMs(agg.rules.fairListen.minPlayedMs, track.durationMs, tier),
+              tier: parityTier,
+            },
+          });
+        }
         entries.push({
-          submissionId: s.id,
-          track: toTrackView(track),
-          participantId: agg.rules.blindVoting && !scored ? null : s.participantId,
-          playback: (parityTier ? sourceForTier(sources, parityTier) : null) ?? sources[0] ?? null,
-          votes: tallyVisible ? { count: tally[s.participantId]?.count ?? 0, weighted: tally[s.participantId]?.weighted ?? 0 } : null,
-          listen: {
-            playedMs: proof && (!parityTier || proof.tier === parityTier) ? proof.playedMs : 0,
-            requiredMs: requiredListenMs(agg.rules.fairListen.minPlayedMs, track.durationMs, tier),
-            tier: parityTier,
-          },
+          submissionId: set[0]!.id,
+          tracks,
+          participantId: agg.rules.blindVoting && !scored ? null : p.id,
+          votes: tallyVisible && usesCrowd(agg.rules.judging.mode) ? { count: tally[p.id]?.count ?? 0, weighted: tally[p.id]?.weighted ?? 0 } : null,
         });
       }
     }
 
-    const mine = me ? subs.find((s) => s.participantId === me.id) : undefined;
-    const mineTrack = mine ? d.tracks.get(mine.trackId) : undefined;
+    const verdictRow = scored ? d.verdicts.find((v) => v.roundId === r.id) : undefined;
+    const ai: AiVerdictView | null = verdictRow
+      ? {
+          submissionId: subs.filter((s) => s.participantId === verdictRow.winnerParticipantId).sort((x, y) => x.position - y.position)[0]?.id ?? "",
+          participantId: verdictRow.winnerParticipantId,
+          confidence: verdictRow.confidence,
+          reason: verdictRow.reason,
+          model: verdictRow.model,
+        }
+      : null;
+
+    const mine = me ? subs.filter((s) => s.participantId === me.id).sort((x, y) => x.position - y.position) : [];
+    const mineTracks = mine.map((s) => d.tracks.get(s.trackId)).filter((t): t is NonNullable<typeof t> => !!t);
     const isCurrentVoting = cur?.id === r.id && r.status === "VOTING_OPEN";
     const voted = d.votes.find((v) => v.roundId === r.id);
     let voteBlockedReason: RoundView["viewer"]["voteBlockedReason"] = null;
@@ -133,9 +156,11 @@ export function buildBattleView(d: ViewData): BattleView {
       winnerParticipantId: r.winnerParticipantId,
       forfeitParticipantIds: r.forfeitParticipantIds,
       entries,
-      totalVotes: tallyVisible ? Object.values(tally).reduce((n, t) => n + t.count, 0) : null,
+      totalVotes: tallyVisible && usesCrowd(agg.rules.judging.mode) ? Object.values(tally).reduce((n, t) => n + t.count, 0) : null,
+      ai,
+      crowdWinnerParticipantId: scored && usesCrowd(agg.rules.judging.mode) && agg.participants.length === 2 ? roundWinner(tally, [agg.participants[0]!.id, agg.participants[1]!.id]) : null,
       viewer: {
-        mySubmission: mine && mineTrack ? { submissionId: mine.id, track: toTrackView(mineTrack) } : null,
+        mySubmission: mine.length && mineTracks.length ? { submissionId: mine[0]!.id, tracks: mineTracks.map(toTrackView) } : null,
         opponentSubmitted: me ? subs.some((s) => s.participantId !== me.id) : false,
         votedSubmissionId: voted?.submissionId ?? null,
         canVote: isCurrentVoting && voteBlockedReason === null,
@@ -145,12 +170,7 @@ export function buildBattleView(d: ViewData): BattleView {
     };
   });
 
-  const acceptOpen = !agg.acceptDeadline || agg.acceptDeadline > d.now;
-  const canAccept =
-    !!viewer &&
-    acceptOpen &&
-    viewer.id !== agg.creatorId &&
-    ((agg.status === "OPEN_CHALLENGE") || (agg.status === "PENDING_ACCEPT" && agg.invitedUserId === viewer.id));
+  const canAccept = !!viewer && canRespond(agg, viewer.id, d.now);
   const canDecline = !!viewer && agg.status === "PENDING_ACCEPT" && agg.invitedUserId === viewer.id;
   const canCancel = !!viewer && viewer.id === agg.creatorId && (agg.status === "OPEN_CHALLENGE" || agg.status === "PENDING_ACCEPT");
 
@@ -159,7 +179,7 @@ export function buildBattleView(d: ViewData): BattleView {
   if (canAccept) action = "accept";
   else if (me && cur?.status === "SUBMISSIONS_OPEN" && !curView?.viewer.mySubmission) action = "submit";
   else if (me && agg.status === "IN_PROGRESS") action = "wait";
-  else if (!me && cur?.status === "VOTING_OPEN" && !curView?.viewer.votedSubmissionId) action = "vote";
+  else if (!me && cur?.status === "VOTING_OPEN" && !curView?.viewer.votedSubmissionId && usesCrowd(agg.rules.judging.mode)) action = "vote";
 
   return {
     id: agg.id,
@@ -175,13 +195,21 @@ export function buildBattleView(d: ViewData): BattleView {
     invited: user(agg.invitedUserId),
     participants: agg.participants.map((p) => ({ id: p.id, side: p.side, user: user(p.userId)!, roundsWon: won[p.id] ?? 0 })),
     winnerParticipantId: agg.winnerParticipantId,
+    aiScorecard: (agg.rules.judging.mode === "SEPARATE" || agg.rules.judging.mode === "COMBINED") && agg.participants.length === 2 ? aiScorecard(agg) : null,
     currentRoundIndex: cur?.index ?? null,
+    terms: {
+      proposedBy: user(agg.proposedByUserId)!,
+      awaiting: user(awaitingResponseFrom(agg)),
+      previousRules: agg.previousRules,
+      counterCount: agg.counterCount,
+    },
     rematchOfId: row.rematchOfId,
     rounds,
     viewer: {
       userId: viewer?.id ?? null,
       participantId: me?.id ?? null,
       canAccept,
+      canCounter: canAccept,
       canDecline,
       canCancel,
       canRematch: !!me && agg.status === "COMPLETE",
@@ -189,3 +217,15 @@ export function buildBattleView(d: ViewData): BattleView {
     },
   };
 }
+
+/** The best tier every one of these source lists offers (excluding LINK_OUT). */
+function commonTier(lists: PlaybackSource[][]): PlaybackTier | null {
+  if (!lists.length) return null;
+  let common = new Set(lists[0]!.map((s) => s.tier).filter((t) => t !== "LINK_OUT"));
+  for (const l of lists.slice(1)) {
+    const tiers = new Set(l.map((s) => s.tier));
+    common = new Set([...common].filter((t) => tiers.has(t)));
+  }
+  return [...common].sort((a, b) => TIER_RANK[b] - TIER_RANK[a])[0] ?? null;
+}
+

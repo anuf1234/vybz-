@@ -57,6 +57,9 @@ This is why the provider layer (Section 5) treats **metadata** and **playback ri
 | Upstash rate limits | Better Auth's limiter on auth routes; DB unique constraints on votes and submissions | Remaining limits (votes per minute, battle creation per day) are still to do. |
 | Fair-listen proof with signed nonces | Server records when a listener started each track and caps reported play time at elapsed wall-clock time; both sides must be heard at the same tier | Same cost-raising goal, fewer moving parts. |
 
+| Rules set by the creator | **Negotiated terms** (2026-11-16): the challenged side accepts or counters (rounds, tracks per round 1–3, genre, era, judging, pace); up to 10 counter-offers; the battle starts on acceptance | Requested by Baba. |
+| Crowd voting only | **Judging modes** (2026-11-16): CROWD, AI, COMBINED (AI weight 10–90%), SEPARATE (two scorecards, crowd official). AI verdicts stored in `ai_verdict`, computed once when voting opens, blind to identities, hidden until scored | Requested by Baba. The AI judges from song knowledge and metadata, never audio. |
+
 Not built yet from Phase 1: Apple Music account connection (MusicKit) for `PROVIDER_FULL`, realtime channels, email "your turn" notifications, share cards (OG images), reporting/moderation queue, web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
 
 ---

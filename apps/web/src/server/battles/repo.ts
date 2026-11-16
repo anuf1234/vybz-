@@ -5,7 +5,7 @@ import {
   parseRules,
   standings,
 } from "@vybz/core";
-import { type Executor, schema, and, eq, sql } from "@vybz/db";
+import { type Executor, schema, and, eq, notInArray, sql } from "@vybz/db";
 
 /**
  * Persistence for the battle aggregate. Loads a battle with its participants,
@@ -31,11 +31,12 @@ export async function loadBattle(db: Executor, id: string, lock?: "update" | "sh
   const [row] = lock === "update" ? await q.for("update") : lock === "share" ? await q.for("share") : await q;
   if (!row) return null;
 
-  const [participants, rounds, submissions, tallies] = await Promise.all([
+  const [participants, rounds, submissions, tallies, verdicts] = await Promise.all([
     db.select().from(schema.battleParticipant).where(eq(schema.battleParticipant.battleId, id)),
     db.select().from(schema.battleRound).where(eq(schema.battleRound.battleId, id)).orderBy(schema.battleRound.index),
-    db.select().from(schema.submission).where(eq(schema.submission.battleId, id)),
+    db.select().from(schema.submission).where(eq(schema.submission.battleId, id)).orderBy(schema.submission.position),
     loadTallies(db, id),
+    db.select({ roundId: schema.aiVerdict.roundId, winner: schema.aiVerdict.winnerParticipantId }).from(schema.aiVerdict).where(eq(schema.aiVerdict.battleId, id)),
   ]);
 
   const aggregate: BattleAggregate = {
@@ -44,6 +45,9 @@ export async function loadBattle(db: Executor, id: string, lock?: "update" | "sh
     rules: parseRules(row.rules),
     creatorId: row.creatorId,
     invitedUserId: row.invitedUserId,
+    proposedByUserId: row.proposedById ?? row.creatorId,
+    previousRules: row.previousRules ? parseRules(row.previousRules) : null,
+    counterCount: row.counterCount,
     acceptDeadline: row.acceptDeadline,
     startedAt: row.startedAt,
     endedAt: row.endedAt,
@@ -62,10 +66,12 @@ export async function loadBattle(db: Executor, id: string, lock?: "update" | "sh
       votingClosesAt: r.votingClosesAt,
       extensions: r.extensions,
       winnerParticipantId: r.winnerParticipantId,
+      aiWinnerParticipantId: r.aiWinnerParticipantId,
       forfeitParticipantIds: r.forfeitParticipantIds,
     })),
-    submissions: submissions.map((s) => ({ id: s.id, roundId: s.roundId, participantId: s.participantId, trackId: s.trackId })),
+    submissions: submissions.map((s) => ({ id: s.id, roundId: s.roundId, participantId: s.participantId, trackId: s.trackId, position: s.position })),
     tallies,
+    aiVerdicts: Object.fromEntries(verdicts.map((v) => [v.roundId, v.winner])),
   };
   return { aggregate, row };
 }
@@ -105,6 +111,7 @@ export async function insertBattle(db: Executor, agg: BattleAggregate, fields: N
     roundCount: agg.rules.roundCount,
     creatorId: agg.creatorId,
     invitedUserId: agg.invitedUserId,
+    proposedById: agg.proposedByUserId,
     acceptDeadline: agg.acceptDeadline,
     rematchOfId: fields.rematchOfId ?? null,
     nextDeadlineAt: nextDeadline(agg),
@@ -127,6 +134,11 @@ export async function saveBattle(db: Executor, before: BattleAggregate, after: B
       endedAt: after.endedAt,
       winnerParticipantId: after.winnerParticipantId,
       invitedUserId: after.invitedUserId,
+      rules: after.rules,
+      roundCount: after.rules.roundCount,
+      proposedById: after.proposedByUserId,
+      previousRules: after.previousRules,
+      counterCount: after.counterCount,
       nextDeadlineAt: nextDeadline(after),
       version: before.version + 1,
       updatedAt: new Date(),
@@ -149,6 +161,12 @@ async function saveChildren(db: Executor, before: BattleAggregate | null, after:
     }
   }
 
+  // A counter-offer with fewer rounds drops the extra (never-started) rounds.
+  if (before && after.rounds.length < before.rounds.length) {
+    await db
+      .delete(schema.battleRound)
+      .where(and(eq(schema.battleRound.battleId, after.id), notInArray(schema.battleRound.id, after.rounds.map((r) => r.id))));
+  }
   const prevRounds = new Map(before?.rounds.map((r) => [r.id, r]));
   for (const r of after.rounds) {
     const prev = prevRounds.get(r.id);
@@ -161,6 +179,7 @@ async function saveChildren(db: Executor, before: BattleAggregate | null, after:
       votingClosesAt: r.votingClosesAt,
       extensions: r.extensions,
       winnerParticipantId: r.winnerParticipantId,
+      aiWinnerParticipantId: r.aiWinnerParticipantId,
       forfeitParticipantIds: r.forfeitParticipantIds,
     };
     if (prev) await db.update(schema.battleRound).set(values).where(eq(schema.battleRound.id, r.id));
@@ -170,6 +189,6 @@ async function saveChildren(db: Executor, before: BattleAggregate | null, after:
   const knownSubs = new Set(before?.submissions.map((s) => s.id));
   for (const s of after.submissions) {
     if (knownSubs.has(s.id)) continue;
-    await db.insert(schema.submission).values({ id: s.id, battleId: after.id, roundId: s.roundId, participantId: s.participantId, trackId: s.trackId });
+    await db.insert(schema.submission).values({ id: s.id, battleId: after.id, roundId: s.roundId, participantId: s.participantId, trackId: s.trackId, position: s.position });
   }
 }

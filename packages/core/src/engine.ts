@@ -1,5 +1,6 @@
+import { trackMatchesGenres } from "./genres";
 import type { BattleRules } from "./rules";
-import { type RoundTally, battleOutcome, roundWinner, totalVotes } from "./scoring";
+import { type RoundTally, battleOutcome, judgeRound, totalVotes } from "./scoring";
 
 /**
  * Battle engine: a state machine over an in-memory battle aggregate.
@@ -11,6 +12,8 @@ import { type RoundTally, battleOutcome, roundWinner, totalVotes } from "./scori
 
 export type BattleStatus = "OPEN_CHALLENGE" | "PENDING_ACCEPT" | "IN_PROGRESS" | "COMPLETE" | "CANCELLED" | "EXPIRED" | "VOIDED";
 export type RoundStatus = "PENDING" | "SUBMISSIONS_OPEN" | "VOTING_OPEN" | "SCORED" | "VOIDED";
+
+export const MAX_COUNTER_OFFERS = 10;
 
 export const TERMINAL_BATTLE_STATUSES: readonly BattleStatus[] = ["COMPLETE", "CANCELLED", "EXPIRED", "VOIDED"];
 
@@ -30,6 +33,8 @@ export interface RoundState {
   votingClosesAt: Date | null;
   extensions: number;
   winnerParticipantId: string | null;
+  /** The AI judge's pick, recorded when the round is scored (modes that use the AI). */
+  aiWinnerParticipantId: string | null;
   /** Participants who missed the submission deadline for this round. */
   forfeitParticipantIds: string[];
 }
@@ -39,6 +44,8 @@ export interface SubmissionState {
   roundId: string;
   participantId: string;
   trackId: string;
+  /** Order within the side's set for the round (0-based). */
+  position: number;
 }
 
 export interface BattleAggregate {
@@ -46,8 +53,13 @@ export interface BattleAggregate {
   status: BattleStatus;
   rules: BattleRules;
   creatorId: string;
-  /** Set for direct challenges. Null means an open challenge anyone can accept. */
+  /** The challenger. Null while an open challenge has no taker. */
   invitedUserId: string | null;
+  /** Who proposed the current terms; the other side accepts or counters. */
+  proposedByUserId: string;
+  /** Terms before the latest counter-offer, so the app can show what changed. */
+  previousRules: BattleRules | null;
+  counterCount: number;
   acceptDeadline: Date | null;
   startedAt: Date | null;
   endedAt: Date | null;
@@ -58,6 +70,8 @@ export interface BattleAggregate {
   submissions: SubmissionState[];
   /** roundId → tally. Supplied by the caller from the votes table. */
   tallies: Record<string, RoundTally>;
+  /** roundId → participant the AI judge picked. Supplied by the caller. */
+  aiVerdicts: Record<string, string>;
 }
 
 export interface EngineContext {
@@ -68,6 +82,7 @@ export interface EngineContext {
 export type DomainEvent =
   | { type: "battle.created"; battleId: string }
   | { type: "battle.accepted"; battleId: string; userId: string }
+  | { type: "battle.countered"; battleId: string; userId: string }
   | { type: "battle.cancelled"; battleId: string }
   | { type: "battle.expired"; battleId: string }
   | { type: "round.submissions_opened"; battleId: string; roundIndex: number; closesAt: Date }
@@ -96,7 +111,13 @@ export type EngineErrorCode =
   | "TRACK_ALREADY_USED"
   | "TRACK_OUTSIDE_ERA"
   | "TRACK_TOO_LONG"
-  | "TRACK_YEAR_UNKNOWN";
+  | "TRACK_YEAR_UNKNOWN"
+  | "TRACK_OUTSIDE_GENRE"
+  | "WRONG_TRACK_COUNT"
+  | "DUPLICATE_TRACK"
+  | "NOT_YOUR_TURN"
+  | "NO_CHANGES"
+  | "TOO_MANY_COUNTERS";
 
 export class EngineError extends Error {
   constructor(
@@ -130,6 +151,9 @@ export function createBattle(input: CreateBattleInput, ctx: EngineContext): Engi
     rules: input.rules,
     creatorId: input.creatorId,
     invitedUserId: input.invitedUserId ?? null,
+    proposedByUserId: input.creatorId,
+    previousRules: null,
+    counterCount: 0,
     acceptDeadline: addHours(ctx.now, input.rules.challengeExpiryHours),
     startedAt: null,
     endedAt: null,
@@ -139,18 +163,46 @@ export function createBattle(input: CreateBattleInput, ctx: EngineContext): Engi
     rounds,
     submissions: [],
     tallies: {},
+    aiVerdicts: {},
   };
   return { battle, events: [{ type: "battle.created", battleId: id }] };
 }
 
+/**
+ * Who must answer the current terms: for a direct challenge, whoever didn't
+ * propose them. Null for an open challenge (anyone but the creator may answer).
+ */
+export function awaitingResponseFrom(battle: BattleAggregate): string | null {
+  if (battle.status !== "PENDING_ACCEPT") return null;
+  return battle.proposedByUserId === battle.creatorId ? battle.invitedUserId : battle.creatorId;
+}
+
+/** Can `userId` accept or counter the current terms right now? */
+export function canRespond(battle: BattleAggregate, userId: string, now: Date): boolean {
+  if (battle.acceptDeadline && now >= battle.acceptDeadline) return false;
+  if (battle.status === "OPEN_CHALLENGE") return userId !== battle.creatorId;
+  return battle.status === "PENDING_ACCEPT" && awaitingResponseFrom(battle) === userId;
+}
+
+function assertCanRespond(b: BattleAggregate, userId: string, now: Date) {
+  if (b.status !== "OPEN_CHALLENGE" && b.status !== "PENDING_ACCEPT") throw new EngineError("NOT_OPEN");
+  if (b.acceptDeadline && now >= b.acceptDeadline) throw new EngineError("NOT_OPEN", "challenge expired");
+  if (b.status === "OPEN_CHALLENGE") {
+    if (userId === b.creatorId) throw new EngineError("OWN_BATTLE");
+    return;
+  }
+  if (userId !== b.creatorId && userId !== b.invitedUserId) throw new EngineError("NOT_INVITED");
+  if (awaitingResponseFrom(b) !== userId) throw new EngineError("NOT_YOUR_TURN", "waiting for the other side to answer your terms");
+}
+
+/** Both sides have agreed to the current terms: the battle starts. */
 export function acceptBattle(battle: BattleAggregate, userId: string, ctx: EngineContext): EngineResult {
   const b = clone(battle);
-  if (b.status !== "OPEN_CHALLENGE" && b.status !== "PENDING_ACCEPT") throw new EngineError("NOT_OPEN");
-  if (b.acceptDeadline && ctx.now >= b.acceptDeadline) throw new EngineError("NOT_OPEN", "challenge expired");
-  if (userId === b.creatorId) throw new EngineError("OWN_BATTLE");
-  if (b.status === "PENDING_ACCEPT" && b.invitedUserId !== userId) throw new EngineError("NOT_INVITED");
+  assertCanRespond(b, userId, ctx.now);
+  if (b.status === "OPEN_CHALLENGE") b.invitedUserId = userId;
+  const challenger = b.invitedUserId!;
 
-  b.participants.push({ id: ctx.newId(), userId, side: 1 });
+  b.participants.push({ id: ctx.newId(), userId: challenger, side: 1 });
   b.status = "IN_PROGRESS";
   b.startedAt = ctx.now;
   b.acceptDeadline = null;
@@ -158,6 +210,30 @@ export function acceptBattle(battle: BattleAggregate, userId: string, ctx: Engin
   const first = b.rounds[0];
   if (first) events.push(openSubmissions(b, first, ctx));
   return { battle: b, events };
+}
+
+/**
+ * Propose different terms (rounds, tracks per round, genre, era, judging...).
+ * The other side then accepts or counters again. Countering an open challenge
+ * makes it a direct negotiation with the counterer.
+ */
+export function counterOffer(battle: BattleAggregate, userId: string, rules: BattleRules, ctx: EngineContext): EngineResult {
+  const b = clone(battle);
+  assertCanRespond(b, userId, ctx.now);
+  if (JSON.stringify(rules) === JSON.stringify(b.rules)) throw new EngineError("NO_CHANGES", "those are the current terms");
+  if (b.counterCount >= MAX_COUNTER_OFFERS) throw new EngineError("TOO_MANY_COUNTERS", "too many counter-offers; accept or walk away");
+
+  if (b.status === "OPEN_CHALLENGE") b.invitedUserId = userId;
+  b.previousRules = b.rules;
+  b.rules = rules;
+  b.proposedByUserId = userId;
+  b.counterCount += 1;
+  b.status = "PENDING_ACCEPT";
+  b.acceptDeadline = addHours(ctx.now, rules.challengeExpiryHours);
+  if (rules.roundCount !== b.rounds.length) {
+    b.rounds = Array.from({ length: rules.roundCount }, (_, index) => b.rounds[index] ?? newRound(ctx, index, false));
+  }
+  return { battle: b, events: [{ type: "battle.countered", battleId: b.id, userId }] };
 }
 
 export function declineBattle(battle: BattleAggregate, userId: string): EngineResult {
@@ -183,6 +259,7 @@ export interface TrackFacts {
   id: string;
   releaseYear?: number | null;
   durationMs?: number | null;
+  genres?: readonly string[] | null;
 }
 
 export function currentRound(battle: BattleAggregate): RoundState | null {
@@ -204,6 +281,9 @@ export function checkTrackAllowed(rules: BattleRules, track: TrackFacts): void {
       throw new EngineError("TRACK_OUTSIDE_ERA", `released ${track.releaseYear}, outside ${c.eraFrom ?? "…"}–${c.eraTo ?? "…"}`);
     }
   }
+  if (c.genres?.length && trackMatchesGenres(track.genres, c.genres) === false) {
+    throw new EngineError("TRACK_OUTSIDE_GENRE", `${(track.genres ?? []).join(", ")} isn't in this battle's genre`);
+  }
   if (c.maxTrackLengthMs !== undefined && track.durationMs != null && track.durationMs > c.maxTrackLengthMs) {
     throw new EngineError("TRACK_TOO_LONG");
   }
@@ -212,8 +292,9 @@ export function checkTrackAllowed(rules: BattleRules, track: TrackFacts): void {
 export interface SubmitInput {
   userId: string;
   roundIndex: number;
-  track: TrackFacts;
-  submissionId?: string;
+  /** The side's whole set for the round: exactly `rules.tracksPerRound` tracks. */
+  tracks: TrackFacts[];
+  submissionIds?: string[];
 }
 
 export function submitTrack(battle: BattleAggregate, input: SubmitInput, ctx: EngineContext): EngineResult {
@@ -228,19 +309,28 @@ export function submitTrack(battle: BattleAggregate, input: SubmitInput, ctx: En
   if (b.submissions.some((s) => s.roundId === round.id && s.participantId === participant.id)) {
     throw new EngineError("ALREADY_SUBMITTED");
   }
-  if (b.submissions.some((s) => s.trackId === input.track.id)) throw new EngineError("TRACK_ALREADY_USED");
-  checkTrackAllowed(b.rules, input.track);
+  const n = b.rules.tracksPerRound;
+  if (input.tracks.length !== n) throw new EngineError("WRONG_TRACK_COUNT", `this battle plays ${n} track${n === 1 ? "" : "s"} per round`);
+  if (new Set(input.tracks.map((t) => t.id)).size !== input.tracks.length) throw new EngineError("DUPLICATE_TRACK");
+  for (const t of input.tracks) {
+    if (b.submissions.some((s) => s.trackId === t.id)) throw new EngineError("TRACK_ALREADY_USED");
+    checkTrackAllowed(b.rules, t);
+  }
 
-  b.submissions.push({
-    id: input.submissionId ?? ctx.newId(),
-    roundId: round.id,
-    participantId: participant.id,
-    trackId: input.track.id,
+  input.tracks.forEach((t, position) => {
+    b.submissions.push({
+      id: input.submissionIds?.[position] ?? ctx.newId(),
+      roundId: round.id,
+      participantId: participant.id,
+      trackId: t.id,
+      position,
+    });
   });
   const events: DomainEvent[] = [
     { type: "round.submitted", battleId: b.id, roundIndex: round.index, participantId: participant.id },
   ];
-  if (submissionsFor(b, round.id).length === 2) events.push(openVoting(b, round, ctx));
+  const sides = new Set(submissionsFor(b, round.id).map((s) => s.participantId));
+  if (sides.size === 2) events.push(openVoting(b, round, ctx));
   return { battle: b, events };
 }
 
@@ -293,13 +383,18 @@ export function advance(battle: BattleAggregate, ctx: EngineContext): EngineResu
 
     if (round.status === "VOTING_OPEN" && round.votingClosesAt && ctx.now >= round.votingClosesAt) {
       const tally = b.tallies[round.id];
-      if (totalVotes(tally) < b.rules.minVotesToCount && round.extensions < b.rules.maxVotingExtensions) {
+      const { mode, aiWeightPercent } = b.rules.judging;
+      const aiPick = b.aiVerdicts[round.id];
+      const needsMore = mode === "AI" ? !aiPick : totalVotes(tally) < b.rules.minVotesToCount;
+      if (needsMore && round.extensions < b.rules.maxVotingExtensions) {
         round.extensions += 1;
         round.votingClosesAt = addMinutes(ctx.now, b.rules.timing.votingWindowMinutes);
         events.push({ type: "round.voting_extended", battleId: b.id, roundIndex: round.index, closesAt: round.votingClosesAt });
         break;
       }
-      round.winnerParticipantId = roundWinner(tally, participantIds(b));
+      const judged = judgeRound(mode, aiWeightPercent, tally, aiPick, participantIds(b));
+      round.winnerParticipantId = judged.winnerParticipantId;
+      round.aiWinnerParticipantId = judged.aiWinnerParticipantId;
       round.status = "SCORED";
       events.push({ type: "round.scored", battleId: b.id, roundIndex: round.index, winnerParticipantId: round.winnerParticipantId });
       continue;
@@ -343,6 +438,15 @@ export function standings(battle: BattleAggregate) {
   );
 }
 
+/** The AI judge's scorecard: rounds each side won in the AI's view. */
+export function aiScorecard(battle: BattleAggregate): Record<string, number> {
+  const out: Record<string, number> = Object.fromEntries(battle.participants.map((p) => [p.id, 0]));
+  for (const r of battle.rounds) {
+    if (r.status === "SCORED" && r.aiWinnerParticipantId && r.aiWinnerParticipantId in out) out[r.aiWinnerParticipantId]! += 1;
+  }
+  return out;
+}
+
 // ── Internals (mutate the clone they are given) ───────────────────────────
 
 function newRound(ctx: EngineContext, index: number, suddenDeath: boolean): RoundState {
@@ -356,6 +460,7 @@ function newRound(ctx: EngineContext, index: number, suddenDeath: boolean): Roun
     votingClosesAt: null,
     extensions: 0,
     winnerParticipantId: null,
+    aiWinnerParticipantId: null,
     forfeitParticipantIds: [],
   };
 }
@@ -394,5 +499,6 @@ function clone(b: BattleAggregate): BattleAggregate {
     rounds: b.rounds.map((r) => ({ ...r, forfeitParticipantIds: [...r.forfeitParticipantIds] })),
     submissions: b.submissions.map((s) => ({ ...s })),
     tallies: Object.fromEntries(Object.entries(b.tallies).map(([k, v]) => [k, { ...v }])),
+    aiVerdicts: { ...b.aiVerdicts },
   };
 }

@@ -37,8 +37,8 @@ function pid(b: BattleAggregate, user: string) {
 /** Both sides submit for the current round and voting opens. */
 function playRound(b: BattleAggregate, ms: number, trackSeed: string): BattleAggregate {
   const r = currentRound(b)!;
-  b = submitTrack(b, { userId: "alice", roundIndex: r.index, track: { id: `a-${trackSeed}` } }, at(ms)).battle;
-  b = submitTrack(b, { userId: "bob", roundIndex: r.index, track: { id: `b-${trackSeed}` } }, at(ms)).battle;
+  b = submitTrack(b, { userId: "alice", roundIndex: r.index, tracks: [{ id: `a-${trackSeed}` }] }, at(ms)).battle;
+  b = submitTrack(b, { userId: "bob", roundIndex: r.index, tracks: [{ id: `b-${trackSeed}` }] }, at(ms)).battle;
   return b;
 }
 
@@ -114,9 +114,9 @@ describe("challenge lifecycle", () => {
 describe("submissions", () => {
   it("opens voting once both sides submit", () => {
     let b = started();
-    b = submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t1" } }, at(min(1))).battle;
+    b = submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t1" }] }, at(min(1))).battle;
     expect(b.rounds[0]?.status).toBe("SUBMISSIONS_OPEN");
-    const res = submitTrack(b, { userId: "bob", roundIndex: 0, track: { id: "t2" } }, at(min(2)));
+    const res = submitTrack(b, { userId: "bob", roundIndex: 0, tracks: [{ id: "t2" }] }, at(min(2)));
     expect(res.battle.rounds[0]?.status).toBe("VOTING_OPEN");
     expect(res.battle.rounds[0]?.votingClosesAt?.getTime()).toBe(T0.getTime() + min(12));
     expect(res.events.map((e) => e.type)).toEqual(["round.submitted", "round.voting_opened"]);
@@ -124,30 +124,30 @@ describe("submissions", () => {
 
   it("rejects double submissions, reused tracks, outsiders and the wrong round", () => {
     let b = started();
-    b = submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t1" } }, at(1)).battle;
-    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t9" } }, at(2))).toThrow("ALREADY_SUBMITTED");
-    expect(() => submitTrack(b, { userId: "bob", roundIndex: 0, track: { id: "t1" } }, at(2))).toThrow("TRACK_ALREADY_USED");
-    expect(() => submitTrack(b, { userId: "carol", roundIndex: 0, track: { id: "t3" } }, at(2))).toThrow("NOT_PARTICIPANT");
-    expect(() => submitTrack(b, { userId: "bob", roundIndex: 1, track: { id: "t3" } }, at(2))).toThrow("ROUND_NOT_CURRENT");
+    b = submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t1" }] }, at(1)).battle;
+    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t9" }] }, at(2))).toThrow("ALREADY_SUBMITTED");
+    expect(() => submitTrack(b, { userId: "bob", roundIndex: 0, tracks: [{ id: "t1" }] }, at(2))).toThrow("TRACK_ALREADY_USED");
+    expect(() => submitTrack(b, { userId: "carol", roundIndex: 0, tracks: [{ id: "t3" }] }, at(2))).toThrow("NOT_PARTICIPANT");
+    expect(() => submitTrack(b, { userId: "bob", roundIndex: 1, tracks: [{ id: "t3" }] }, at(2))).toThrow("ROUND_NOT_CURRENT");
   });
 
   it("enforces the era rule", () => {
     const b = started({ constraints: { eraFrom: 2000, eraTo: 2009 } });
-    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t", releaseYear: 1999 } }, at(1))).toThrow(expect.objectContaining({ code: "TRACK_OUTSIDE_ERA" }));
-    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t" } }, at(1))).toThrow(expect.objectContaining({ code: "TRACK_YEAR_UNKNOWN" }));
-    expect(submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t", releaseYear: 2004 } }, at(1)).battle.submissions).toHaveLength(1);
+    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t", releaseYear: 1999 }] }, at(1))).toThrow(expect.objectContaining({ code: "TRACK_OUTSIDE_ERA" }));
+    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t" }] }, at(1))).toThrow(expect.objectContaining({ code: "TRACK_YEAR_UNKNOWN" }));
+    expect(submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t", releaseYear: 2004 }] }, at(1)).battle.submissions).toHaveLength(1);
   });
 
   it("refuses submissions after the deadline even before advance runs", () => {
     const b = started();
-    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t" } }, at(min(11)))).toThrow("ROUND_NOT_ACCEPTING_SUBMISSIONS");
+    expect(() => submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t" }] }, at(min(11)))).toThrow("ROUND_NOT_ACCEPTING_SUBMISSIONS");
   });
 });
 
 describe("deadlines and scoring", () => {
   it("awards a round to the only side that submitted", () => {
     let b = started();
-    b = submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t1" } }, at(1)).battle;
+    b = submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t1" }] }, at(1)).battle;
     const res = advance(b, at(min(11)));
     expect(res.battle.rounds[0]).toMatchObject({ status: "SCORED", winnerParticipantId: pid(b, "alice"), forfeitParticipantIds: [pid(b, "bob")] });
     expect(res.battle.rounds[1]?.status).toBe("SUBMISSIONS_OPEN");

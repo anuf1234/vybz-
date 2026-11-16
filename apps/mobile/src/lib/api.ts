@@ -2,8 +2,10 @@ import type {
   ApiError,
   BattleFeed,
   BattleListResponse,
+  BattleRulesInput,
   BattleView,
   CatalogSearchResponse,
+  ConfigResponse,
   CreateBattleRequest,
   ListenRequest,
   MeView,
@@ -70,6 +72,14 @@ const MESSAGES: Record<string, string> = {
   ALREADY_VOTED: "You already voted this round.",
   VOTING_CLOSED: "Voting has closed for this round.",
   HANDLE_TAKEN: "That handle is taken.",
+  TRACK_OUTSIDE_GENRE: "That track isn't in this battle's genre.",
+  WRONG_TRACK_COUNT: "Pick the agreed number of tracks for this round.",
+  DUPLICATE_TRACK: "Pick different tracks.",
+  NOT_YOUR_TURN: "Waiting for the other side to answer your terms.",
+  NO_CHANGES: "Change at least one term to send a counter-offer.",
+  TOO_MANY_COUNTERS: "Too many counter-offers. Accept the terms or walk away.",
+  AI_JUDGE_UNAVAILABLE: "AI judging isn't available on this server.",
+  AI_JUDGED: "The AI judge decides this battle.",
   NO_PROVIDERS_CONFIGURED: "Music search isn't set up on the server yet.",
 };
 
@@ -87,8 +97,10 @@ export const api = {
   decline: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/decline`),
   cancel: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/cancel`),
   rematch: (id: string) => request<{ id: string }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rematch`),
-  submit: (id: string, round: number, catalogId: string) =>
-    request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rounds/${round}/submit`, { catalogId }),
+  submit: (id: string, round: number, catalogIds: string[]) =>
+    request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rounds/${round}/submit`, { catalogIds }),
+  counter: (id: string, rules: BattleRulesInput) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/counter`, { rules }),
+  config: () => request<ConfigResponse>("GET", "/api/v1/config"),
   listen: (id: string, round: number, body: ListenRequest) =>
     request<{ playedMs: number; requiredMs: number }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rounds/${round}/listen`, body),
   vote: (id: string, round: number, submissionId: string) =>

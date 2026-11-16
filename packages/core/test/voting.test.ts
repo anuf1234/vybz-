@@ -23,8 +23,8 @@ const ctx = { now, newId: () => `id${++n}` };
 function votingBattle(rules = {}): BattleAggregate {
   let b = createBattle({ creatorId: "alice", rules: parseRules({ roundCount: 3, fairListen: { minPlayedMs: 20_000 }, ...rules }) }, ctx).battle;
   b = acceptBattle(b, "bob", ctx).battle;
-  b = submitTrack(b, { userId: "alice", roundIndex: 0, track: { id: "t1" }, submissionId: "s1" }, ctx).battle;
-  b = submitTrack(b, { userId: "bob", roundIndex: 0, track: { id: "t2" }, submissionId: "s2" }, ctx).battle;
+  b = submitTrack(b, { userId: "alice", roundIndex: 0, tracks: [{ id: "t1" }], submissionIds: ["s1"] }, ctx).battle;
+  b = submitTrack(b, { userId: "bob", roundIndex: 0, tracks: [{ id: "t2" }], submissionIds: ["s2"] }, ctx).battle;
   return b;
 }
 

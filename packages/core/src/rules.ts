@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GENRE_KEYS } from "./genres";
 
 /**
  * Battle rules, validated at the boundary and stored with the battle.
@@ -15,12 +16,37 @@ export const ConstraintsSchema = z
     eraFrom: z.number().int().min(1900).max(2100).optional(),
     eraTo: z.number().int().min(1900).max(2100).optional(),
     maxTrackLengthMs: z.number().int().min(30_000).max(30 * 60_000).optional(),
+    /** Canonical genre keys (see GENRES). A pick must match one of them. */
+    genres: z.array(z.enum(GENRE_KEYS)).min(1).max(3).optional(),
   })
   .strict()
   .refine((c) => c.eraFrom === undefined || c.eraTo === undefined || c.eraFrom <= c.eraTo, {
     message: "eraFrom must not be after eraTo",
     path: ["eraTo"],
   });
+
+export const TRACKS_PER_ROUND = [1, 2, 3] as const;
+export type TracksPerRound = (typeof TRACKS_PER_ROUND)[number];
+
+/**
+ * Who decides a round:
+ *  - CROWD: listener votes only.
+ *  - AI: the AI judge only (listeners can listen but not vote).
+ *  - COMBINED: one score; the AI's pick counts for `aiWeightPercent` of the round.
+ *  - SEPARATE: two scorecards, crowd and AI, each with its own winner. The crowd's card is official.
+ */
+export const JUDGING_MODES = ["CROWD", "AI", "COMBINED", "SEPARATE"] as const;
+export type JudgingMode = (typeof JUDGING_MODES)[number];
+
+export const JudgingSchema = z
+  .object({
+    mode: z.enum(JUDGING_MODES).default("CROWD"),
+    aiWeightPercent: z.number().int().min(10).max(90).default(30),
+  })
+  .strict();
+
+export const usesAiJudge = (mode: JudgingMode) => mode !== "CROWD";
+export const usesCrowd = (mode: JudgingMode) => mode !== "AI";
 
 export const BattleRulesSchema = z
   .object({
@@ -31,6 +57,13 @@ export const BattleRulesSchema = z
         message: `roundCount must be one of ${ROUND_COUNTS.join(", ")}`,
       })
       .default(5),
+    /** Tracks each side plays per round; voters judge the set. */
+    tracksPerRound: z
+      .number()
+      .int()
+      .refine((n): n is TracksPerRound => (TRACKS_PER_ROUND as readonly number[]).includes(n), { message: "tracksPerRound must be 1, 2 or 3" })
+      .default(1),
+    judging: JudgingSchema.default({ mode: "CROWD", aiWeightPercent: 30 }),
     /** Hide which participant picked which track until the round is scored. */
     blindVoting: z.boolean().default(true),
     revealTallies: z.enum(["LIVE", "AT_ROUND_CLOSE", "AT_BATTLE_END"]).default("AT_ROUND_CLOSE"),

@@ -158,7 +158,7 @@ describe.skipIf(!TEST_DB_URL)("HTTP API", () => {
 
     // A guest can see and hear the round but not vote.
     const guestView = (await (await call("battle", "GET", `/api/v1/battles/${battleId}`, { params })).json()) as BattleView;
-    expect(guestView.rounds[0]!.entries.map((e) => e.playback?.tier)).toEqual(["HOSTED_FULL", "HOSTED_FULL"]);
+    expect(guestView.rounds[0]!.entries.map((e) => e.tracks[0]!.playback?.tier)).toEqual(["HOSTED_FULL", "HOSTED_FULL"]);
     expect(guestView.rounds[0]!.viewer.voteBlockedReason).toBe("SIGN_IN_REQUIRED");
     const sub = guestView.rounds[0]!.entries[0]!.submissionId;
     expect((await call("vote", "POST", `/api/v1/battles/${battleId}/rounds/0/vote`, { params: p0, body: { submissionId: sub } })).status).toBe(401);
@@ -193,6 +193,6 @@ describe.skipIf(!TEST_DB_URL)("HTTP API", () => {
 
     expect((await call("cron", "POST", "/api/cron/advance")).status).toBe(401);
     const ok = await call("cron", "POST", "/api/cron/advance", { headers: { authorization: "Bearer cron-secret-cron-secret" } });
-    expect(await ok.json()).toEqual({ advanced: 0 });
+    expect(await ok.json()).toEqual({ advanced: 0, judged: 0 });
   });
 });

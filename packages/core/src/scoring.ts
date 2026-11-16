@@ -1,3 +1,5 @@
+import type { JudgingMode } from "./rules";
+
 /**
  * Scoring. Pure functions over vote tallies.
  *
@@ -72,4 +74,55 @@ export function battleOutcome(rounds: readonly ScoredRound[], participantIds: re
   else if ((weighted[a] ?? 0) !== (weighted[b] ?? 0)) winnerParticipantId = (weighted[a] ?? 0) > (weighted[b] ?? 0) ? a : b;
 
   return { roundsWon, voteShare, winnerParticipantId };
+}
+
+// ── Judging modes ──────────────────────────────────────────────────────────
+
+
+export interface RoundJudgement {
+  /** The official winner for the round, or null for a draw. */
+  winnerParticipantId: string | null;
+  /** The AI judge's pick, when the mode uses one and it ruled. */
+  aiWinnerParticipantId: string | null;
+  /** The crowd's own winner, when the mode uses the crowd. */
+  crowdWinnerParticipantId: string | null;
+}
+
+/**
+ * Decides a round under the battle's judging mode.
+ * COMBINED: each side scores (1 − w) × its share of the weighted crowd vote,
+ * plus w if the AI picked it. With no crowd votes the AI decides; with no AI
+ * verdict the crowd does. Ties fall back to raw vote count, then a draw.
+ */
+export function judgeRound(
+  mode: JudgingMode,
+  aiWeightPercent: number,
+  tally: RoundTally | undefined,
+  aiPick: string | null | undefined,
+  participantIds: readonly [string, string],
+): RoundJudgement {
+  const crowd = mode === "AI" ? null : roundWinner(tally, participantIds);
+  const ai = mode === "CROWD" ? null : (aiPick ?? null);
+  switch (mode) {
+    case "CROWD":
+      return { winnerParticipantId: crowd, aiWinnerParticipantId: null, crowdWinnerParticipantId: crowd };
+    case "AI":
+      return { winnerParticipantId: ai, aiWinnerParticipantId: ai, crowdWinnerParticipantId: null };
+    case "SEPARATE":
+      return { winnerParticipantId: crowd, aiWinnerParticipantId: ai, crowdWinnerParticipantId: crowd };
+    case "COMBINED": {
+      const [a, b] = participantIds;
+      const w = aiWeightPercent / 100;
+      const ta = tallyFor(tally, a);
+      const tb = tallyFor(tally, b);
+      const total = ta.weighted + tb.weighted;
+      const score = (id: string, t: SideTally) => (total ? (1 - w) * (t.weighted / total) : 0) + (ai === id ? w : 0);
+      const sa = score(a, ta);
+      const sb = score(b, tb);
+      let winner: string | null = null;
+      if (Math.abs(sa - sb) > 1e-9) winner = sa > sb ? a : b;
+      else if (ta.count !== tb.count) winner = ta.count > tb.count ? a : b;
+      return { winnerParticipantId: winner, aiWinnerParticipantId: ai, crowdWinnerParticipantId: crowd };
+    }
+  }
 }

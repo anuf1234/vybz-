@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
-import { getBattleView } from "@/server/battles/service";
+import { ensureAiVerdicts, getBattleView } from "@/server/battles/service";
 import { getBattleDeps } from "@/server/context";
-import { currentUser, noStore, route } from "@/server/http";
+import { background, currentUser, noStore, route } from "@/server/http";
 
 export const GET = route<{ id: string }>(async (req, { params }) => {
   const { id } = await params;
-  return NextResponse.json(await getBattleView(getBattleDeps(), await currentUser(req), id), noStore);
+  const deps = getBattleDeps();
+  const view = await getBattleView(deps, await currentUser(req), id);
+  // Retry a missing AI verdict (e.g. a failed call when voting opened).
+  if (view.currentRoundIndex !== null && view.rounds[view.currentRoundIndex]?.status === "VOTING_OPEN" && view.rules.judging.mode !== "CROWD") {
+    background(() => ensureAiVerdicts(deps, id));
+  }
+  return NextResponse.json(view, noStore);
 });

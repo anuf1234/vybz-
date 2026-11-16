@@ -20,6 +20,9 @@ const ServerEnvSchema = z.object({
   AUTH_REQUIRE_EMAIL_VERIFICATION: bool(isProd),
   /** Built-in synthesized demo catalog. Refused in production. */
   VYBZ_DEMO_CATALOG: bool(false),
+  /** Enables the AI judge (Claude). */
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  AI_JUDGE_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
   /** Shared secret for the scheduler hitting /api/cron/advance. */
   CRON_SECRET: z.string().min(16).optional(),
   /** Deep-link scheme of the mobile app, for auth redirects. */

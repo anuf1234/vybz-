@@ -38,6 +38,7 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
       db: h.db,
       catalog: { metadata: [demo], playback: { VYBZ_DEMO: demo }, storefront: "us" },
       requireVerifiedEmail: true,
+      aiJudge: null,
       now: () => new Date(clock),
     };
 
@@ -99,16 +100,16 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
     await acceptBattle(deps, users.bob!, battleId);
 
     // Era rule: 2012 is out.
-    await expect(submitPick(deps, users.alice!, battleId, 0, "VYBZ_DEMO:pulse-garden")).rejects.toMatchObject({ code: "TRACK_OUTSIDE_ERA" });
-    await submitPick(deps, users.alice!, battleId, 0, "VYBZ_DEMO:neon-hallway");
+    await expect(submitPick(deps, users.alice!, battleId, 0, { catalogIds: ["VYBZ_DEMO:pulse-garden"] })).rejects.toMatchObject({ code: "TRACK_OUTSIDE_ERA" });
+    await submitPick(deps, users.alice!, battleId, 0, { catalogIds: ["VYBZ_DEMO:neon-hallway"] });
 
     // Sealed: Bob can't see Alice's pick yet, but knows she submitted.
     let bobView = await getBattleView(deps, users.bob!, battleId);
     expect(bobView.rounds[0]!.entries).toEqual([]);
     expect(bobView.rounds[0]!.viewer.opponentSubmitted).toBe(true);
     expect(bobView.viewer.action).toBe("submit");
-    await expect(submitPick(deps, users.bob!, battleId, 0, "VYBZ_DEMO:neon-hallway")).rejects.toMatchObject({ code: "TRACK_ALREADY_USED" });
-    await submitPick(deps, users.bob!, battleId, 0, "VYBZ_DEMO:midnight-static");
+    await expect(submitPick(deps, users.bob!, battleId, 0, { catalogIds: ["VYBZ_DEMO:neon-hallway"] })).rejects.toMatchObject({ code: "TRACK_ALREADY_USED" });
+    await submitPick(deps, users.bob!, battleId, 0, { catalogIds: ["VYBZ_DEMO:midnight-static"] });
 
     // Voting is open. Carol (audience) sees two blind entries at parity tier.
     let carolView = await getBattleView(deps, users.carol!, battleId);
@@ -117,7 +118,7 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
     expect(round.entries).toHaveLength(2);
     expect(round.entries.every((e) => e.participantId === null)).toBe(true);
     expect(round.viewer.parityTier).toBe("HOSTED_FULL");
-    expect(round.entries[0]!.playback).toMatchObject({ tier: "HOSTED_FULL" });
+    expect(round.entries[0]!.tracks[0]!.playback).toMatchObject({ tier: "HOSTED_FULL" });
     expect(round.totalVotes).toBeNull(); // AT_ROUND_CLOSE by default
     expect(round.viewer.voteBlockedReason).toBe("LISTEN_REQUIRED");
 
@@ -163,14 +164,14 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
     expect(carolView.rounds[1]!.status).toBe("SUBMISSIONS_OPEN");
 
     // Round 2: Bob doesn't submit and forfeits it.
-    await submitPick(deps, users.alice!, battleId, 1, "VYBZ_DEMO:velvet-circuit");
+    await submitPick(deps, users.alice!, battleId, 1, { catalogIds: ["VYBZ_DEMO:velvet-circuit"] });
     tick(31 * MIN);
     let view = await getBattleView(deps, users.alice!, battleId); // lazy advance on read
     expect(view.rounds[1]).toMatchObject({ status: "SCORED", winnerParticipantId: alicePid });
 
     // Round 3: both submit, nobody votes; voting extends once, then it's a draw.
-    await submitPick(deps, users.alice!, battleId, 2, "VYBZ_DEMO:glass-parade");
-    await submitPick(deps, users.bob!, battleId, 2, "VYBZ_DEMO:low-tide-signal");
+    await submitPick(deps, users.alice!, battleId, 2, { catalogIds: ["VYBZ_DEMO:glass-parade"] });
+    await submitPick(deps, users.bob!, battleId, 2, { catalogIds: ["VYBZ_DEMO:low-tide-signal"] });
     tick(31 * MIN);
     view = await getBattleView(deps, users.alice!, battleId);
     expect(view.rounds[2]!.status).toBe("VOTING_OPEN");
@@ -212,8 +213,8 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
     const lax = { ...deps, requireVerifiedEmail: false };
     const { id } = await createBattle(lax, users.alice!, { title: "Lax", rules: { roundCount: 3, fairListen: { minPlayedMs: 0 } } });
     await acceptBattle(lax, users.bob!, id);
-    await submitPick(lax, users.alice!, id, 0, "VYBZ_DEMO:neon-hallway");
-    await submitPick(lax, users.bob!, id, 0, "VYBZ_DEMO:midnight-static");
+    await submitPick(lax, users.alice!, id, 0, { catalogIds: ["VYBZ_DEMO:neon-hallway"] });
+    await submitPick(lax, users.bob!, id, 0, { catalogIds: ["VYBZ_DEMO:midnight-static"] });
     const v = await getBattleView(lax, users.dave!, id); // dave never verified
     expect(v.rounds[0]!.viewer.voteBlockedReason).toBe("LISTEN_REQUIRED");
     expect((await getBattleView(deps, users.dave!, id)).rounds[0]!.viewer.voteBlockedReason).toBe("EMAIL_NOT_VERIFIED");

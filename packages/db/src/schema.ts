@@ -164,6 +164,10 @@ export const battle = pgTable(
     endedAt: ts("ended_at"),
     winnerParticipantId: text("winner_participant_id"),
     rematchOfId: text("rematch_of_id"),
+    /** Who proposed the current terms (null on battles created before negotiation existed: the creator). */
+    proposedById: text("proposed_by_id").references(() => user.id),
+    previousRules: jsonb("previous_rules"),
+    counterCount: integer("counter_count").notNull().default(0),
     /** When the scheduler next needs to look at this battle. */
     nextDeadlineAt: ts("next_deadline_at"),
     /** Optimistic lock for state transitions. */
@@ -216,6 +220,7 @@ export const battleRound = pgTable(
     votingClosesAt: ts("voting_closes_at"),
     extensions: integer("extensions").notNull().default(0),
     winnerParticipantId: text("winner_participant_id"),
+    aiWinnerParticipantId: text("ai_winner_participant_id"),
     forfeitParticipantIds: text("forfeit_participant_ids").array().notNull().default(sql`'{}'::text[]`),
   },
   (t) => [uniqueIndex("round_battle_index_uq").on(t.battleId, t.index)],
@@ -237,10 +242,12 @@ export const submission = pgTable(
     trackId: text("track_id")
       .notNull()
       .references(() => track.id),
+    /** Order within the side's set for the round. */
+    position: integer("position").notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [
-    uniqueIndex("submission_round_participant_uq").on(t.roundId, t.participantId),
+    uniqueIndex("submission_round_participant_position_uq").on(t.roundId, t.participantId, t.position),
     // The same track can't be used twice in one battle.
     uniqueIndex("submission_battle_track_uq").on(t.battleId, t.trackId),
   ],
@@ -280,6 +287,26 @@ export const vote = pgTable(
     index("vote_battle_idx").on(t.battleId),
   ],
 );
+
+/**
+ * The AI judge's verdict for a round: computed once when voting opens, kept
+ * hidden until the round is scored. It never sees who picked which side.
+ */
+export const aiVerdict = pgTable("ai_verdict", {
+  roundId: text("round_id")
+    .primaryKey()
+    .references(() => battleRound.id, { onDelete: "cascade" }),
+  battleId: text("battle_id")
+    .notNull()
+    .references(() => battle.id, { onDelete: "cascade" }),
+  winnerParticipantId: text("winner_participant_id")
+    .notNull()
+    .references(() => battleParticipant.id, { onDelete: "cascade" }),
+  confidence: real("confidence").notNull(),
+  reason: text("reason").notNull(),
+  model: text("model").notNull(),
+  createdAt: createdAt(),
+});
 
 /** Evidence a voter played a submission before voting. */
 export const listenProof = pgTable(

@@ -51,17 +51,35 @@ export interface CatalogSearchResponse {
   items: CatalogHit[];
 }
 
-export interface EntryView {
+/** One track in a side's set for a round. */
+export interface EntryTrackView {
   submissionId: string;
   track: TrackView;
-  /** Null while blind voting hides who picked it. */
-  participantId: string | null;
   /** The source to play for this viewer, at the round's parity tier. */
   playback: PlaybackSource | null;
+  /** This viewer's listen progress on the track. */
+  listen: { playedMs: number; requiredMs: number; tier: PlaybackTier | null };
+}
+
+/** One side's entry for a round: its set of `tracksPerRound` tracks. */
+export interface EntryView {
+  /** Identifies the side for voting: the submission id of its first track. */
+  submissionId: string;
+  tracks: EntryTrackView[];
+  /** Null while blind voting hides who picked it. */
+  participantId: string | null;
   /** Present when tallies may be shown. */
   votes: { count: number; weighted: number } | null;
-  /** This viewer's listen progress on the entry. */
-  listen: { playedMs: number; requiredMs: number; tier: PlaybackTier | null };
+}
+
+export interface AiVerdictView {
+  /** The entry (first submission id) the AI picked. */
+  submissionId: string;
+  participantId: string;
+  confidence: number;
+  reason: string;
+  /** "claude-sonnet-5-5", or "demo" for the development stand-in. */
+  model: string;
 }
 
 export interface RoundView {
@@ -75,9 +93,13 @@ export interface RoundView {
   entries: EntryView[];
   /** Total votes, when tallies may be shown. */
   totalVotes: number | null;
+  /** The AI judge's pick and reasoning, shown once the round is scored. */
+  ai: AiVerdictView | null;
+  /** The crowd's own winner (differs from the official winner in COMBINED or AI modes). */
+  crowdWinnerParticipantId: string | null;
   viewer: {
-    /** For participants: their own pick this round (visible to them even while sealed). */
-    mySubmission: { submissionId: string; track: TrackView } | null;
+    /** For participants: their own picks this round (visible to them even while sealed). */
+    mySubmission: { submissionId: string; tracks: TrackView[] } | null;
     opponentSubmitted: boolean;
     votedSubmissionId: string | null;
     canVote: boolean;
@@ -108,13 +130,24 @@ export interface BattleView {
   invited: UserSummary | null;
   participants: ParticipantView[];
   winnerParticipantId: string | null;
+  /** SEPARATE and COMBINED modes: rounds each participant won on the AI's card. */
+  aiScorecard: Record<string, number> | null;
   currentRoundIndex: number | null;
+  /** Terms negotiation, before the battle starts. */
+  terms: {
+    proposedBy: UserSummary;
+    /** Who has to answer; null for an open challenge (anyone). */
+    awaiting: UserSummary | null;
+    previousRules: BattleRules | null;
+    counterCount: number;
+  };
   rematchOfId: string | null;
   rounds: RoundView[];
   viewer: {
     userId: string | null;
     participantId: string | null;
     canAccept: boolean;
+    canCounter: boolean;
     canDecline: boolean;
     canCancel: boolean;
     canRematch: boolean;
@@ -158,7 +191,20 @@ export interface CreateBattleRequest {
 }
 
 export interface SubmitRequest {
-  catalogId: string;
+  /** The side's whole set for the round, `tracksPerRound` long. */
+  catalogIds: string[];
+}
+
+export interface CounterRequest {
+  rules: BattleRulesInput;
+}
+
+export interface ConfigResponse {
+  aiJudge: { available: boolean; label: string | null; note: string };
+  genres: { key: string; label: string }[];
+  decades: number[];
+  roundCounts: number[];
+  tracksPerRound: number[];
 }
 
 export interface ListenRequest {

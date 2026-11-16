@@ -24,7 +24,8 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="battle/[id]/index" options={{ title: "Battle" }} />
-        <Stack.Screen name="battle/[id]/pick" options={{ title: "Pick your track", presentation: "modal" }} />
+        <Stack.Screen name="battle/[id]/pick" options={{ title: "Pick your tracks", presentation: "modal" }} />
+        <Stack.Screen name="battle/[id]/counter" options={{ title: "Counter-offer", presentation: "modal" }} />
         <Stack.Screen name="user/[handle]" options={{ title: "Profile" }} />
         <Stack.Screen name="sign-in" options={{ title: "Sign in", presentation: "modal" }} />
         <Stack.Screen name="sign-up" options={{ title: "Create account", presentation: "modal" }} />

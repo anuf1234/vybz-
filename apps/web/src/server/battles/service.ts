@@ -13,6 +13,11 @@ import {
   type UserSummary,
   type ViewerAction,
   acceptBattle as engineAccept,
+  counterOffer,
+  entryOrder,
+  type BattleRules,
+  themeLabel,
+  usesAiJudge,
   advance,
   cancelBattle as engineCancel,
   checkVote,
@@ -27,8 +32,9 @@ import {
 } from "@vybz/core";
 import { type Database, type Executor, newId, schema, and, desc, eq, inArray, isNotNull, lte, ne, or, sql } from "@vybz/db";
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
+import type { AiJudge, JudgeInput } from "../ai-judge";
 import { z } from "zod";
-import { type CatalogDeps, CatalogError, ensureTrack, guestViewer, refsForTracks } from "../catalog";
+import { type CatalogDeps, CatalogError, type StoredTrack, ensureTrack, guestViewer, refsForTracks } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
 import { voterFacts } from "./eligibility";
 import { buildBattleView, type ViewData } from "./view";
@@ -38,6 +44,8 @@ export interface BattleDeps {
   catalog: CatalogDeps;
   /** Deployment-wide: battling needs a verified email. */
   requireVerifiedEmail: boolean;
+  /** Null when no AI judge is configured: AI judging modes are then unavailable. */
+  aiJudge: AiJudge | null;
   now?: () => Date;
 }
 
@@ -67,6 +75,19 @@ export const CreateBattleSchema = z
     rules: z.unknown().optional(),
   })
   .strict();
+
+function validRules(deps: BattleDeps, input: unknown): BattleRules {
+  let rules: BattleRules;
+  try {
+    rules = parseRules(input ?? {});
+  } catch (err) {
+    throw new ServiceError(400, "INVALID_RULES", err instanceof z.ZodError ? z.prettifyError(err) : String(err));
+  }
+  if (usesAiJudge(rules.judging.mode) && !deps.aiJudge) {
+    throw new ServiceError(409, "AI_JUDGE_UNAVAILABLE", "AI judging isn't set up on this server.");
+  }
+  return rules;
+}
 
 // ── Transitions ────────────────────────────────────────────────────────────
 
@@ -147,13 +168,7 @@ export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, bo
   if (!parsed.success) throw new ServiceError(400, "INVALID_REQUEST", z.prettifyError(parsed.error));
   const req: CreateBattleRequest = parsed.data as CreateBattleRequest;
 
-  const rulesResult = (() => {
-    try {
-      return parseRules(req.rules ?? {});
-    } catch (err) {
-      throw new ServiceError(400, "INVALID_RULES", err instanceof z.ZodError ? z.prettifyError(err) : String(err));
-    }
-  })();
+  const rulesResult = validRules(deps, req.rules);
 
   let invitedUserId: string | null = null;
   if (req.opponentHandle) {
@@ -164,8 +179,19 @@ export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, bo
   }
 
   const { battle } = engineCreate({ creatorId: actor.id, invitedUserId, rules: rulesResult }, ctx(deps));
-  await deps.db.transaction((tx) => insertBattle(tx, battle, { title: req.title, theme: req.theme?.trim() || null }));
+  const theme = req.theme?.trim() || themeLabel(rulesResult.constraints);
+  await deps.db.transaction((tx) => insertBattle(tx, battle, { title: req.title, theme }));
   return { id: battle.id };
+}
+
+/** Propose different terms; the other side then accepts or counters. */
+export async function counterBattle(deps: BattleDeps, actorIn: UserRow | null, id: string, body: unknown) {
+  const actor = requireBattler(deps, actorIn);
+  const rules = validRules(deps, (body as { rules?: unknown } | null)?.rules);
+  await transition(deps, id, (agg, c) => counterOffer(agg, actor.id, rules, c));
+  // Keep the theme label in step with the new genre/era terms.
+  const label = themeLabel(rules.constraints);
+  await deps.db.update(schema.battle).set({ theme: label }).where(eq(schema.battle.id, id));
 }
 
 export async function acceptBattle(deps: BattleDeps, actor: UserRow | null, id: string) {
@@ -183,38 +209,133 @@ export async function cancelBattle(deps: BattleDeps, actor: UserRow | null, id: 
   await transition(deps, id, (agg, c) => engineCancel(agg, actor.id, c));
 }
 
-export async function submitPick(deps: BattleDeps, actorIn: UserRow | null, id: string, roundIndex: number, catalogId: unknown) {
+export async function submitPick(deps: BattleDeps, actorIn: UserRow | null, id: string, roundIndex: number, body: unknown) {
   const actor = requireBattler(deps, actorIn);
-  if (typeof catalogId !== "string") throw new ServiceError(400, "INVALID_REQUEST", "catalogId is required");
+  const b = (body ?? {}) as { catalogIds?: unknown; catalogId?: unknown };
+  const catalogIds = Array.isArray(b.catalogIds) ? b.catalogIds : typeof b.catalogId === "string" ? [b.catalogId] : null;
+  if (!catalogIds || !catalogIds.length || catalogIds.length > 3 || !catalogIds.every((c): c is string => typeof c === "string")) {
+    throw new ServiceError(400, "INVALID_REQUEST", "catalogIds must list 1–3 tracks");
+  }
 
   // Cheap checks before any provider calls.
   const loaded = await loadBattle(deps.db, id);
   if (!loaded) throw notFound();
   if (!participantFor(loaded.aggregate, actor.id)) throw new ServiceError(403, "NOT_PARTICIPANT");
+  if (catalogIds.length !== loaded.aggregate.rules.tracksPerRound) {
+    throw new ServiceError(409, "WRONG_TRACK_COUNT", `This battle plays ${loaded.aggregate.rules.tracksPerRound} track(s) per round.`);
+  }
 
   // Provider lookups happen outside the locked transaction.
-  const stored = await ensureTrack(deps.db, deps.catalog, catalogId).catch((err: unknown) => {
-    if (err instanceof CatalogError) {
-      throw new ServiceError(err.code === "TRACK_NOT_FOUND" ? 404 : err.code === "PROVIDER_UNAVAILABLE" ? 503 : 400, err.code);
+  const stored: StoredTrack[] = [];
+  for (const catalogId of catalogIds) {
+    const t = await ensureTrack(deps.db, deps.catalog, catalogId).catch((err: unknown) => {
+      if (err instanceof CatalogError) {
+        throw new ServiceError(err.code === "TRACK_NOT_FOUND" ? 404 : err.code === "PROVIDER_UNAVAILABLE" ? 503 : 400, err.code);
+      }
+      throw err;
+    });
+    // Every battle must work for listeners with no connected accounts.
+    const guestSources = resolvePlayback(t.refs, guestViewer(deps.catalog.storefront), deps.catalog.playback);
+    if (!guestSources.some((s) => s.tier !== "LINK_OUT")) {
+      throw new ServiceError(409, "TRACK_NOT_PLAYABLE", `"${t.track.title}" can't be played for everyone. Pick another version.`);
     }
-    throw err;
-  });
-
-  // Every battle must work for listeners with no connected accounts.
-  const guestSources = resolvePlayback(stored.refs, guestViewer(deps.catalog.storefront), deps.catalog.playback);
-  if (!guestSources.some((s) => s.tier !== "LINK_OUT")) {
-    throw new ServiceError(409, "TRACK_NOT_PLAYABLE", "That track can't be played for everyone. Pick another version.");
+    stored.push(t);
   }
 
   try {
     await transition(deps, id, (agg, c) =>
-      submitTrack(agg, { userId: actor.id, roundIndex, track: { id: stored.track.id, releaseYear: stored.track.releaseYear, durationMs: stored.track.durationMs } }, c),
+      submitTrack(
+        agg,
+        {
+          userId: actor.id,
+          roundIndex,
+          tracks: stored.map((t) => ({ id: t.track.id, releaseYear: t.track.releaseYear, durationMs: t.track.durationMs, genres: t.track.genres })),
+        },
+        c,
+      ),
     );
   } catch (err) {
     // The (battle, track) unique index backs up the engine's check under races.
     if (isUniqueViolation(err)) throw new ServiceError(409, "TRACK_ALREADY_USED");
     throw err;
   }
+}
+
+// ── AI judge ───────────────────────────────────────────────────────────────
+
+/**
+ * Gets the AI judge's verdict for the open voting round if the battle uses the
+ * AI and it hasn't ruled yet. Idempotent and safe to call from anywhere; the
+ * verdict stays hidden until the round is scored.
+ */
+export async function ensureAiVerdicts(deps: BattleDeps, id: string): Promise<boolean> {
+  if (!deps.aiJudge) return false;
+  const loaded = await loadBattle(deps.db, id);
+  if (!loaded) return false;
+  const { aggregate: agg, row } = loaded;
+  if (!usesAiJudge(agg.rules.judging.mode)) return false;
+  const round = currentRound(agg);
+  if (!round || round.status !== "VOTING_OPEN" || agg.aiVerdicts[round.id]) return false;
+
+  const subs = agg.submissions.filter((s) => s.roundId === round.id);
+  const tracks = await deps.db.select().from(schema.track).where(inArray(schema.track.id, subs.map((s) => s.trackId)));
+  // Always blind for the AI: A/B in the round's random order, no identities.
+  const order = entryOrder(round.id, true);
+  const labels = ["A", "B"] as const;
+  const sideParticipant = order.map((side) => agg.participants.find((p) => p.side === side)!.id);
+  const input: JudgeInput = {
+    battleTitle: row.title,
+    theme: row.theme,
+    genres: agg.rules.constraints?.genres ?? [],
+    eraFrom: agg.rules.constraints?.eraFrom,
+    eraTo: agg.rules.constraints?.eraTo,
+    roundNumber: round.index + 1,
+    suddenDeath: round.suddenDeath,
+    sides: sideParticipant.map((pid, i) => ({
+      label: labels[i]!,
+      tracks: subs
+        .filter((s) => s.participantId === pid)
+        .sort((a, b) => a.position - b.position)
+        .map((s) => {
+          const t = tracks.find((x) => x.id === s.trackId)!;
+          return { title: t.title, artistName: t.artistName, albumName: t.albumName, releaseYear: t.releaseYear, genres: t.genres, durationMs: t.durationMs };
+        }),
+    })),
+  };
+
+  try {
+    const verdict = await deps.aiJudge.judge(input);
+    const winner = sideParticipant[verdict.winner === "A" ? 0 : 1]!;
+    await deps.db
+      .insert(schema.aiVerdict)
+      .values({ roundId: round.id, battleId: agg.id, winnerParticipantId: winner, confidence: verdict.confidence, reason: verdict.reason, model: verdict.model })
+      .onConflictDoNothing();
+    return true;
+  } catch (err) {
+    // Retried on the next view or scheduler tick; AI-only rounds extend until it rules.
+    console.error("AI judge failed", id, err);
+    return false;
+  }
+}
+
+/** For the scheduler: rule on every open AI-judged round that's still waiting. */
+export async function ensureAllAiVerdicts(deps: BattleDeps, limit = 50): Promise<number> {
+  if (!deps.aiJudge) return 0;
+  const pending = await deps.db
+    .select({ id: schema.battleRound.battleId })
+    .from(schema.battleRound)
+    .innerJoin(schema.battle, eq(schema.battle.id, schema.battleRound.battleId))
+    .where(
+      and(
+        eq(schema.battleRound.status, "VOTING_OPEN"),
+        sql`${schema.battle.rules}->'judging'->>'mode' in ('AI','COMBINED','SEPARATE')`,
+        sql`not exists (select 1 from ${schema.aiVerdict} where ${schema.aiVerdict.roundId} = ${schema.battleRound.id})`,
+      ),
+    )
+    .limit(limit);
+  let n = 0;
+  for (const { id } of pending) if (await ensureAiVerdicts(deps, id)) n++;
+  return n;
 }
 
 // ── Listening and voting ───────────────────────────────────────────────────
@@ -349,7 +470,7 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
   const trackIds = [...new Set(agg.submissions.map((s) => s.trackId))];
   const roundIds = agg.rounds.map((r) => r.id);
 
-  const [users, tracks, refs, proofs, votes] = await Promise.all([
+  const [users, tracks, refs, proofs, votes, verdicts] = await Promise.all([
     usersById(deps.db, userIds),
     trackIds.length ? deps.db.select().from(schema.track).where(inArray(schema.track.id, trackIds)) : [],
     refsForTracks(deps.db, trackIds),
@@ -359,6 +480,7 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
     viewer
       ? deps.db.select({ roundId: schema.vote.roundId, submissionId: schema.vote.submissionId }).from(schema.vote).where(and(eq(schema.vote.battleId, id), eq(schema.vote.voterId, viewer.id)))
       : [],
+    deps.db.select().from(schema.aiVerdict).where(eq(schema.aiVerdict.battleId, id)),
   ]);
 
   const data: ViewData = {
@@ -369,6 +491,7 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
     refs,
     proofs: proofs.map((p) => ({ roundId: p.roundId, submissionId: p.submissionId, playedMs: p.playedMs, tier: p.tier as PlaybackTier })),
     votes,
+    verdicts,
     viewer,
     deploymentVerifiesEmail: deps.requireVerifiedEmail,
     now: now(deps),
@@ -406,6 +529,7 @@ export async function listBattles(deps: BattleDeps, viewer: UserRow | null, feed
     case "vote":
       where = and(
         eq(b.status, "IN_PROGRESS"),
+        sql`coalesce(${b.rules}->'judging'->>'mode', 'CROWD') <> 'AI'`,
         inArray(b.id, deps.db.select({ id: schema.battleRound.battleId }).from(schema.battleRound).where(eq(schema.battleRound.status, "VOTING_OPEN"))),
         viewer ? sql`not exists (select 1 from ${p} where ${p.battleId} = ${b.id} and ${p.userId} = ${viewer.id})` : undefined,
       );
@@ -453,11 +577,15 @@ async function toListItems(deps: BattleDeps, viewer: UserRow | null, rows: (type
     let action: ViewerAction = "none";
     if (viewer) {
       const acceptOpen = !r.acceptDeadline || r.acceptDeadline > t;
-      if (r.status === "PENDING_ACCEPT" && r.invitedUserId === viewer.id && acceptOpen) action = "accept";
+      const proposer = r.proposedById ?? r.creatorId;
+      const awaiting = r.status === "PENDING_ACCEPT" ? (proposer === r.creatorId ? r.invitedUserId : r.creatorId) : null;
+      const aiOnly = (r.rules as { judging?: { mode?: string } }).judging?.mode === "AI";
+      if (r.status === "PENDING_ACCEPT" && awaiting === viewer.id && acceptOpen) action = "accept";
       else if (r.status === "OPEN_CHALLENGE" && r.creatorId !== viewer.id && acceptOpen) action = "accept";
       else if (cur && isParticipant) action = cur.status === "SUBMISSIONS_OPEN" && !submitted.has(cur.id) ? "submit" : "wait";
-      else if (cur && !isParticipant && cur.status === "VOTING_OPEN" && !voted.has(cur.id)) action = "vote";
-      else if ((r.status === "OPEN_CHALLENGE" || r.status === "PENDING_ACCEPT") && r.creatorId === viewer.id) action = "wait";
+      else if (cur && !isParticipant && cur.status === "VOTING_OPEN" && !voted.has(cur.id) && !aiOnly) action = "vote";
+      else if (r.status === "OPEN_CHALLENGE" && r.creatorId === viewer.id) action = "wait";
+      else if (r.status === "PENDING_ACCEPT" && (r.creatorId === viewer.id || r.invitedUserId === viewer.id)) action = "wait";
     }
 
     return {

@@ -16,7 +16,9 @@ The full architecture and roadmap live in [docs/architecture.md](docs/architectu
 
 ### What works end to end
 
-Sign up (email/password or Google), challenge someone (or post an open challenge), accept, pick tracks per round (sealed until voting opens), audience listens to both picks at the same playback tier, votes unlock only after enough real listening, rounds close on their deadlines (with forfeits, vote-window extensions and a sudden-death round when level), results, rankings, profiles and rematches.
+Sign up (email/password or Google), challenge someone (or post an open challenge), agree the terms (genre and era such as "90s R&B", rounds, tracks per round, who judges, pace) with counter-offers until both sides accept, pick tracks per round (sealed until voting opens), audience listens to both picks at the same playback tier, votes unlock only after enough real listening, rounds close on their deadlines (with forfeits, vote-window extensions and a sudden-death round when level), results, rankings, profiles and rematches.
+
+**Judging.** Each battle picks who decides a round: the crowd, the AI judge, both combined into one score (the AI's pick counts for an agreed share, 25–75%), or both on separate scorecards (the crowd's card is official, the AI's shown alongside). The AI judge is Claude via the Anthropic API (`ANTHROPIC_API_KEY`). It doesn't hear the audio, since VYBZ never downloads provider audio: it judges from what it knows about each song and its fit with the theme, sees the sides only as A and B, and its verdict stays hidden until the round closes.
 
 ### Music rules this code enforces
 

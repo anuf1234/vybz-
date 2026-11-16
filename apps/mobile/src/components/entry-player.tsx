@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { EntryView } from "@vybz/core";
+import type { EntryTrackView } from "@vybz/core";
 import type { PlaybackSource } from "@vybz/providers";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,7 +13,7 @@ import { YouTubeEmbed } from "./youtube-embed";
 const REPORT_EVERY_MS = 5_000;
 
 export interface EntryPlayerProps {
-  entry: EntryView;
+  entry: EntryTrackView;
   battleId: string;
   roundIndex: number;
   /** Only one entry plays at a time; others pause. */
@@ -26,7 +26,7 @@ export interface EntryPlayerProps {
 }
 
 /**
- * Plays one battle entry the way its provider allows and keeps the server's
+ * Plays one track of a battle entry the way its provider allows and keeps the server's
  * listen proof up to date for the fair-listen vote gate.
  */
 export function EntryPlayer({ entry, battleId, roundIndex, active, onActivate, reportListens, onListenComplete }: EntryPlayerProps) {
