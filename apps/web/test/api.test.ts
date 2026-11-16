@@ -193,6 +193,6 @@ describe.skipIf(!TEST_DB_URL)("HTTP API", () => {
 
     expect((await call("cron", "POST", "/api/cron/advance")).status).toBe(401);
     const ok = await call("cron", "POST", "/api/cron/advance", { headers: { authorization: "Bearer cron-secret-cron-secret" } });
-    expect(await ok.json()).toEqual({ advanced: 0, judged: 0 });
+    expect(await ok.json()).toEqual({ advanced: 0, judged: 0, daily: expect.any(String) });
   });
 });

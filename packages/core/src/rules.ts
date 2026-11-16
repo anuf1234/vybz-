@@ -48,6 +48,17 @@ export const JudgingSchema = z
 export const usesAiJudge = (mode: JudgingMode) => mode !== "CROWD";
 export const usesCrowd = (mode: JudgingMode) => mode !== "AI";
 
+export const MAX_ENTRANTS = 8;
+
+/** Duel: exactly 2. Multi-entry: up to 8, starting once `min` have joined (or the host starts it). */
+export const EntrantsSchema = z
+  .object({
+    min: z.number().int().min(2).max(MAX_ENTRANTS).default(2),
+    max: z.number().int().min(2).max(MAX_ENTRANTS).default(2),
+  })
+  .strict()
+  .refine((e) => e.min <= e.max, { message: "min entrants can't exceed max", path: ["min"] });
+
 export const BattleRulesSchema = z
   .object({
     roundCount: z
@@ -57,6 +68,9 @@ export const BattleRulesSchema = z
         message: `roundCount must be one of ${ROUND_COUNTS.join(", ")}`,
       })
       .default(5),
+    entrants: EntrantsSchema.default({ min: 2, max: 2 }),
+    /** False for a hosted battle: the creator runs it but doesn't play (e.g. the daily battle). */
+    creatorPlays: z.boolean().default(true),
     /** Tracks each side plays per round; voters judge the set. */
     tracksPerRound: z
       .number()
@@ -108,4 +122,26 @@ export const defaultRules = (): BattleRules => parseRules({});
 /** Example from the plan: "2000s R&B, 10 rounds". */
 export function eraPreset(from: number, to: number, roundCount: RoundCount = 10): BattleRules {
   return parseRules({ roundCount, constraints: { eraFrom: from, eraTo: to } });
+}
+
+export const isDuel = (r: BattleRules) => r.entrants.max === 2;
+
+/** Overall battle lengths offered in the apps; each round gets an equal pick + vote window. */
+export const DURATION_PRESETS = [
+  { key: "1h", label: "1 hour", minutes: 60 },
+  { key: "6h", label: "6 hours", minutes: 6 * 60 },
+  { key: "24h", label: "24 hours", minutes: 24 * 60 },
+  { key: "3d", label: "3 days", minutes: 3 * 24 * 60 },
+  { key: "7d", label: "1 week", minutes: 7 * 24 * 60 },
+] as const;
+
+/** Splits a total battle length into per-round pick and vote windows (at least 5 minutes each). */
+export function windowsForDuration(totalMinutes: number, roundCount: number): { submissionWindowMinutes: number; votingWindowMinutes: number } {
+  const each = Math.max(5, Math.floor(totalMinutes / roundCount / 2));
+  return { submissionWindowMinutes: each, votingWindowMinutes: each };
+}
+
+/** Roughly how long a battle runs with these rules (picks + votes for every round). */
+export function battleLengthMinutes(r: BattleRules): number {
+  return r.roundCount * (r.timing.submissionWindowMinutes + r.timing.votingWindowMinutes);
 }

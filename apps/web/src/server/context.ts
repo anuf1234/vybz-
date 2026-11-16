@@ -9,6 +9,7 @@ import type { CatalogDeps } from "./catalog";
 import { getDb } from "./db";
 import { requireEnv, serverEnv } from "./env";
 import { createMailer } from "./mailer";
+import { expoPushSender } from "./notifications";
 
 /** Wires the services to this deployment's configuration. Built once per process. */
 
@@ -38,7 +39,14 @@ export function getAiJudge(): AiJudge | null {
 }
 
 export function getBattleDeps(): BattleDeps {
-  return { db: getDb(), catalog: getCatalogDeps(), requireVerifiedEmail: serverEnv().AUTH_REQUIRE_EMAIL_VERIFICATION, aiJudge: getAiJudge() };
+  const env = serverEnv();
+  return {
+    db: getDb(),
+    catalog: getCatalogDeps(),
+    requireVerifiedEmail: env.AUTH_REQUIRE_EMAIL_VERIFICATION,
+    aiJudge: getAiJudge(),
+    push: env.PUSH_NOTIFICATIONS ? expoPushSender(env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : {}) : null,
+  };
 }
 
 export function getAuth(): Auth {

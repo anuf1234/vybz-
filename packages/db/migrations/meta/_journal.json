@@ -15,6 +15,13 @@
       "when": 1794837502182,
       "tag": "0001_judging_terms_sets",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794864318584,
+      "tag": "0002_multi_live_moderation",
+      "breakpoints": true
     }
   ]
 }

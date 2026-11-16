@@ -23,6 +23,12 @@ const ServerEnvSchema = z.object({
   /** Enables the AI judge (Claude). */
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   AI_JUDGE_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
+  /** Send phone notifications through Expo's push service. */
+  PUSH_NOTIFICATIONS: bool(true),
+  /** Optional: Expo access token if push security is enabled for the project. */
+  EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
+  /** Comma-separated words blocked in battle chat. */
+  CHAT_BLOCKLIST: z.string().optional(),
   /** Shared secret for the scheduler hitting /api/cron/advance. */
   CRON_SECRET: z.string().min(16).optional(),
   /** Deep-link scheme of the mobile app, for auth redirects. */

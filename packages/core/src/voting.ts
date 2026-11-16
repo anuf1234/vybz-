@@ -121,12 +121,28 @@ export function checkVote(input: VoteCheckInput): VoteBlockReason | null {
 }
 
 /**
- * Display order for a round's two entries. With blind voting, which side shows
- * first is decided per round from the round id, so position gives nothing away.
+ * Display order for a round's entries (seat numbers). With blind voting the
+ * order is shuffled per round from the round id, so position gives nothing away.
  */
-export function entryOrder(roundId: string, blind: boolean): [0 | 1, 0 | 1] {
-  if (!blind) return [0, 1];
+export function entryOrder(roundId: string, blind: boolean, sides: readonly number[] = [0, 1]): number[] {
+  const sorted = [...sides].sort((a, b) => a - b);
+  if (!blind) return sorted;
+  // Deterministic Fisher–Yates driven by a small PRNG seeded from the round id.
   let h = 2166136261;
   for (let i = 0; i < roundId.length; i++) h = Math.imul(h ^ roundId.charCodeAt(i), 16777619);
-  return (h >>> 0) % 2 === 0 ? [0, 1] : [1, 0];
+  let seed = h >>> 0;
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 2 ** 32;
+  };
+  for (let i = sorted.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [sorted[i], sorted[j]] = [sorted[j]!, sorted[i]!];
+  }
+  return sorted;
+}
+
+/** Letter label for an entry position: A, B, C... */
+export function entryLetter(index: number): string {
+  return String.fromCharCode(65 + index);
 }

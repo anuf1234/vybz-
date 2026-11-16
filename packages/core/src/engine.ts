@@ -1,5 +1,5 @@
 import { trackMatchesGenres } from "./genres";
-import type { BattleRules } from "./rules";
+import { type BattleRules, isDuel } from "./rules";
 import { type RoundTally, battleOutcome, judgeRound, totalVotes } from "./scoring";
 
 /**
@@ -8,6 +8,12 @@ import { type RoundTally, battleOutcome, judgeRound, totalVotes } from "./scorin
  * No I/O. Callers load the aggregate, call one function, persist the returned
  * aggregate (with optimistic locking on `version`) and handle the events.
  * Every function returns a new aggregate; inputs are never mutated.
+ *
+ * Two formats share one engine:
+ *  - Duel (entrants.max = 2): open or direct challenge; the other side accepts
+ *    or counters the terms until both agree.
+ *  - Multi-entry (up to 8): a lobby people join; it starts when full, when the
+ *    host starts it with at least `entrants.min`, or at the join deadline.
  */
 
 export type BattleStatus = "OPEN_CHALLENGE" | "PENDING_ACCEPT" | "IN_PROGRESS" | "COMPLETE" | "CANCELLED" | "EXPIRED" | "VOIDED";
@@ -20,7 +26,8 @@ export const TERMINAL_BATTLE_STATUSES: readonly BattleStatus[] = ["COMPLETE", "C
 export interface ParticipantState {
   id: string;
   userId: string;
-  side: 0 | 1;
+  /** Seat number, 0-based. Duels use 0 and 1. */
+  side: number;
 }
 
 export interface RoundState {
@@ -28,6 +35,8 @@ export interface RoundState {
   index: number;
   status: RoundStatus;
   suddenDeath: boolean;
+  /** Who plays this round; null means every participant. Sudden death is only for the tied leaders. */
+  contenderIds: string[] | null;
   submissionsCloseAt: Date | null;
   votingOpensAt: Date | null;
   votingClosesAt: Date | null;
@@ -35,7 +44,7 @@ export interface RoundState {
   winnerParticipantId: string | null;
   /** The AI judge's pick, recorded when the round is scored (modes that use the AI). */
   aiWinnerParticipantId: string | null;
-  /** Participants who missed the submission deadline for this round. */
+  /** Contenders who missed the submission deadline for this round. */
   forfeitParticipantIds: string[];
 }
 
@@ -53,13 +62,14 @@ export interface BattleAggregate {
   status: BattleStatus;
   rules: BattleRules;
   creatorId: string;
-  /** The challenger. Null while an open challenge has no taker. */
+  /** Duels: the challenger (null while an open challenge has no taker). Unused for multi-entry. */
   invitedUserId: string | null;
-  /** Who proposed the current terms; the other side accepts or counters. */
+  /** Duels: who proposed the current terms; the other side accepts or counters. */
   proposedByUserId: string;
   /** Terms before the latest counter-offer, so the app can show what changed. */
   previousRules: BattleRules | null;
   counterCount: number;
+  /** Duels: deadline to accept. Multi-entry: deadline to join. */
   acceptDeadline: Date | null;
   startedAt: Date | null;
   endedAt: Date | null;
@@ -83,9 +93,12 @@ export type DomainEvent =
   | { type: "battle.created"; battleId: string }
   | { type: "battle.accepted"; battleId: string; userId: string }
   | { type: "battle.countered"; battleId: string; userId: string }
+  | { type: "battle.joined"; battleId: string; userId: string }
+  | { type: "battle.left"; battleId: string; userId: string }
+  | { type: "battle.started"; battleId: string }
   | { type: "battle.cancelled"; battleId: string }
   | { type: "battle.expired"; battleId: string }
-  | { type: "round.submissions_opened"; battleId: string; roundIndex: number; closesAt: Date }
+  | { type: "round.submissions_opened"; battleId: string; roundIndex: number; closesAt: Date; contenderIds: string[] }
   | { type: "round.submitted"; battleId: string; roundIndex: number; participantId: string }
   | { type: "round.voting_opened"; battleId: string; roundIndex: number; closesAt: Date }
   | { type: "round.voting_extended"; battleId: string; roundIndex: number; closesAt: Date }
@@ -104,6 +117,7 @@ export type EngineErrorCode =
   | "OWN_BATTLE"
   | "NOT_CREATOR"
   | "NOT_PARTICIPANT"
+  | "NOT_A_CONTENDER"
   | "NOT_IN_PROGRESS"
   | "ROUND_NOT_CURRENT"
   | "ROUND_NOT_ACCEPTING_SUBMISSIONS"
@@ -117,7 +131,13 @@ export type EngineErrorCode =
   | "DUPLICATE_TRACK"
   | "NOT_YOUR_TURN"
   | "NO_CHANGES"
-  | "TOO_MANY_COUNTERS";
+  | "TOO_MANY_COUNTERS"
+  | "NOT_A_DUEL"
+  | "NOT_MULTI"
+  | "ALREADY_JOINED"
+  | "BATTLE_FULL"
+  | "NOT_ENOUGH_ENTRANTS"
+  | "INVALID_TERMS";
 
 export class EngineError extends Error {
   constructor(
@@ -132,19 +152,23 @@ export class EngineError extends Error {
 const addMinutes = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
 const addHours = (d: Date, h: number) => new Date(d.getTime() + h * 3_600_000);
 
-// ── Creation and acceptance ────────────────────────────────────────────────
+// ── Creation ───────────────────────────────────────────────────────────────
 
 export interface CreateBattleInput {
   id?: string;
   creatorId: string;
+  /** Duels only: challenge someone directly. */
   invitedUserId?: string | null;
   rules: BattleRules;
 }
 
 export function createBattle(input: CreateBattleInput, ctx: EngineContext): EngineResult {
+  const duel = isDuel(input.rules);
   if (input.invitedUserId && input.invitedUserId === input.creatorId) throw new EngineError("OWN_BATTLE");
+  if (!duel && input.invitedUserId) throw new EngineError("NOT_A_DUEL", "direct challenges are for duels; invite people to multi-entry battles instead");
+  if (duel && !input.rules.creatorPlays) throw new EngineError("INVALID_TERMS", "the creator of a duel has to play");
   const id = input.id ?? ctx.newId();
-  const rounds: RoundState[] = Array.from({ length: input.rules.roundCount }, (_, index) => newRound(ctx, index, false));
+  const rounds: RoundState[] = Array.from({ length: input.rules.roundCount }, (_, index) => newRound(ctx, index, false, null));
   const battle: BattleAggregate = {
     id,
     status: input.invitedUserId ? "PENDING_ACCEPT" : "OPEN_CHALLENGE",
@@ -159,7 +183,7 @@ export function createBattle(input: CreateBattleInput, ctx: EngineContext): Engi
     endedAt: null,
     winnerParticipantId: null,
     version: 0,
-    participants: [{ id: ctx.newId(), userId: input.creatorId, side: 0 }],
+    participants: input.rules.creatorPlays ? [{ id: ctx.newId(), userId: input.creatorId, side: 0 }] : [],
     rounds,
     submissions: [],
     tallies: {},
@@ -168,23 +192,29 @@ export function createBattle(input: CreateBattleInput, ctx: EngineContext): Engi
   return { battle, events: [{ type: "battle.created", battleId: id }] };
 }
 
+// ── Duels: accept or counter ───────────────────────────────────────────────
+
 /**
- * Who must answer the current terms: for a direct challenge, whoever didn't
- * propose them. Null for an open challenge (anyone but the creator may answer).
+ * Who must answer the current terms of a duel: whoever didn't propose them.
+ * Null for an open challenge (anyone but the creator may answer) and multi-entry.
  */
 export function awaitingResponseFrom(battle: BattleAggregate): string | null {
   if (battle.status !== "PENDING_ACCEPT") return null;
   return battle.proposedByUserId === battle.creatorId ? battle.invitedUserId : battle.creatorId;
 }
 
-/** Can `userId` accept or counter the current terms right now? */
+/** Can `userId` accept/counter (duel) or join (multi-entry) right now? */
 export function canRespond(battle: BattleAggregate, userId: string, now: Date): boolean {
   if (battle.acceptDeadline && now >= battle.acceptDeadline) return false;
+  if (!isDuel(battle.rules)) {
+    return battle.status === "OPEN_CHALLENGE" && !participantFor(battle, userId) && battle.participants.length < battle.rules.entrants.max;
+  }
   if (battle.status === "OPEN_CHALLENGE") return userId !== battle.creatorId;
   return battle.status === "PENDING_ACCEPT" && awaitingResponseFrom(battle) === userId;
 }
 
 function assertCanRespond(b: BattleAggregate, userId: string, now: Date) {
+  if (!isDuel(b.rules)) throw new EngineError("NOT_A_DUEL");
   if (b.status !== "OPEN_CHALLENGE" && b.status !== "PENDING_ACCEPT") throw new EngineError("NOT_OPEN");
   if (b.acceptDeadline && now >= b.acceptDeadline) throw new EngineError("NOT_OPEN", "challenge expired");
   if (b.status === "OPEN_CHALLENGE") {
@@ -195,31 +225,24 @@ function assertCanRespond(b: BattleAggregate, userId: string, now: Date) {
   if (awaitingResponseFrom(b) !== userId) throw new EngineError("NOT_YOUR_TURN", "waiting for the other side to answer your terms");
 }
 
-/** Both sides have agreed to the current terms: the battle starts. */
+/** Duel: both sides agree to the current terms and the battle starts. Multi-entry: joins. */
 export function acceptBattle(battle: BattleAggregate, userId: string, ctx: EngineContext): EngineResult {
+  if (!isDuel(battle.rules)) return joinBattle(battle, userId, ctx);
   const b = clone(battle);
   assertCanRespond(b, userId, ctx.now);
   if (b.status === "OPEN_CHALLENGE") b.invitedUserId = userId;
-  const challenger = b.invitedUserId!;
-
-  b.participants.push({ id: ctx.newId(), userId: challenger, side: 1 });
-  b.status = "IN_PROGRESS";
-  b.startedAt = ctx.now;
-  b.acceptDeadline = null;
-  const events: DomainEvent[] = [{ type: "battle.accepted", battleId: b.id, userId }];
-  const first = b.rounds[0];
-  if (first) events.push(openSubmissions(b, first, ctx));
-  return { battle: b, events };
+  b.participants.push({ id: ctx.newId(), userId: b.invitedUserId!, side: 1 });
+  return { battle: b, events: [{ type: "battle.accepted", battleId: b.id, userId }, ...start(b, ctx)] };
 }
 
 /**
- * Propose different terms (rounds, tracks per round, genre, era, judging...).
- * The other side then accepts or counters again. Countering an open challenge
- * makes it a direct negotiation with the counterer.
+ * Duel: propose different terms (rounds, tracks per round, genre, era,
+ * judging...). Countering an open challenge makes it a direct negotiation.
  */
 export function counterOffer(battle: BattleAggregate, userId: string, rules: BattleRules, ctx: EngineContext): EngineResult {
   const b = clone(battle);
   assertCanRespond(b, userId, ctx.now);
+  if (!isDuel(rules) || !rules.creatorPlays) throw new EngineError("NOT_A_DUEL", "a counter-offer can't turn a duel into a multi-entry battle");
   if (JSON.stringify(rules) === JSON.stringify(b.rules)) throw new EngineError("NO_CHANGES", "those are the current terms");
   if (b.counterCount >= MAX_COUNTER_OFFERS) throw new EngineError("TOO_MANY_COUNTERS", "too many counter-offers; accept or walk away");
 
@@ -231,7 +254,7 @@ export function counterOffer(battle: BattleAggregate, userId: string, rules: Bat
   b.status = "PENDING_ACCEPT";
   b.acceptDeadline = addHours(ctx.now, rules.challengeExpiryHours);
   if (rules.roundCount !== b.rounds.length) {
-    b.rounds = Array.from({ length: rules.roundCount }, (_, index) => b.rounds[index] ?? newRound(ctx, index, false));
+    b.rounds = Array.from({ length: rules.roundCount }, (_, index) => b.rounds[index] ?? newRound(ctx, index, false, null));
   }
   return { battle: b, events: [{ type: "battle.countered", battleId: b.id, userId }] };
 }
@@ -253,6 +276,47 @@ export function cancelBattle(battle: BattleAggregate, userId: string, ctx: Engin
   return { battle: b, events: [{ type: "battle.cancelled", battleId: b.id }] };
 }
 
+// ── Multi-entry: join, leave, start ────────────────────────────────────────
+
+export function joinBattle(battle: BattleAggregate, userId: string, ctx: EngineContext): EngineResult {
+  const b = clone(battle);
+  if (isDuel(b.rules)) throw new EngineError("NOT_MULTI");
+  if (b.status !== "OPEN_CHALLENGE") throw new EngineError("NOT_OPEN");
+  if (b.acceptDeadline && ctx.now >= b.acceptDeadline) throw new EngineError("NOT_OPEN", "entries have closed");
+  if (participantFor(b, userId)) throw new EngineError("ALREADY_JOINED");
+  if (b.participants.length >= b.rules.entrants.max) throw new EngineError("BATTLE_FULL");
+  const taken = new Set(b.participants.map((p) => p.side));
+  let side = 0;
+  while (taken.has(side)) side++;
+  b.participants.push({ id: ctx.newId(), userId, side });
+  const events: DomainEvent[] = [{ type: "battle.joined", battleId: b.id, userId }];
+  if (b.participants.length === b.rules.entrants.max) events.push(...start(b, ctx));
+  return { battle: b, events };
+}
+
+export function leaveBattle(battle: BattleAggregate, userId: string): EngineResult {
+  const b = clone(battle);
+  if (isDuel(b.rules)) throw new EngineError("NOT_MULTI");
+  if (b.status !== "OPEN_CHALLENGE") throw new EngineError("NOT_OPEN", "the battle has started");
+  if (userId === b.creatorId) throw new EngineError("NOT_PARTICIPANT", "hosts cancel the battle instead of leaving");
+  const p = participantFor(b, userId);
+  if (!p) throw new EngineError("NOT_PARTICIPANT");
+  b.participants = b.participants.filter((x) => x.id !== p.id);
+  return { battle: b, events: [{ type: "battle.left", battleId: b.id, userId }] };
+}
+
+/** The host starts a multi-entry battle early, once enough people have joined. */
+export function startBattle(battle: BattleAggregate, userId: string, ctx: EngineContext): EngineResult {
+  const b = clone(battle);
+  if (isDuel(b.rules)) throw new EngineError("NOT_MULTI");
+  if (b.creatorId !== userId) throw new EngineError("NOT_CREATOR");
+  if (b.status !== "OPEN_CHALLENGE") throw new EngineError("NOT_OPEN");
+  if (b.participants.length < Math.max(2, b.rules.entrants.min)) {
+    throw new EngineError("NOT_ENOUGH_ENTRANTS", `needs at least ${Math.max(2, b.rules.entrants.min)} players`);
+  }
+  return { battle: b, events: start(b, ctx) };
+}
+
 // ── Submissions ────────────────────────────────────────────────────────────
 
 export interface TrackFacts {
@@ -270,6 +334,17 @@ export function currentRound(battle: BattleAggregate): RoundState | null {
 export function participantFor(battle: BattleAggregate, userId: string | null | undefined): ParticipantState | null {
   if (!userId) return null;
   return battle.participants.find((p) => p.userId === userId) ?? null;
+}
+
+/** Participant ids playing this round. */
+export function contendersFor(battle: BattleAggregate, round: RoundState): string[] {
+  return round.contenderIds ?? battle.participants.map((p) => p.id);
+}
+
+/** Contenders who submitted a set this round. */
+export function presentFor(battle: BattleAggregate, round: RoundState): string[] {
+  const submitted = new Set(submissionsFor(battle, round.id).map((s) => s.participantId));
+  return contendersFor(battle, round).filter((id) => submitted.has(id));
 }
 
 export function checkTrackAllowed(rules: BattleRules, track: TrackFacts): void {
@@ -306,6 +381,7 @@ export function submitTrack(battle: BattleAggregate, input: SubmitInput, ctx: En
   if (!round || round.index !== input.roundIndex) throw new EngineError("ROUND_NOT_CURRENT");
   if (round.status !== "SUBMISSIONS_OPEN") throw new EngineError("ROUND_NOT_ACCEPTING_SUBMISSIONS");
   if (round.submissionsCloseAt && ctx.now >= round.submissionsCloseAt) throw new EngineError("ROUND_NOT_ACCEPTING_SUBMISSIONS");
+  if (!contendersFor(b, round).includes(participant.id)) throw new EngineError("NOT_A_CONTENDER", "this sudden-death round is for the tied leaders");
   if (b.submissions.some((s) => s.roundId === round.id && s.participantId === participant.id)) {
     throw new EngineError("ALREADY_SUBMITTED");
   }
@@ -318,19 +394,10 @@ export function submitTrack(battle: BattleAggregate, input: SubmitInput, ctx: En
   }
 
   input.tracks.forEach((t, position) => {
-    b.submissions.push({
-      id: input.submissionIds?.[position] ?? ctx.newId(),
-      roundId: round.id,
-      participantId: participant.id,
-      trackId: t.id,
-      position,
-    });
+    b.submissions.push({ id: input.submissionIds?.[position] ?? ctx.newId(), roundId: round.id, participantId: participant.id, trackId: t.id, position });
   });
-  const events: DomainEvent[] = [
-    { type: "round.submitted", battleId: b.id, roundIndex: round.index, participantId: participant.id },
-  ];
-  const sides = new Set(submissionsFor(b, round.id).map((s) => s.participantId));
-  if (sides.size === 2) events.push(openVoting(b, round, ctx));
+  const events: DomainEvent[] = [{ type: "round.submitted", battleId: b.id, roundIndex: round.index, participantId: participant.id }];
+  if (presentFor(b, round).length === contendersFor(b, round).length) events.push(openVoting(b, round, ctx));
   return { battle: b, events };
 }
 
@@ -350,14 +417,19 @@ export function advance(battle: BattleAggregate, ctx: EngineContext): EngineResu
   const events: DomainEvent[] = [];
 
   if ((b.status === "OPEN_CHALLENGE" || b.status === "PENDING_ACCEPT") && b.acceptDeadline && ctx.now >= b.acceptDeadline) {
-    b.status = "EXPIRED";
-    b.endedAt = ctx.now;
-    events.push({ type: "battle.expired", battleId: b.id });
-    return { battle: b, events };
+    // A multi-entry lobby with enough players starts at its join deadline.
+    if (!isDuel(b.rules) && b.status === "OPEN_CHALLENGE" && b.participants.length >= Math.max(2, b.rules.entrants.min)) {
+      events.push(...start(b, ctx));
+    } else {
+      b.status = "EXPIRED";
+      b.endedAt = ctx.now;
+      events.push({ type: "battle.expired", battleId: b.id });
+      return { battle: b, events };
+    }
   }
 
   // Bounded loop: each pass moves one round forward by one step.
-  for (let guard = 0; guard < b.rounds.length * 4 + 4 && b.status === "IN_PROGRESS"; guard++) {
+  for (let guard = 0; guard < b.rounds.length * 4 + 8 && b.status === "IN_PROGRESS"; guard++) {
     const round = currentRound(b);
     if (!round) {
       const next = b.rounds.find((r) => r.status === "PENDING");
@@ -370,12 +442,15 @@ export function advance(battle: BattleAggregate, ctx: EngineContext): EngineResu
     }
 
     if (round.status === "SUBMISSIONS_OPEN" && round.submissionsCloseAt && ctx.now >= round.submissionsCloseAt) {
-      const subs = submissionsFor(b, round.id);
-      const missing = b.participants.filter((p) => !subs.some((s) => s.participantId === p.id));
-      round.forfeitParticipantIds = missing.map((p) => p.id);
-      // One side missing: the other side takes the round. Both missing: a draw.
-      const present = b.participants.filter((p) => subs.some((s) => s.participantId === p.id));
-      round.winnerParticipantId = present.length === 1 ? (present[0]?.id ?? null) : null;
+      const present = presentFor(b, round);
+      round.forfeitParticipantIds = contendersFor(b, round).filter((id) => !present.includes(id));
+      if (present.length >= 2) {
+        // Missing players forfeit; the rest go to the vote.
+        events.push(openVoting(b, round, ctx));
+        continue;
+      }
+      // One player showed up: they take the round. Nobody: a draw.
+      round.winnerParticipantId = present[0] ?? null;
       round.status = "SCORED";
       events.push({ type: "round.scored", battleId: b.id, roundIndex: round.index, winnerParticipantId: round.winnerParticipantId });
       continue;
@@ -392,7 +467,7 @@ export function advance(battle: BattleAggregate, ctx: EngineContext): EngineResu
         events.push({ type: "round.voting_extended", battleId: b.id, roundIndex: round.index, closesAt: round.votingClosesAt });
         break;
       }
-      const judged = judgeRound(mode, aiWeightPercent, tally, aiPick, participantIds(b));
+      const judged = judgeRound(mode, aiWeightPercent, tally, aiPick, presentFor(b, round));
       round.winnerParticipantId = judged.winnerParticipantId;
       round.aiWinnerParticipantId = judged.aiWinnerParticipantId;
       round.status = "SCORED";
@@ -423,18 +498,15 @@ export function nextDeadline(battle: BattleAggregate): Date | null {
   return round.status === "SUBMISSIONS_OPEN" ? round.submissionsCloseAt : round.votingClosesAt;
 }
 
-export function participantIds(battle: BattleAggregate): [string, string] {
-  const a = battle.participants.find((p) => p.side === 0);
-  const b = battle.participants.find((p) => p.side === 1);
-  if (!a || !b) throw new EngineError("NOT_IN_PROGRESS", "battle needs two participants");
-  return [a.id, b.id];
+/** All participant ids, in seat order. */
+export function participantIds(battle: BattleAggregate): string[] {
+  return [...battle.participants].sort((a, b) => a.side - b.side).map((p) => p.id);
 }
 
 export function standings(battle: BattleAggregate) {
-  const ids = participantIds(battle);
   return battleOutcome(
     battle.rounds.filter((r) => r.status === "SCORED").map((r) => ({ winnerParticipantId: r.winnerParticipantId, tally: battle.tallies[r.id] })),
-    ids,
+    participantIds(battle),
   );
 }
 
@@ -449,12 +521,13 @@ export function aiScorecard(battle: BattleAggregate): Record<string, number> {
 
 // ── Internals (mutate the clone they are given) ───────────────────────────
 
-function newRound(ctx: EngineContext, index: number, suddenDeath: boolean): RoundState {
+function newRound(ctx: EngineContext, index: number, suddenDeath: boolean, contenderIds: string[] | null): RoundState {
   return {
     id: ctx.newId(),
     index,
     status: "PENDING",
     suddenDeath,
+    contenderIds,
     submissionsCloseAt: null,
     votingOpensAt: null,
     votingClosesAt: null,
@@ -465,10 +538,20 @@ function newRound(ctx: EngineContext, index: number, suddenDeath: boolean): Roun
   };
 }
 
+function start(b: BattleAggregate, ctx: EngineContext): DomainEvent[] {
+  b.status = "IN_PROGRESS";
+  b.startedAt = ctx.now;
+  b.acceptDeadline = null;
+  const events: DomainEvent[] = [{ type: "battle.started", battleId: b.id }];
+  const first = b.rounds[0];
+  if (first) events.push(openSubmissions(b, first, ctx));
+  return events;
+}
+
 function openSubmissions(b: BattleAggregate, round: RoundState, ctx: EngineContext): DomainEvent {
   round.status = "SUBMISSIONS_OPEN";
   round.submissionsCloseAt = addMinutes(ctx.now, b.rules.timing.submissionWindowMinutes);
-  return { type: "round.submissions_opened", battleId: b.id, roundIndex: round.index, closesAt: round.submissionsCloseAt };
+  return { type: "round.submissions_opened", battleId: b.id, roundIndex: round.index, closesAt: round.submissionsCloseAt, contenderIds: contendersFor(b, round) };
 }
 
 function openVoting(b: BattleAggregate, round: RoundState, ctx: EngineContext): DomainEvent {
@@ -481,8 +564,8 @@ function openVoting(b: BattleAggregate, round: RoundState, ctx: EngineContext): 
 function finish(b: BattleAggregate, ctx: EngineContext): DomainEvent[] {
   const outcome = standings(b);
   const hadSuddenDeath = b.rounds.some((r) => r.suddenDeath);
-  if (!outcome.winnerParticipantId && b.rules.suddenDeath && !hadSuddenDeath) {
-    const round = newRound(ctx, b.rounds.length, true);
+  if (!outcome.winnerParticipantId && b.rules.suddenDeath && !hadSuddenDeath && outcome.leaders.length >= 2) {
+    const round = newRound(ctx, b.rounds.length, true, outcome.leaders);
     b.rounds.push(round);
     return [{ type: "round.sudden_death_added", battleId: b.id, roundIndex: round.index }, openSubmissions(b, round, ctx)];
   }
@@ -496,7 +579,7 @@ function clone(b: BattleAggregate): BattleAggregate {
   return {
     ...b,
     participants: b.participants.map((p) => ({ ...p })),
-    rounds: b.rounds.map((r) => ({ ...r, forfeitParticipantIds: [...r.forfeitParticipantIds] })),
+    rounds: b.rounds.map((r) => ({ ...r, contenderIds: r.contenderIds ? [...r.contenderIds] : null, forfeitParticipantIds: [...r.forfeitParticipantIds] })),
     submissions: b.submissions.map((s) => ({ ...s })),
     tallies: Object.fromEntries(Object.entries(b.tallies).map(([k, v]) => [k, { ...v }])),
     aiVerdicts: { ...b.aiVerdicts },

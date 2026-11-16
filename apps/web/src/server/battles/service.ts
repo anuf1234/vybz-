@@ -2,6 +2,8 @@ import {
   type BattleAggregate,
   type BattleFeed,
   type BattleListItem,
+  type BattleStats,
+  voidBattle as engineVoid,
   type BattleView,
   type CreateBattleRequest,
   type EngineContext,
@@ -13,6 +15,10 @@ import {
   type UserSummary,
   type ViewerAction,
   acceptBattle as engineAccept,
+  joinBattle as engineJoin,
+  leaveBattle as engineLeave,
+  startBattle as engineStart,
+  isDuel,
   counterOffer,
   entryOrder,
   type BattleRules,
@@ -30,14 +36,16 @@ import {
   requiredListenMs,
   submitTrack,
 } from "@vybz/core";
-import { type Database, type Executor, newId, schema, and, desc, eq, inArray, isNotNull, lte, ne, or, sql } from "@vybz/db";
+import { type Database, type Executor, newId, schema, and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "@vybz/db";
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
 import type { AiJudge, JudgeInput } from "../ai-judge";
 import { z } from "zod";
-import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, guestViewer, refsForTracks, viewerContext } from "../catalog";
+import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, guestViewer, refsForTracks, toTrackView, viewerContext } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
 import { voterFacts } from "./eligibility";
 import { buildBattleView, type ViewData } from "./view";
+import { type BattleRow, canViewBattle, isStaff, newInviteCode } from "./access";
+import { type PushSender, createNotifications, notifyForEvents } from "../notifications";
 
 export interface BattleDeps {
   db: Database;
@@ -46,6 +54,8 @@ export interface BattleDeps {
   requireVerifiedEmail: boolean;
   /** Null when no AI judge is configured: AI judging modes are then unavailable. */
   aiJudge: AiJudge | null;
+  /** Sends phone notifications; null/undefined to skip pushes (in-app notifications are still stored). */
+  push?: PushSender | null;
   now?: () => Date;
 }
 
@@ -72,6 +82,8 @@ export const CreateBattleSchema = z
     title: z.string().trim().min(3).max(80),
     theme: z.string().trim().max(80).optional(),
     opponentHandle: z.string().trim().toLowerCase().max(20).optional(),
+    inviteHandles: z.array(z.string().trim().toLowerCase().max(21)).max(20).optional(),
+    visibility: z.enum(["PUBLIC", "PRIVATE"]).optional(),
     rules: z.unknown().optional(),
   })
   .strict();
@@ -101,27 +113,44 @@ async function transition(
   step: (agg: BattleAggregate, c: EngineContext) => EngineResult,
 ): Promise<EngineResult> {
   for (let attempt = 0; ; attempt++) {
+    let title = "";
+    let result: EngineResult;
     try {
-      return await deps.db.transaction(async (tx) => {
+      result = await deps.db.transaction(async (tx) => {
         const loaded = await loadBattle(tx, id, "update");
         if (!loaded) throw notFound();
+        title = loaded.row.title;
         const c = ctx(deps);
         const advanced = advance(loaded.aggregate, c);
-        const result = step(advanced.battle, c);
-        const events = [...advanced.events, ...result.events];
-        if (events.length || result.battle !== advanced.battle) await saveBattle(tx, loaded.aggregate, result.battle);
-        return { battle: result.battle, events };
+        const stepped = step(advanced.battle, c);
+        const events = [...advanced.events, ...stepped.events];
+        if (events.length || stepped.battle !== advanced.battle) await saveBattle(tx, loaded.aggregate, stepped.battle);
+        return { battle: stepped.battle, events };
       });
     } catch (err) {
       if (err instanceof ConflictError && attempt < 2) continue;
       throw mapError(err);
     }
+    // After commit: tell the people involved. Never fails the transition.
+    try {
+      await notifyForEvents(deps.db, deps.push, result.battle, title, result.events);
+    } catch (err) {
+      console.error("notify failed", id, err);
+    }
+    return result;
   }
+}
+
+/** 404 for battles this viewer may not see (private), so their existence isn't revealed. */
+async function viewableRow(deps: BattleDeps, id: string, viewer: UserRow | null, code?: string | null): Promise<BattleRow> {
+  const [row] = await deps.db.select().from(schema.battle).where(eq(schema.battle.id, id));
+  if (!row || !(await canViewBattle(deps.db, row, viewer, code))) throw notFound();
+  return row;
 }
 
 function mapError(err: unknown): unknown {
   if (err instanceof EngineError) {
-    const status = err.code === "NOT_PARTICIPANT" || err.code === "NOT_CREATOR" || err.code === "NOT_INVITED" ? 403 : 409;
+    const status = err.code === "NOT_PARTICIPANT" || err.code === "NOT_CREATOR" || err.code === "NOT_INVITED" || err.code === "NOT_A_CONTENDER" ? 403 : 409;
     return new ServiceError(status, err.code, err.message);
   }
   return err;
@@ -162,13 +191,16 @@ function requireBattler(deps: BattleDeps, actor: UserRow | null): UserRow {
   return actor;
 }
 
-export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown): Promise<{ id: string }> {
+export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown, opts: { dailyDate?: string } = {}): Promise<{ id: string }> {
   const actor = requireBattler(deps, actorIn);
   const parsed = CreateBattleSchema.safeParse(body);
   if (!parsed.success) throw new ServiceError(400, "INVALID_REQUEST", z.prettifyError(parsed.error));
   const req: CreateBattleRequest = parsed.data as CreateBattleRequest;
 
   const rulesResult = validRules(deps, req.rules);
+  const duel = isDuel(rulesResult);
+  if (!duel && req.opponentHandle) throw new ServiceError(400, "NOT_A_DUEL", "Use invites for multi-entry battles.");
+  if (duel && req.inviteHandles?.length) throw new ServiceError(400, "NOT_MULTI", "Challenge one opponent in a duel.");
 
   let invitedUserId: string | null = null;
   if (req.opponentHandle) {
@@ -178,10 +210,59 @@ export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, bo
     invitedUserId = opp.id;
   }
 
-  const { battle } = engineCreate({ creatorId: actor.id, invitedUserId, rules: rulesResult }, ctx(deps));
+  let invitees: { id: string; handle: string }[] = [];
+  if (req.inviteHandles?.length) {
+    const handles = [...new Set(req.inviteHandles.map((h) => h.replace(/^@/, "")))];
+    invitees = await deps.db
+      .select({ id: schema.user.id, handle: schema.user.handle })
+      .from(schema.user)
+      .where(and(inArray(schema.user.handle, handles), eq(schema.user.status, "ACTIVE")));
+    const missing = handles.filter((h) => !invitees.some((u) => u.handle === h));
+    if (missing.length) throw new ServiceError(404, "OPPONENT_NOT_FOUND", `No one called @${missing.join(", @")}`);
+    invitees = invitees.filter((u) => u.id !== actor.id);
+  }
+
+  const { battle } = mapEngine(() => engineCreate({ creatorId: actor.id, invitedUserId, rules: rulesResult }, ctx(deps)));
   const theme = req.theme?.trim() || themeLabel(rulesResult.constraints);
-  await deps.db.transaction((tx) => insertBattle(tx, battle, { title: req.title, theme }));
+  const visibility = req.visibility ?? "PUBLIC";
+  await deps.db.transaction(async (tx) => {
+    await insertBattle(tx, battle, { title: req.title, theme, visibility, inviteCode: newInviteCode(), dailyDate: opts.dailyDate ?? null });
+    if (invitees.length) await tx.insert(schema.battleInvite).values(invitees.map((u) => ({ battleId: battle.id, userId: u.id })));
+  });
+
+  await createNotifications(deps.db, deps.push, [
+    ...(invitedUserId
+      ? [{ userId: invitedUserId, type: "CHALLENGED" as const, title: "You've been challenged", body: `@${actor.handle} challenged you to "${req.title}".`, battleId: battle.id }]
+      : []),
+    ...invitees.map((u) => ({ userId: u.id, type: "INVITED" as const, title: "You're invited", body: `@${actor.handle} invited you to "${req.title}".`, battleId: battle.id })),
+  ]).catch((err) => console.error("notify failed", err));
   return { id: battle.id };
+}
+
+function mapEngine<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    throw mapError(err);
+  }
+}
+
+/** Multi-entry: take a seat. Private battles need access (invite or link code). */
+export async function joinBattle(deps: BattleDeps, actorIn: UserRow | null, id: string, code?: string | null) {
+  const actor = requireBattler(deps, actorIn);
+  await viewableRow(deps, id, actor, code);
+  await transition(deps, id, (agg, c) => engineJoin(agg, actor.id, c));
+}
+
+export async function leaveBattle(deps: BattleDeps, actor: UserRow | null, id: string) {
+  if (!actor) throw new ServiceError(401, "SIGN_IN_REQUIRED");
+  await transition(deps, id, (agg) => engineLeave(agg, actor.id));
+}
+
+/** Multi-entry: the host starts early once enough players have joined. */
+export async function startBattle(deps: BattleDeps, actor: UserRow | null, id: string) {
+  if (!actor) throw new ServiceError(401, "SIGN_IN_REQUIRED");
+  await transition(deps, id, (agg, c) => engineStart(agg, actor.id, c));
 }
 
 /** Propose different terms; the other side then accepts or counters. */
@@ -194,8 +275,9 @@ export async function counterBattle(deps: BattleDeps, actorIn: UserRow | null, i
   await deps.db.update(schema.battle).set({ theme: label }).where(eq(schema.battle.id, id));
 }
 
-export async function acceptBattle(deps: BattleDeps, actor: UserRow | null, id: string) {
+export async function acceptBattle(deps: BattleDeps, actor: UserRow | null, id: string, code?: string | null) {
   const user = requireBattler(deps, actor);
+  await viewableRow(deps, id, user, code);
   await transition(deps, id, (agg, c) => engineAccept(agg, user.id, c));
 }
 
@@ -355,6 +437,7 @@ export async function recordListen(deps: BattleDeps, actor: UserRow | null, id: 
   const req: ListenRequest = parsed.data;
   if (req.tier === "LINK_OUT") throw new ServiceError(400, "INVALID_TIER");
 
+  await viewableRow(deps, id, actor);
   await advanceIfDue(deps, id);
   return deps.db.transaction(async (tx) => {
     const loaded = await loadBattle(tx, id, "share");
@@ -396,6 +479,7 @@ export async function recordListen(deps: BattleDeps, actor: UserRow | null, id: 
 
 export async function castVote(deps: BattleDeps, actor: UserRow | null, id: string, roundIndex: number, submissionId: unknown) {
   if (typeof submissionId !== "string") throw new ServiceError(400, "INVALID_REQUEST", "submissionId is required");
+  await viewableRow(deps, id, actor);
   await advanceIfDue(deps, id);
   try {
     await deps.db.transaction(async (tx) => {
@@ -450,17 +534,34 @@ export async function rematch(deps: BattleDeps, actorIn: UserRow | null, id: str
   if (agg.status !== "COMPLETE") throw new ServiceError(409, "NOT_COMPLETE");
   const me = participantFor(agg, actor.id);
   if (!me) throw new ServiceError(403, "NOT_PARTICIPANT");
-  const opponent = agg.participants.find((p) => p.id !== me.id)!;
-  const { battle } = engineCreate({ creatorId: actor.id, invitedUserId: opponent.userId, rules: agg.rules }, ctx(deps));
-  await deps.db.transaction((tx) =>
-    insertBattle(tx, battle, { title: row.title.startsWith("Rematch: ") ? row.title : `Rematch: ${row.title}`.slice(0, 80), theme: row.theme, rematchOfId: row.id }),
-  );
+  const others = agg.participants.filter((p) => p.id !== me.id);
+  const duel = isDuel(agg.rules);
+  // Multi-entry rematch: a new lobby the other players are invited to, with the requester playing.
+  const rules = duel ? agg.rules : { ...agg.rules, creatorPlays: true };
+  const { battle } = engineCreate({ creatorId: actor.id, invitedUserId: duel ? others[0]!.userId : null, rules }, ctx(deps));
+  const title = row.title.startsWith("Rematch: ") ? row.title : `Rematch: ${row.title}`.slice(0, 80);
+  await deps.db.transaction(async (tx) => {
+    await insertBattle(tx, battle, { title, theme: row.theme, rematchOfId: row.id, visibility: row.visibility, inviteCode: newInviteCode() });
+    if (!duel && others.length) await tx.insert(schema.battleInvite).values(others.map((p) => ({ battleId: battle.id, userId: p.userId })));
+  });
+  await createNotifications(
+    deps.db,
+    deps.push,
+    others.map((p) => ({
+      userId: p.userId,
+      type: duel ? ("CHALLENGED" as const) : ("INVITED" as const),
+      title: "Rematch?",
+      body: `@${actor.handle} wants to run "${row.title}" back.`,
+      battleId: battle.id,
+    })),
+  ).catch((err) => console.error("notify failed", err));
   return { id: battle.id };
 }
 
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id: string, caps: PlaybackCaps = NO_CAPS): Promise<BattleView> {
+export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id: string, caps: PlaybackCaps = NO_CAPS, code?: string | null): Promise<BattleView> {
+  await viewableRow(deps, id, viewer, code);
   await advanceIfDue(deps, id);
   const loaded = await loadBattle(deps.db, id);
   if (!loaded) throw notFound();
@@ -470,7 +571,7 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
   const trackIds = [...new Set(agg.submissions.map((s) => s.trackId))];
   const roundIds = agg.rounds.map((r) => r.id);
 
-  const [users, tracks, refs, proofs, votes, verdicts] = await Promise.all([
+  const [users, tracks, refs, proofs, votes, verdicts, hearts, myHearts, stats] = await Promise.all([
     usersById(deps.db, userIds),
     trackIds.length ? deps.db.select().from(schema.track).where(inArray(schema.track.id, trackIds)) : [],
     refsForTracks(deps.db, trackIds),
@@ -481,6 +582,15 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
       ? deps.db.select({ roundId: schema.vote.roundId, submissionId: schema.vote.submissionId }).from(schema.vote).where(and(eq(schema.vote.battleId, id), eq(schema.vote.voterId, viewer.id)))
       : [],
     deps.db.select().from(schema.aiVerdict).where(eq(schema.aiVerdict.battleId, id)),
+    deps.db
+      .select({ submissionId: schema.trackHeart.submissionId, n: sql<number>`count(*)::int` })
+      .from(schema.trackHeart)
+      .where(eq(schema.trackHeart.battleId, id))
+      .groupBy(schema.trackHeart.submissionId),
+    viewer
+      ? deps.db.select({ submissionId: schema.trackHeart.submissionId }).from(schema.trackHeart).where(and(eq(schema.trackHeart.battleId, id), eq(schema.trackHeart.voterId, viewer.id)))
+      : [],
+    agg.status === "IN_PROGRESS" || agg.status === "COMPLETE" ? battleStats(deps, id) : null,
   ]);
 
   const data: ViewData = {
@@ -492,6 +602,10 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
     proofs: proofs.map((p) => ({ roundId: p.roundId, submissionId: p.submissionId, playedMs: p.playedMs, tier: p.tier as PlaybackTier })),
     votes,
     verdicts,
+    hearts: new Map(hearts.map((h) => [h.submissionId, h.n])),
+    myHearts: new Set(myHearts.map((h) => h.submissionId)),
+    stats,
+    isModerator: isStaff(viewer),
     viewer,
     deploymentVerifiesEmail: deps.requireVerifiedEmail,
     now: now(deps),
@@ -500,6 +614,98 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
     storefront: deps.catalog.storefront,
   };
   return buildBattleView(data);
+}
+
+/** Votes, voters, listeners, completion rate and the most-hearted track. */
+export async function battleStats(deps: BattleDeps, id: string): Promise<BattleStats> {
+  const roundIds = deps.db.select({ id: schema.battleRound.id }).from(schema.battleRound).where(eq(schema.battleRound.battleId, id));
+  const [[votes], [listeners], [reactions], [chats], [top]] = await Promise.all([
+    deps.db
+      .select({ total: sql<number>`count(*)::int`, voters: sql<number>`count(distinct ${schema.vote.voterId})::int` })
+      .from(schema.vote)
+      .where(and(eq(schema.vote.battleId, id), ne(schema.vote.status, "VOIDED"))),
+    deps.db.select({ n: sql<number>`count(distinct ${schema.listenProof.userId})::int` }).from(schema.listenProof).where(inArray(schema.listenProof.roundId, roundIds)),
+    deps.db.select({ n: sql<number>`count(*)::int` }).from(schema.reaction).where(eq(schema.reaction.battleId, id)),
+    deps.db.select({ n: sql<number>`count(*)::int` }).from(schema.chatMessage).where(and(eq(schema.chatMessage.battleId, id), isNull(schema.chatMessage.hiddenAt))),
+    deps.db
+      .select({ submissionId: schema.trackHeart.submissionId, n: sql<number>`count(*)::int` })
+      .from(schema.trackHeart)
+      .where(eq(schema.trackHeart.battleId, id))
+      .groupBy(schema.trackHeart.submissionId)
+      .orderBy(sql`2 desc`)
+      .limit(1),
+  ]);
+  let topTrack: BattleStats["topTrack"] = null;
+  if (top) {
+    const [row] = await deps.db
+      .select({ track: schema.track, participantId: schema.submission.participantId })
+      .from(schema.submission)
+      .innerJoin(schema.track, eq(schema.track.id, schema.submission.trackId))
+      .where(eq(schema.submission.id, top.submissionId));
+    if (row) topTrack = { track: toTrackView(row.track), hearts: top.n, participantId: row.participantId };
+  }
+  const l = listeners?.n ?? 0;
+  const v = votes?.voters ?? 0;
+  return {
+    totalVotes: votes?.total ?? 0,
+    uniqueVoters: v,
+    listeners: Math.max(l, v),
+    completionRate: l ? Math.min(1, v / l) : v ? 1 : 0,
+    reactions: reactions?.n ?? 0,
+    chatMessages: chats?.n ?? 0,
+    topTrack,
+  };
+}
+
+/**
+ * Per-track hearts: audience members can heart any track they've listened to
+ * long enough, while voting is open. They don't affect scoring; they surface
+ * the crowd's favourite tracks.
+ */
+export async function setHeart(deps: BattleDeps, actor: UserRow | null, id: string, roundIndex: number, body: unknown) {
+  if (!actor) throw new ServiceError(401, "SIGN_IN_REQUIRED");
+  if (actor.status !== "ACTIVE") throw new ServiceError(403, "ACCOUNT_RESTRICTED");
+  const b = (body ?? {}) as { submissionId?: unknown; hearted?: unknown };
+  if (typeof b.submissionId !== "string" || typeof b.hearted !== "boolean") throw new ServiceError(400, "INVALID_REQUEST");
+  await viewableRow(deps, id, actor);
+  await advanceIfDue(deps, id);
+  const loaded = await loadBattle(deps.db, id);
+  if (!loaded) throw notFound();
+  const agg = loaded.aggregate;
+  const round = currentRound(agg);
+  if (!round || round.index !== roundIndex || round.status !== "VOTING_OPEN") throw new ServiceError(409, "VOTING_CLOSED");
+  if (participantFor(agg, actor.id)) throw new ServiceError(403, "PARTICIPANT");
+  const sub = agg.submissions.find((s) => s.id === b.submissionId && s.roundId === round.id);
+  if (!sub) throw new ServiceError(404, "UNKNOWN_SUBMISSION");
+
+  if (!b.hearted) {
+    await deps.db.delete(schema.trackHeart).where(and(eq(schema.trackHeart.submissionId, sub.id), eq(schema.trackHeart.voterId, actor.id)));
+    return;
+  }
+  const [proof] = await deps.db
+    .select()
+    .from(schema.listenProof)
+    .where(and(eq(schema.listenProof.roundId, round.id), eq(schema.listenProof.userId, actor.id), eq(schema.listenProof.submissionId, sub.id)));
+  const [track] = await deps.db.select({ durationMs: schema.track.durationMs }).from(schema.track).where(eq(schema.track.id, sub.trackId));
+  if (!proof || proof.playedMs < requiredListenMs(agg.rules.fairListen.minPlayedMs, track?.durationMs, proof.tier as PlaybackTier)) {
+    throw new ServiceError(403, "LISTEN_REQUIRED", "Listen to the track before hearting it.");
+  }
+  await deps.db.insert(schema.trackHeart).values({ submissionId: sub.id, voterId: actor.id, battleId: agg.id, roundId: round.id }).onConflictDoNothing();
+}
+
+/** Moderators: feature or unfeature a battle on Home. */
+export async function setFeatured(deps: BattleDeps, actor: UserRow | null, id: string, featured: boolean) {
+  if (!isStaff(actor)) throw new ServiceError(403, "FORBIDDEN");
+  const updated = await deps.db.update(schema.battle).set({ featured }).where(eq(schema.battle.id, id)).returning({ id: schema.battle.id });
+  if (!updated.length) throw notFound();
+  await deps.db.insert(schema.moderationAction).values({ id: newId(), moderatorId: actor!.id, action: featured ? "FEATURE" : "UNFEATURE", subjectType: "BATTLE", subjectId: id });
+}
+
+/** Moderators: void a battle (results and ratings ignore it). */
+export async function voidBattleAsModerator(deps: BattleDeps, actor: UserRow | null, id: string, note?: string) {
+  if (!isStaff(actor)) throw new ServiceError(403, "FORBIDDEN");
+  await transition(deps, id, (agg, c) => engineVoid(agg, c));
+  await deps.db.insert(schema.moderationAction).values({ id: newId(), moderatorId: actor!.id, action: "VOID_BATTLE", subjectType: "BATTLE", subjectId: id, note: note ?? null });
 }
 
 export async function usersById(db: Executor, ids: string[]): Promise<Map<string, UserSummary>> {
@@ -515,9 +721,16 @@ export async function listBattles(deps: BattleDeps, viewer: UserRow | null, feed
   const b = schema.battle;
   const p = schema.battleParticipant;
   let where;
+  const isPublic = eq(b.visibility, "PUBLIC");
   switch (feed) {
     case "open":
-      where = and(eq(b.status, "OPEN_CHALLENGE"), viewer ? ne(b.creatorId, viewer.id) : undefined);
+      where = and(isPublic, eq(b.status, "OPEN_CHALLENGE"), viewer ? ne(b.creatorId, viewer.id) : undefined);
+      break;
+    case "featured":
+      where = and(isPublic, eq(b.featured, true), inArray(b.status, ["OPEN_CHALLENGE", "IN_PROGRESS", "COMPLETE"]));
+      break;
+    case "daily":
+      where = and(isPublic, isNotNull(b.dailyDate));
       break;
     case "mine":
       if (!viewer) return [];
@@ -525,10 +738,12 @@ export async function listBattles(deps: BattleDeps, viewer: UserRow | null, feed
         eq(b.creatorId, viewer.id),
         eq(b.invitedUserId, viewer.id),
         inArray(b.id, deps.db.select({ id: p.battleId }).from(p).where(eq(p.userId, viewer.id))),
+        inArray(b.id, deps.db.select({ id: schema.battleInvite.battleId }).from(schema.battleInvite).where(eq(schema.battleInvite.userId, viewer.id))),
       );
       break;
     case "vote":
       where = and(
+        isPublic,
         eq(b.status, "IN_PROGRESS"),
         sql`coalesce(${b.rules}->'judging'->>'mode', 'CROWD') <> 'AI'`,
         inArray(b.id, deps.db.select({ id: schema.battleRound.battleId }).from(schema.battleRound).where(eq(schema.battleRound.status, "VOTING_OPEN"))),
@@ -536,14 +751,15 @@ export async function listBattles(deps: BattleDeps, viewer: UserRow | null, feed
       );
       break;
     default:
-      where = inArray(b.status, ["IN_PROGRESS", "COMPLETE", "OPEN_CHALLENGE"]);
+      where = and(isPublic, inArray(b.status, ["IN_PROGRESS", "COMPLETE", "OPEN_CHALLENGE"]));
   }
 
-  const rows = await deps.db.select().from(b).where(where).orderBy(desc(b.updatedAt)).limit(limit);
+  const order = feed === "daily" ? desc(b.dailyDate) : desc(b.updatedAt);
+  const rows = await deps.db.select().from(b).where(where).orderBy(order).limit(feed === "daily" ? 7 : limit);
   const items = await toListItems(deps, viewer, rows);
   if (feed === "vote") return items.filter((i) => i.viewerAction === "vote");
   if (feed === "mine") {
-    const rank: Record<ViewerAction, number> = { accept: 0, submit: 1, vote: 2, wait: 3, none: 4 };
+    const rank: Record<ViewerAction, number> = { accept: 0, join: 1, submit: 2, vote: 3, wait: 4, none: 5 };
     return [...items].sort((x, y) => rank[x.viewerAction] - rank[y.viewerAction]);
   }
   return items;
@@ -581,8 +797,12 @@ async function toListItems(deps: BattleDeps, viewer: UserRow | null, rows: (type
       const proposer = r.proposedById ?? r.creatorId;
       const awaiting = r.status === "PENDING_ACCEPT" ? (proposer === r.creatorId ? r.invitedUserId : r.creatorId) : null;
       const aiOnly = (r.rules as { judging?: { mode?: string } }).judging?.mode === "AI";
+      const rules = parseRules(r.rules);
+      const multi = !isDuel(rules);
       if (r.status === "PENDING_ACCEPT" && awaiting === viewer.id && acceptOpen) action = "accept";
-      else if (r.status === "OPEN_CHALLENGE" && r.creatorId !== viewer.id && acceptOpen) action = "accept";
+      else if (r.status === "OPEN_CHALLENGE" && multi && !isParticipant && acceptOpen && ps.length < rules.entrants.max) action = "join";
+      else if (r.status === "OPEN_CHALLENGE" && multi && isParticipant) action = "wait";
+      else if (r.status === "OPEN_CHALLENGE" && !multi && r.creatorId !== viewer.id && acceptOpen) action = "accept";
       else if (cur && isParticipant) action = cur.status === "SUBMISSIONS_OPEN" && !submitted.has(cur.id) ? "submit" : "wait";
       else if (cur && !isParticipant && cur.status === "VOTING_OPEN" && !voted.has(cur.id) && !aiOnly) action = "vote";
       else if (r.status === "OPEN_CHALLENGE" && r.creatorId === viewer.id) action = "wait";
@@ -598,7 +818,12 @@ async function toListItems(deps: BattleDeps, viewer: UserRow | null, rows: (type
       currentRoundIndex: cur?.index ?? null,
       currentRoundStatus: cur?.status ?? null,
       deadline: (r.nextDeadlineAt ?? null)?.toISOString() ?? null,
-      participants: ps.map((x) => ({ id: x.id, side: x.side as 0 | 1, user: users.get(x.userId)!, roundsWon: x.roundsWon })),
+      participants: ps.map((x) => ({ id: x.id, side: x.side, user: users.get(x.userId)!, roundsWon: x.roundsWon })),
+      format: isDuel(parseRules(r.rules)) ? ("DUEL" as const) : ("MULTI" as const),
+      visibility: r.visibility,
+      featured: r.featured,
+      dailyDate: r.dailyDate,
+      maxEntrants: parseRules(r.rules).entrants.max,
       winnerParticipantId: r.winnerParticipantId,
       creator: users.get(r.creatorId)!,
       invited: r.invitedUserId ? (users.get(r.invitedUserId) ?? null) : null,

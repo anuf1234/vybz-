@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -168,6 +169,15 @@ export const battle = pgTable(
     proposedById: text("proposed_by_id").references(() => user.id),
     previousRules: jsonb("previous_rules"),
     counterCount: integer("counter_count").notNull().default(0),
+    /** PUBLIC battles appear in feeds; PRIVATE ones only for participants, invitees and invite-link holders. */
+    visibility: text("visibility", { enum: ["PUBLIC", "PRIVATE"] })
+      .notNull()
+      .default("PUBLIC"),
+    /** Secret for invite links (?code=). */
+    inviteCode: text("invite_code"),
+    featured: boolean("featured").notNull().default(false),
+    /** Set on the system's daily battle: one per UTC day. */
+    dailyDate: text("daily_date").unique(),
     /** When the scheduler next needs to look at this battle. */
     nextDeadlineAt: ts("next_deadline_at"),
     /** Optimistic lock for state transitions. */
@@ -201,7 +211,7 @@ export const battleParticipant = pgTable(
     uniqueIndex("participant_battle_user_uq").on(t.battleId, t.userId),
     uniqueIndex("participant_battle_side_uq").on(t.battleId, t.side),
     index("participant_user_idx").on(t.userId),
-    check("participant_side_check", sql`${t.side} in (0, 1)`),
+    check("participant_side_check", sql`${t.side} between 0 and 7`),
   ],
 );
 
@@ -215,6 +225,8 @@ export const battleRound = pgTable(
     index: integer("index").notNull(),
     status: text("status", { enum: ROUND_STATUSES }).notNull(),
     suddenDeath: boolean("sudden_death").notNull().default(false),
+    /** Who plays this round; null = every participant. */
+    contenderIds: text("contender_ids").array(),
     submissionsCloseAt: ts("submissions_close_at"),
     votingOpensAt: ts("voting_opens_at"),
     votingClosesAt: ts("voting_closes_at"),
@@ -329,6 +341,182 @@ export const listenProof = pgTable(
   },
   (t) => [uniqueIndex("listen_round_user_submission_uq").on(t.roundId, t.userId, t.submissionId)],
 );
+
+// ── Invites and access ─────────────────────────────────────────────────────
+
+/** People invited to a battle (notified; can see it even when private). */
+export const battleInvite = pgTable(
+  "battle_invite",
+  {
+    battleId: text("battle_id")
+      .notNull()
+      .references(() => battle.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.battleId, t.userId] })],
+);
+
+/** Signed-in users who opened a private battle with a valid invite link. */
+export const battleAccess = pgTable(
+  "battle_access",
+  {
+    battleId: text("battle_id")
+      .notNull()
+      .references(() => battle.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.battleId, t.userId] })],
+);
+
+// ── Per-track hearts ───────────────────────────────────────────────────────
+
+export const trackHeart = pgTable(
+  "track_heart",
+  {
+    submissionId: text("submission_id")
+      .notNull()
+      .references(() => submission.id, { onDelete: "cascade" }),
+    voterId: text("voter_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    battleId: text("battle_id")
+      .notNull()
+      .references(() => battle.id, { onDelete: "cascade" }),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => battleRound.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.submissionId, t.voterId] }), index("heart_battle_idx").on(t.battleId)],
+);
+
+// ── Live layer ─────────────────────────────────────────────────────────────
+
+export const chatMessage = pgTable(
+  "chat_message",
+  {
+    id: text("id").primaryKey(),
+    battleId: text("battle_id")
+      .notNull()
+      .references(() => battle.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    hiddenAt: ts("hidden_at"),
+    hiddenById: text("hidden_by_id").references(() => user.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index("chat_battle_idx").on(t.battleId, t.id), index("chat_user_idx").on(t.userId, t.createdAt)],
+);
+
+export const reaction = pgTable(
+  "reaction",
+  {
+    id: text("id").primaryKey(),
+    battleId: text("battle_id")
+      .notNull()
+      .references(() => battle.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    viewerKey: text("viewer_key").notNull(),
+    emoji: text("emoji").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("reaction_battle_idx").on(t.battleId, t.createdAt), index("reaction_viewer_idx").on(t.viewerKey, t.createdAt)],
+);
+
+/** Heartbeats from people watching a battle, for viewer counts. */
+export const battlePresence = pgTable(
+  "battle_presence",
+  {
+    battleId: text("battle_id")
+      .notNull()
+      .references(() => battle.id, { onDelete: "cascade" }),
+    viewerKey: text("viewer_key").notNull(),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    lastSeen: ts("last_seen").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.battleId, t.viewerKey] }), index("presence_seen_idx").on(t.battleId, t.lastSeen)],
+);
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+export const notification = pgTable(
+  "notification",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    battleId: text("battle_id").references(() => battle.id, { onDelete: "cascade" }),
+    readAt: ts("read_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("notification_user_idx").on(t.userId, t.createdAt)],
+);
+
+export const pushToken = pgTable(
+  "push_token",
+  {
+    token: text("token").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("push_token_user_idx").on(t.userId)],
+);
+
+// ── Moderation ─────────────────────────────────────────────────────────────
+
+export const report = pgTable(
+  "report",
+  {
+    id: text("id").primaryKey(),
+    reporterId: text("reporter_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    subjectType: text("subject_type", { enum: ["CHAT_MESSAGE", "BATTLE", "USER"] }).notNull(),
+    subjectId: text("subject_id").notNull(),
+    battleId: text("battle_id").references(() => battle.id, { onDelete: "set null" }),
+    reason: text("reason").notNull(),
+    status: text("status", { enum: ["OPEN", "ACTIONED", "DISMISSED"] })
+      .notNull()
+      .default("OPEN"),
+    handledById: text("handled_by_id").references(() => user.id),
+    handledAt: ts("handled_at"),
+    action: text("action"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("report_once_uq").on(t.reporterId, t.subjectType, t.subjectId),
+    index("report_status_idx").on(t.status, t.createdAt),
+  ],
+);
+
+/** Audit trail of moderator actions. */
+export const moderationAction = pgTable("moderation_action", {
+  id: text("id").primaryKey(),
+  moderatorId: text("moderator_id")
+    .notNull()
+    .references(() => user.id),
+  action: text("action").notNull(),
+  subjectType: text("subject_type").notNull(),
+  subjectId: text("subject_id").notNull(),
+  note: text("note"),
+  createdAt: createdAt(),
+});
 
 export type User = typeof user.$inferSelect;
 export type Track = typeof track.$inferSelect;

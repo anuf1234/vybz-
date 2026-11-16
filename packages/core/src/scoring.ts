@@ -26,14 +26,34 @@ export function totalVotes(tally: RoundTally | undefined): number {
   return Object.values(tally ?? {}).reduce((n, t) => n + t.count, 0);
 }
 
-/** Returns the winning participant, or null for a draw. */
-export function roundWinner(tally: RoundTally | undefined, participantIds: readonly [string, string]): string | null {
-  const [a, b] = participantIds;
-  const ta = tallyFor(tally, a);
-  const tb = tallyFor(tally, b);
-  if (ta.weighted !== tb.weighted) return ta.weighted > tb.weighted ? a : b;
-  if (ta.count !== tb.count) return ta.count > tb.count ? a : b;
-  return null;
+/** The single id with the highest value, or null if several share it. */
+function uniqueMax(ids: readonly string[], value: (id: string) => number): string | null {
+  let best: string | null = null;
+  let bestV = -Infinity;
+  let tied = false;
+  for (const id of ids) {
+    const v = value(id);
+    if (v > bestV + 1e-9) {
+      best = id;
+      bestV = v;
+      tied = false;
+    } else if (Math.abs(v - bestV) <= 1e-9) tied = true;
+  }
+  return tied ? null : best;
+}
+
+/** Ids sharing the highest value. */
+function maxSet(ids: readonly string[], value: (id: string) => number): string[] {
+  const top = Math.max(...ids.map(value));
+  return ids.filter((id) => Math.abs(value(id) - top) <= 1e-9);
+}
+
+/** Returns the winning participant, or null for a draw. Weighted votes, then raw count. */
+export function roundWinner(tally: RoundTally | undefined, participantIds: readonly string[]): string | null {
+  if (!participantIds.length) return null;
+  const leaders = maxSet(participantIds, (id) => tallyFor(tally, id).weighted);
+  if (leaders.length === 1) return leaders[0]!;
+  return uniqueMax(leaders, (id) => tallyFor(tally, id).count);
 }
 
 export interface ScoredRound {
@@ -46,34 +66,23 @@ export interface BattleOutcome {
   /** Weighted share of all votes across the battle, 0..1. */
   voteShare: Record<string, number>;
   winnerParticipantId: string | null;
+  /** Everyone level on rounds and vote share at the top (more than one means no winner yet). */
+  leaders: string[];
 }
 
-export function battleOutcome(rounds: readonly ScoredRound[], participantIds: readonly [string, string]): BattleOutcome {
-  const [a, b] = participantIds;
-  const roundsWon: Record<string, number> = { [a]: 0, [b]: 0 };
-  const weighted: Record<string, number> = { [a]: 0, [b]: 0 };
-
+export function battleOutcome(rounds: readonly ScoredRound[], participantIds: readonly string[]): BattleOutcome {
+  const roundsWon: Record<string, number> = Object.fromEntries(participantIds.map((id) => [id, 0]));
+  const weighted: Record<string, number> = Object.fromEntries(participantIds.map((id) => [id, 0]));
   for (const r of rounds) {
-    if (r.winnerParticipantId && r.winnerParticipantId in roundsWon) {
-      roundsWon[r.winnerParticipantId] = (roundsWon[r.winnerParticipantId] ?? 0) + 1;
-    }
-    weighted[a] = (weighted[a] ?? 0) + tallyFor(r.tally, a).weighted;
-    weighted[b] = (weighted[b] ?? 0) + tallyFor(r.tally, b).weighted;
+    if (r.winnerParticipantId && r.winnerParticipantId in roundsWon) roundsWon[r.winnerParticipantId]! += 1;
+    for (const id of participantIds) weighted[id]! += tallyFor(r.tally, id).weighted;
   }
+  const total = Object.values(weighted).reduce((a, b) => a + b, 0);
+  const voteShare = Object.fromEntries(participantIds.map((id) => [id, total ? weighted[id]! / total : 0]));
 
-  const total = (weighted[a] ?? 0) + (weighted[b] ?? 0);
-  const voteShare = {
-    [a]: total ? (weighted[a] ?? 0) / total : 0,
-    [b]: total ? (weighted[b] ?? 0) / total : 0,
-  };
-
-  let winnerParticipantId: string | null = null;
-  const ra = roundsWon[a] ?? 0;
-  const rb = roundsWon[b] ?? 0;
-  if (ra !== rb) winnerParticipantId = ra > rb ? a : b;
-  else if ((weighted[a] ?? 0) !== (weighted[b] ?? 0)) winnerParticipantId = (weighted[a] ?? 0) > (weighted[b] ?? 0) ? a : b;
-
-  return { roundsWon, voteShare, winnerParticipantId };
+  const onRounds = participantIds.length ? maxSet(participantIds, (id) => roundsWon[id]!) : [];
+  const leaders = onRounds.length > 1 ? maxSet(onRounds, (id) => weighted[id]!) : onRounds;
+  return { roundsWon, voteShare, winnerParticipantId: leaders.length === 1 ? leaders[0]! : null, leaders };
 }
 
 // ── Judging modes ──────────────────────────────────────────────────────────
@@ -99,10 +108,10 @@ export function judgeRound(
   aiWeightPercent: number,
   tally: RoundTally | undefined,
   aiPick: string | null | undefined,
-  participantIds: readonly [string, string],
+  participantIds: readonly string[],
 ): RoundJudgement {
   const crowd = mode === "AI" ? null : roundWinner(tally, participantIds);
-  const ai = mode === "CROWD" ? null : (aiPick ?? null);
+  const ai = mode === "CROWD" ? null : aiPick && participantIds.includes(aiPick) ? aiPick : null;
   switch (mode) {
     case "CROWD":
       return { winnerParticipantId: crowd, aiWinnerParticipantId: null, crowdWinnerParticipantId: crowd };
@@ -111,17 +120,11 @@ export function judgeRound(
     case "SEPARATE":
       return { winnerParticipantId: crowd, aiWinnerParticipantId: ai, crowdWinnerParticipantId: crowd };
     case "COMBINED": {
-      const [a, b] = participantIds;
       const w = aiWeightPercent / 100;
-      const ta = tallyFor(tally, a);
-      const tb = tallyFor(tally, b);
-      const total = ta.weighted + tb.weighted;
-      const score = (id: string, t: SideTally) => (total ? (1 - w) * (t.weighted / total) : 0) + (ai === id ? w : 0);
-      const sa = score(a, ta);
-      const sb = score(b, tb);
-      let winner: string | null = null;
-      if (Math.abs(sa - sb) > 1e-9) winner = sa > sb ? a : b;
-      else if (ta.count !== tb.count) winner = ta.count > tb.count ? a : b;
+      const total = participantIds.reduce((n, id) => n + tallyFor(tally, id).weighted, 0);
+      const score = (id: string) => (total ? (1 - w) * (tallyFor(tally, id).weighted / total) : 0) + (ai === id ? w : 0);
+      const leaders = maxSet(participantIds, score);
+      const winner = leaders.length === 1 ? leaders[0]! : uniqueMax(leaders, (id) => tallyFor(tally, id).count);
       return { winnerParticipantId: winner, aiWinnerParticipantId: ai, crowdWinnerParticipantId: crowd };
     }
   }

@@ -54,13 +54,14 @@ export async function loadBattle(db: Executor, id: string, lock?: "update" | "sh
     winnerParticipantId: row.winnerParticipantId,
     version: row.version,
     participants: participants
-      .map((p) => ({ id: p.id, userId: p.userId, side: p.side as 0 | 1 }))
+      .map((p) => ({ id: p.id, userId: p.userId, side: p.side }))
       .sort((a, b) => a.side - b.side),
     rounds: rounds.map((r) => ({
       id: r.id,
       index: r.index,
       status: r.status,
       suddenDeath: r.suddenDeath,
+      contenderIds: r.contenderIds ?? null,
       submissionsCloseAt: r.submissionsCloseAt,
       votingOpensAt: r.votingOpensAt,
       votingClosesAt: r.votingClosesAt,
@@ -99,6 +100,9 @@ export interface NewBattleFields {
   title: string;
   theme: string | null;
   rematchOfId?: string | null;
+  visibility?: "PUBLIC" | "PRIVATE";
+  inviteCode?: string | null;
+  dailyDate?: string | null;
 }
 
 export async function insertBattle(db: Executor, agg: BattleAggregate, fields: NewBattleFields): Promise<void> {
@@ -114,6 +118,9 @@ export async function insertBattle(db: Executor, agg: BattleAggregate, fields: N
     proposedById: agg.proposedByUserId,
     acceptDeadline: agg.acceptDeadline,
     rematchOfId: fields.rematchOfId ?? null,
+    visibility: fields.visibility ?? "PUBLIC",
+    inviteCode: fields.inviteCode ?? null,
+    dailyDate: fields.dailyDate ?? null,
     nextDeadlineAt: nextDeadline(agg),
     version: 0,
   });
@@ -150,7 +157,11 @@ export async function saveBattle(db: Executor, before: BattleAggregate, after: B
 }
 
 async function saveChildren(db: Executor, before: BattleAggregate | null, after: BattleAggregate) {
-  const roundsWon = after.participants.length === 2 ? standings(after).roundsWon : {};
+  const roundsWon = after.participants.length >= 2 ? standings(after).roundsWon : {};
+
+  // Players who left a lobby before it started.
+  const removed = (before?.participants ?? []).filter((p) => !after.participants.some((x) => x.id === p.id));
+  for (const p of removed) await db.delete(schema.battleParticipant).where(eq(schema.battleParticipant.id, p.id));
 
   const knownParticipants = new Set(before?.participants.map((p) => p.id));
   for (const p of after.participants) {
@@ -174,6 +185,7 @@ async function saveChildren(db: Executor, before: BattleAggregate | null, after:
     const values = {
       status: r.status,
       suddenDeath: r.suddenDeath,
+      contenderIds: r.contenderIds,
       submissionsCloseAt: r.submissionsCloseAt,
       votingOpensAt: r.votingOpensAt,
       votingClosesAt: r.votingClosesAt,

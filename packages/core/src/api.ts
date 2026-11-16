@@ -70,6 +70,8 @@ export interface EntryTrackView {
   playback: PlaybackSource | null;
   /** One source per round playback option, in the same order. */
   sources: PlaybackSource[];
+  /** Hearts (per-track votes), when tallies may be shown. */
+  hearts: number | null;
   /**
    * This viewer's listen progress on the track. `tier` is the tier the progress
    * was recorded at (null before any listening); it only counts toward a vote
@@ -107,6 +109,8 @@ export interface RoundView {
   votingClosesAt: string | null;
   winnerParticipantId: string | null;
   forfeitParticipantIds: string[];
+  /** Who plays this round (all participants, or the tied leaders in sudden death). */
+  contenderIds: string[];
   entries: EntryView[];
   /** Total votes, when tallies may be shown. */
   totalVotes: number | null;
@@ -125,14 +129,32 @@ export interface RoundView {
     parityTier: PlaybackTier | null;
     /** Services this viewer can hear the whole round on, best first. */
     playbackOptions: PlaybackOption[];
+    /** Tracks this viewer hearted this round. */
+    heartedSubmissionIds: string[];
   };
 }
 
 export interface ParticipantView {
   id: string;
-  side: 0 | 1;
+  side: number;
   user: UserSummary;
   roundsWon: number;
+}
+
+export type BattleVisibility = "PUBLIC" | "PRIVATE";
+export type BattleFormat = "DUEL" | "MULTI";
+
+export interface BattleStats {
+  totalVotes: number;
+  uniqueVoters: number;
+  /** People who started listening to the battle. */
+  listeners: number;
+  /** Share of listeners who went on to vote, 0..1. */
+  completionRate: number;
+  reactions: number;
+  chatMessages: number;
+  /** The most-hearted track of the battle. */
+  topTrack: { track: TrackView; hearts: number; participantId: string } | null;
 }
 
 export interface BattleView {
@@ -140,6 +162,15 @@ export interface BattleView {
   title: string;
   theme: string | null;
   status: BattleStatus;
+  format: BattleFormat;
+  visibility: BattleVisibility;
+  /** Shown to people who can invite (participants, host): append `?code=` to share a private battle. */
+  inviteCode: string | null;
+  featured: boolean;
+  /** "2026-11-16" for the daily battle of that day. */
+  dailyDate: string | null;
+  entrants: { min: number; max: number; joined: number };
+  stats: BattleStats | null;
   rules: BattleRules;
   createdAt: string;
   startedAt: string | null;
@@ -167,15 +198,20 @@ export interface BattleView {
     participantId: string | null;
     canAccept: boolean;
     canCounter: boolean;
+    canJoin: boolean;
+    canLeave: boolean;
+    canStart: boolean;
     canDecline: boolean;
     canCancel: boolean;
     canRematch: boolean;
+    canChat: boolean;
+    isModerator: boolean;
     /** What this viewer should do next, for badges and CTAs. */
     action: ViewerAction;
   };
 }
 
-export type ViewerAction = "accept" | "submit" | "vote" | "wait" | "none";
+export type ViewerAction = "accept" | "join" | "submit" | "vote" | "wait" | "none";
 
 export interface BattleListItem {
   id: string;
@@ -187,7 +223,12 @@ export interface BattleListItem {
   currentRoundStatus: RoundStatus | null;
   /** Deadline of whatever is happening now. */
   deadline: string | null;
-  participants: { id: string; side: 0 | 1; user: UserSummary; roundsWon: number }[];
+  participants: { id: string; side: number; user: UserSummary; roundsWon: number }[];
+  format: BattleFormat;
+  visibility: BattleVisibility;
+  featured: boolean;
+  dailyDate: string | null;
+  maxEntrants: number;
   winnerParticipantId: string | null;
   creator: UserSummary;
   invited: UserSummary | null;
@@ -195,7 +236,7 @@ export interface BattleListItem {
   viewerAction: ViewerAction;
 }
 
-export type BattleFeed = "home" | "open" | "mine" | "vote";
+export type BattleFeed = "home" | "open" | "mine" | "vote" | "featured" | "daily";
 
 export interface BattleListResponse {
   items: BattleListItem[];
@@ -204,8 +245,11 @@ export interface BattleListResponse {
 export interface CreateBattleRequest {
   title: string;
   theme?: string;
-  /** Handle of the person to challenge. Omit for an open challenge. */
+  /** Duels: handle of the person to challenge. Omit for an open challenge. */
   opponentHandle?: string;
+  /** Multi-entry: people to invite (they get a notification and access to a private battle). */
+  inviteHandles?: string[];
+  visibility?: BattleVisibility;
   rules?: BattleRulesInput;
 }
 
@@ -264,3 +308,80 @@ export interface ApiError {
   message?: string;
   details?: unknown;
 }
+
+// ── Live layer ─────────────────────────────────────────────────────────────
+
+export const REACTIONS = ["🔥", "👏", "😂", "😮", "💀", "❤️"] as const;
+export type Reaction = (typeof REACTIONS)[number];
+
+export interface ChatMessageView {
+  id: string;
+  user: UserSummary;
+  body: string;
+  createdAt: string;
+  /** Hidden by a moderator; only moderators receive hidden messages. */
+  hidden: boolean;
+}
+
+export interface LiveView {
+  viewers: number;
+  /** Newest last. With `after`, only messages newer than that id. */
+  messages: ChatMessageView[];
+  /** Reactions in the last minute, for the live burst. */
+  recentReactions: Partial<Record<Reaction, number>>;
+  reactionTotals: Partial<Record<Reaction, number>>;
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+export type NotificationType =
+  | "CHALLENGED"
+  | "COUNTERED"
+  | "CHALLENGE_ACCEPTED"
+  | "INVITED"
+  | "PLAYER_JOINED"
+  | "BATTLE_STARTED"
+  | "YOUR_PICK"
+  | "VOTING_OPEN"
+  | "ROUND_RESULT"
+  | "BATTLE_RESULT";
+
+export interface NotificationView {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  battleId: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationsResponse {
+  items: NotificationView[];
+  unread: number;
+}
+
+// ── Moderation ─────────────────────────────────────────────────────────────
+
+export type ReportSubject = "CHAT_MESSAGE" | "BATTLE" | "USER";
+
+export interface ReportRequest {
+  subjectType: ReportSubject;
+  subjectId: string;
+  reason: string;
+}
+
+export interface ModerationReportView {
+  id: string;
+  subjectType: ReportSubject;
+  subjectId: string;
+  reason: string;
+  status: "OPEN" | "ACTIONED" | "DISMISSED";
+  reporter: UserSummary;
+  createdAt: string;
+  /** What the report is about, for context in the queue. */
+  context: { battleId: string | null; battleTitle: string | null; text: string | null; user: UserSummary | null };
+  reportCount: number;
+}
+
+export type ModerationAction = "DISMISS" | "HIDE_MESSAGE" | "VOID_BATTLE" | "SUSPEND_USER";

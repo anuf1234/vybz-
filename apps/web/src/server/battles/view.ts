@@ -2,6 +2,10 @@ import {
   type BattleAggregate,
   type BattleView,
   type AiVerdictView,
+  type BattleStats,
+  contendersFor,
+  isDuel,
+  presentFor,
   type EntryTrackView,
   type EntryView,
   type PlaybackOption,
@@ -50,6 +54,12 @@ export interface ViewData {
   proofs: { roundId: string; submissionId: string; playedMs: number; tier: PlaybackTier }[];
   votes: { roundId: string; submissionId: string }[];
   verdicts: (typeof schema.aiVerdict.$inferSelect)[];
+  /** submissionId → heart count. */
+  hearts?: Map<string, number>;
+  /** Submissions this viewer hearted. */
+  myHearts?: Set<string>;
+  stats?: BattleStats | null;
+  isModerator?: boolean;
   viewer: (typeof schema.user.$inferSelect) | null;
   deploymentVerifiesEmail: boolean;
   now: Date;
@@ -66,7 +76,8 @@ export function buildBattleView(d: ViewData): BattleView {
   const user = (id: string | null) => (id ? (d.users.get(id) ?? { ...UNKNOWN_USER, id }) : null);
   const me = participantFor(agg, viewer?.id);
   const cur = currentRound(agg);
-  const won = agg.participants.length === 2 ? standings(agg).roundsWon : {};
+  const won = agg.participants.length >= 2 ? standings(agg).roundsWon : {};
+  const duel = isDuel(agg.rules);
   const viewerCtx = viewerContext(d.storefront, d.caps ?? NO_CAPS, viewer?.id ?? null);
 
   const rounds: RoundView[] = agg.rounds.map((r) => {
@@ -84,12 +95,12 @@ export function buildBattleView(d: ViewData): BattleView {
     const sourcesBySub = new Map<string, PlaybackSource[]>();
     for (const s of subs) sourcesBySub.set(s.id, resolvePlayback(d.refs.get(s.trackId) ?? [], viewerCtx, d.playback));
     const sides = new Set(subs.map((s) => s.participantId));
-    const playbackOptions = sides.size === 2 ? roundOptions([...sourcesBySub.values()]) : [];
+    const playbackOptions = sides.size >= 2 ? roundOptions([...sourcesBySub.values()]) : [];
     const parityTier = playbackOptions[0]?.tier ?? null;
 
     const entries: EntryView[] = [];
     if (votingStarted) {
-      const order = entryOrder(r.id, agg.rules.blindVoting);
+      const order = entryOrder(r.id, agg.rules.blindVoting, agg.participants.map((x) => x.side));
       for (const side of order) {
         const p = agg.participants.find((x) => x.side === side);
         const set = p ? subs.filter((s) => s.participantId === p.id).sort((x, y) => x.position - y.position) : [];
@@ -107,6 +118,7 @@ export function buildBattleView(d: ViewData): BattleView {
             track: toTrackView(track),
             playback: optionSources[0] ?? all[0] ?? null,
             sources: optionSources,
+            hearts: tallyVisible ? (d.hearts?.get(s.id) ?? 0) : null,
             listen: {
               playedMs: proof?.playedMs ?? 0,
               requiredMs: requiredListenMs(agg.rules.fairListen.minPlayedMs, track.durationMs, tier),
@@ -163,7 +175,8 @@ export function buildBattleView(d: ViewData): BattleView {
       entries,
       totalVotes: tallyVisible && usesCrowd(agg.rules.judging.mode) ? Object.values(tally).reduce((n, t) => n + t.count, 0) : null,
       ai,
-      crowdWinnerParticipantId: scored && usesCrowd(agg.rules.judging.mode) && agg.participants.length === 2 ? roundWinner(tally, [agg.participants[0]!.id, agg.participants[1]!.id]) : null,
+      crowdWinnerParticipantId: scored && usesCrowd(agg.rules.judging.mode) ? roundWinner(tally, presentFor(agg, r)) : null,
+      contenderIds: contendersFor(agg, r),
       viewer: {
         mySubmission: mine.length && mineTracks.length ? { submissionId: mine[0]!.id, tracks: mineTracks.map(toTrackView) } : null,
         opponentSubmitted: me ? subs.some((s) => s.participantId !== me.id) : false,
@@ -172,17 +185,26 @@ export function buildBattleView(d: ViewData): BattleView {
         voteBlockedReason,
         parityTier,
         playbackOptions,
+        heartedSubmissionIds: subs.filter((s) => d.myHearts?.has(s.id)).map((s) => s.id),
       },
     };
   });
 
-  const canAccept = !!viewer && canRespond(agg, viewer.id, d.now);
+  const canRespondNow = !!viewer && canRespond(agg, viewer.id, d.now);
+  const canAccept = duel && canRespondNow;
+  const canJoin = !duel && canRespondNow;
+  const canLeave = !duel && !!me && agg.status === "OPEN_CHALLENGE" && viewer?.id !== agg.creatorId;
+  const canStart = !duel && viewer?.id === agg.creatorId && agg.status === "OPEN_CHALLENGE" && agg.participants.length >= Math.max(2, agg.rules.entrants.min);
+  const terminal = agg.status === "CANCELLED" || agg.status === "EXPIRED" || agg.status === "VOIDED";
+  const canChat = !!viewer && viewer.status === "ACTIVE" && !terminal;
+  const canInvite = !!viewer && (viewer.id === agg.creatorId || !!me || viewer.id === agg.invitedUserId || !!d.isModerator);
   const canDecline = !!viewer && agg.status === "PENDING_ACCEPT" && agg.invitedUserId === viewer.id;
   const canCancel = !!viewer && viewer.id === agg.creatorId && (agg.status === "OPEN_CHALLENGE" || agg.status === "PENDING_ACCEPT");
 
   let action: ViewerAction = "none";
   const curView = cur ? rounds.find((r) => r.index === cur.index) : undefined;
   if (canAccept) action = "accept";
+  else if (canJoin) action = "join";
   else if (me && cur?.status === "SUBMISSIONS_OPEN" && !curView?.viewer.mySubmission) action = "submit";
   else if (me && agg.status === "IN_PROGRESS") action = "wait";
   else if (!me && cur?.status === "VOTING_OPEN" && !curView?.viewer.votedSubmissionId && usesCrowd(agg.rules.judging.mode)) action = "vote";
@@ -192,6 +214,13 @@ export function buildBattleView(d: ViewData): BattleView {
     title: row.title,
     theme: row.theme,
     status: agg.status,
+    format: duel ? "DUEL" : "MULTI",
+    visibility: row.visibility,
+    inviteCode: canInvite ? row.inviteCode : null,
+    featured: row.featured,
+    dailyDate: row.dailyDate,
+    entrants: { min: agg.rules.entrants.min, max: agg.rules.entrants.max, joined: agg.participants.length },
+    stats: d.stats ?? null,
     rules: agg.rules,
     createdAt: row.createdAt.toISOString(),
     startedAt: agg.startedAt?.toISOString() ?? null,
@@ -201,7 +230,7 @@ export function buildBattleView(d: ViewData): BattleView {
     invited: user(agg.invitedUserId),
     participants: agg.participants.map((p) => ({ id: p.id, side: p.side, user: user(p.userId)!, roundsWon: won[p.id] ?? 0 })),
     winnerParticipantId: agg.winnerParticipantId,
-    aiScorecard: (agg.rules.judging.mode === "SEPARATE" || agg.rules.judging.mode === "COMBINED") && agg.participants.length === 2 ? aiScorecard(agg) : null,
+    aiScorecard: (agg.rules.judging.mode === "SEPARATE" || agg.rules.judging.mode === "COMBINED") && agg.participants.length >= 2 ? aiScorecard(agg) : null,
     currentRoundIndex: cur?.index ?? null,
     terms: {
       proposedBy: user(agg.proposedByUserId)!,
@@ -216,9 +245,14 @@ export function buildBattleView(d: ViewData): BattleView {
       participantId: me?.id ?? null,
       canAccept,
       canCounter: canAccept,
+      canJoin,
+      canLeave,
+      canStart,
       canDecline,
       canCancel,
       canRematch: !!me && agg.status === "COMPLETE",
+      canChat,
+      isModerator: !!d.isModerator,
       action,
     },
   };

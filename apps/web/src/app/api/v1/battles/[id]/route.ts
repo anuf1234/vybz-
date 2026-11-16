@@ -6,7 +6,8 @@ import { background, currentUser, playbackCaps, noStore, route } from "@/server/
 export const GET = route<{ id: string }>(async (req, { params }) => {
   const { id } = await params;
   const deps = getBattleDeps();
-  const view = await getBattleView(deps, await currentUser(req), id, playbackCaps(req));
+  const code = new URL(req.url).searchParams.get("code");
+  const view = await getBattleView(deps, await currentUser(req), id, playbackCaps(req), code);
   // Retry a missing AI verdict (e.g. a failed call when voting opened).
   if (view.currentRoundIndex !== null && view.rounds[view.currentRoundIndex]?.status === "VOTING_OPEN" && view.rules.judging.mode !== "CROWD") {
     background(() => ensureAiVerdicts(deps, id));
