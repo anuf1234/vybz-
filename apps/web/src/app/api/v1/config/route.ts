@@ -1,12 +1,16 @@
 import { type ConfigResponse, DECADES, GENRES, ROUND_COUNTS, TRACKS_PER_ROUND } from "@vybz/core";
 import { NextResponse } from "next/server";
-import { getAiJudge } from "@/server/context";
+import { PROVIDER_LABEL } from "@/server/catalog";
+import { getAiJudge, getCatalogDeps } from "@/server/context";
 import { route } from "@/server/http";
 
 /** What this server supports, so the apps only offer options that will work. */
 export const GET = route(async () => {
   const judge = getAiJudge();
+  const catalog = getCatalogDeps();
   const body: ConfigResponse = {
+    catalogs: catalog.metadata.map((m) => ({ provider: m.kind, label: PROVIDER_LABEL[m.kind] })),
+    playback: { appleMusic: Boolean(catalog.playback.APPLE_MUSIC), youtube: Boolean(catalog.playback.YOUTUBE) },
     aiJudge: {
       available: Boolean(judge),
       label: judge?.label ?? null,

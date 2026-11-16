@@ -3,10 +3,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
-import { Artwork, Button, EmptyState, ErrorBanner, Pill } from "@/components/ui";
+import { Artwork, Button, EmptyState, ErrorBanner, Pill, Segmented } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { TIER_LABEL } from "@/lib/format";
 import { useResource } from "@/lib/use-resource";
+import { useServerConfig } from "@/lib/config";
+import type { ProviderKind } from "@vybz/providers";
 
 /**
  * Catalog search for a round's picks: select the agreed number of tracks, in
@@ -23,6 +25,10 @@ export default function Pick() {
   const battle = useResource(() => api.battle(id), [id]);
   const need = battle.data?.rules.tracksPerRound ?? 1;
   const theme = battle.data ? themeLabel(battle.data.rules.constraints) : null;
+  const config = useServerConfig();
+  const catalogs = config?.catalogs ?? [];
+  const [source, setSource] = useState<ProviderKind | null>(null);
+  const activeSource = source ?? catalogs[0]?.provider ?? null;
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
 
@@ -37,7 +43,7 @@ export default function Pick() {
     const t = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await api.search(term);
+        const res = await api.search(term, activeSource ?? undefined);
         if (mine === seq.current) {
           setItems(res.items);
           setError(null);
@@ -49,7 +55,7 @@ export default function Pick() {
       }
     }, 350);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, activeSource]);
 
   function toggle(hit: CatalogHit) {
     setError(null);
@@ -86,6 +92,16 @@ export default function Pick() {
         autoCorrect={false}
         accessibilityLabel="Search songs"
       />
+      {catalogs.length > 1 && activeSource ? (
+        <Segmented
+          value={activeSource}
+          onChange={(v) => setSource(v)}
+          options={catalogs.map((c) => ({ value: c.provider, label: c.label }))}
+        />
+      ) : null}
+      {activeSource === "YOUTUBE" && catalogs.length > 1 ? (
+        <Text style={type.small}>YouTube picks are matched to Apple Music when possible, so everyone can hear them either way.</Text>
+      ) : null}
       {theme ? <Text style={type.small}>This battle is {theme}. Picks must fit.</Text> : null}
       {error ? <ErrorBanner message={error} /> : null}
       <FlatList

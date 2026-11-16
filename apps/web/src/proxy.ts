@@ -29,7 +29,7 @@ function corsHeaders(origin: string): Record<string, string> {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Accept",
+    "Access-Control-Allow-Headers": "Content-Type, Accept, X-VYBZ-Apple-Music",
     "Access-Control-Max-Age": "600",
     Vary: "Origin",
   };

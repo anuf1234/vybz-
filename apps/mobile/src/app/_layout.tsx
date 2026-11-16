@@ -3,11 +3,13 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { color } from "@/components/theme";
+import { restoreAppleMusic } from "@/lib/apple-music";
 
 export default function RootLayout() {
   useEffect(() => {
     // Battles are for listening: play even with the ringer switch off.
     void setAudioModeAsync({ playsInSilentMode: true }).catch(() => undefined);
+    void restoreAppleMusic();
   }, []);
 
   return (

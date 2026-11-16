@@ -7,6 +7,8 @@ import { Button, Card, EmptyState, ErrorBanner, Field, Loading } from "@/compone
 import { ApiRequestError, api } from "@/lib/api";
 import { signOut, useSession } from "@/lib/auth-client";
 import { useNow, useResource } from "@/lib/use-resource";
+import { appleMusicSupported, connectAppleMusic, disconnectAppleMusic, useAppleMusicFull } from "@/lib/apple-music";
+import { useServerConfig } from "@/lib/config";
 
 export default function Profile() {
   const session = useSession();
@@ -81,7 +83,66 @@ export default function Profile() {
       ) : (
         <Button title="Edit profile" kind="secondary" onPress={() => setEditing(true)} />
       )}
+      <MusicServices />
       <Button title="Sign out" kind="ghost" onPress={() => void signOut()} />
     </ScrollView>
+  );
+}
+
+/** Which services battles can play on, and connecting Apple Music for full tracks. */
+function MusicServices() {
+  const config = useServerConfig();
+  const appleFull = useAppleMusicFull();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  if (!config || (!config.playback.appleMusic && !config.playback.youtube)) return null;
+
+  async function connect() {
+    setBusy(true);
+    setNote(null);
+    const r = await connectAppleMusic().catch(() => "denied" as const);
+    setBusy(false);
+    setNote(
+      r === "connected"
+        ? "Connected. Battles can play full songs on Apple Music."
+        : r === "no-subscription"
+          ? "Apple Music is connected, but full songs need an active Apple Music subscription. You'll get 30-second previews."
+          : r === "denied"
+            ? "Apple Music access wasn't allowed. You can turn it on in Settings › Privacy › Media & Apple Music."
+            : "Apple Music full tracks need the VYBZ iPhone app.",
+    );
+  }
+
+  return (
+    <Card>
+      <Text style={type.heading}>Music services</Text>
+      {config.playback.youtube ? (
+        <View style={{ gap: 2 }}>
+          <Text style={[type.body, { fontWeight: "700" }]}>YouTube</Text>
+          <Text style={type.small}>Full songs in YouTube's player. No account needed.</Text>
+        </View>
+      ) : null}
+      {config.playback.appleMusic ? (
+        <View style={{ gap: space.sm }}>
+          <View style={{ gap: 2 }}>
+            <Text style={[type.body, { fontWeight: "700" }]}>Apple Music</Text>
+            <Text style={type.small}>
+              {appleFull ? "Connected: full songs with your subscription." : "30-second previews for everyone. Subscribers can connect for full songs."}
+            </Text>
+          </View>
+          {appleMusicSupported ? (
+            appleFull ? (
+              <Button title="Disconnect Apple Music" kind="ghost" onPress={disconnectAppleMusic} />
+            ) : (
+              <Button title="Connect Apple Music" kind="secondary" loading={busy} onPress={() => void connect()} />
+            )
+          ) : (
+            <Text style={type.small}>Full Apple Music tracks are available in the VYBZ iPhone app.</Text>
+          )}
+          {note ? <Text style={type.small}>{note}</Text> : null}
+        </View>
+      ) : null}
+      <Text style={type.small}>In a battle, pick "Listen on" to choose the service. Both sides always play on the same one.</Text>
+    </Card>
   );
 }

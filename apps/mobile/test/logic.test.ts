@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countdown, entryLabel } from "../src/lib/format";
+import { chooseOption, countdown, entryLabel } from "../src/lib/format";
 import { ListenTracker } from "../src/lib/listen-tracker";
 
 describe("ListenTracker", () => {
@@ -35,5 +35,17 @@ describe("format", () => {
   });
   it("labels entries", () => {
     expect([entryLabel(0), entryLabel(1)]).toEqual(["A", "B"]);
+  });
+});
+
+describe("chooseOption", () => {
+  const options = [
+    { provider: "YOUTUBE" as const, tier: "EMBED" as const, label: "YouTube" },
+    { provider: "APPLE_MUSIC" as const, tier: "PREVIEW" as const, label: "Apple Music" },
+  ];
+  it("uses the preferred service when the round offers it, else the best", () => {
+    expect(chooseOption(options, "APPLE_MUSIC")).toBe(1);
+    expect(chooseOption(options, null)).toBe(0);
+    expect(chooseOption([options[0]!], "APPLE_MUSIC")).toBe(0);
   });
 });

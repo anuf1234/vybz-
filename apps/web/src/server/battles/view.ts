@@ -4,6 +4,7 @@ import {
   type AiVerdictView,
   type EntryTrackView,
   type EntryView,
+  type PlaybackOption,
   type RoundView,
   aiScorecard,
   awaitingResponseFrom,
@@ -28,9 +29,8 @@ import {
   TIER_RANK,
   type TrackProviderRef,
   resolvePlayback,
-  sourceForTier,
 } from "@vybz/providers";
-import { guestViewer, toTrackView } from "../catalog";
+import { NO_CAPS, PROVIDER_LABEL, type PlaybackCaps, toTrackView, viewerContext } from "../catalog";
 import { voterFacts } from "./eligibility";
 
 /**
@@ -53,6 +53,8 @@ export interface ViewData {
   viewer: (typeof schema.user.$inferSelect) | null;
   deploymentVerifiesEmail: boolean;
   now: Date;
+  /** What the viewer's device can play (e.g. full Apple Music for subscribers). */
+  caps?: PlaybackCaps;
   playback: ProviderRegistry;
   storefront: string;
 }
@@ -65,7 +67,7 @@ export function buildBattleView(d: ViewData): BattleView {
   const me = participantFor(agg, viewer?.id);
   const cur = currentRound(agg);
   const won = agg.participants.length === 2 ? standings(agg).roundsWon : {};
-  const viewerCtx = guestViewer(d.storefront); // TODO(musickit): include the viewer's connected providers
+  const viewerCtx = viewerContext(d.storefront, d.caps ?? NO_CAPS, viewer?.id ?? null);
 
   const rounds: RoundView[] = agg.rounds.map((r) => {
     const subs = submissionsFor(agg, r.id);
@@ -82,7 +84,8 @@ export function buildBattleView(d: ViewData): BattleView {
     const sourcesBySub = new Map<string, PlaybackSource[]>();
     for (const s of subs) sourcesBySub.set(s.id, resolvePlayback(d.refs.get(s.trackId) ?? [], viewerCtx, d.playback));
     const sides = new Set(subs.map((s) => s.participantId));
-    const parityTier = sides.size === 2 ? commonTier([...sourcesBySub.values()]) : null;
+    const playbackOptions = sides.size === 2 ? roundOptions([...sourcesBySub.values()]) : [];
+    const parityTier = playbackOptions[0]?.tier ?? null;
 
     const entries: EntryView[] = [];
     if (votingStarted) {
@@ -95,17 +98,19 @@ export function buildBattleView(d: ViewData): BattleView {
         for (const s of set) {
           const track = d.tracks.get(s.trackId);
           if (!track) continue;
-          const sources = sourcesBySub.get(s.id) ?? [];
+          const all = sourcesBySub.get(s.id) ?? [];
+          const optionSources = playbackOptions.map((o) => all.find((x) => x.provider === o.provider && x.tier === o.tier)!);
           const proof = d.proofs.find((x) => x.roundId === r.id && x.submissionId === s.id);
-          const tier = parityTier ?? proof?.tier ?? sources[0]?.tier ?? null;
+          const tier = proof?.tier ?? parityTier ?? all[0]?.tier ?? null;
           tracks.push({
             submissionId: s.id,
             track: toTrackView(track),
-            playback: (parityTier ? sourceForTier(sources, parityTier) : null) ?? sources[0] ?? null,
+            playback: optionSources[0] ?? all[0] ?? null,
+            sources: optionSources,
             listen: {
-              playedMs: proof && (!parityTier || proof.tier === parityTier) ? proof.playedMs : 0,
+              playedMs: proof?.playedMs ?? 0,
               requiredMs: requiredListenMs(agg.rules.fairListen.minPlayedMs, track.durationMs, tier),
-              tier: parityTier,
+              tier: proof?.tier ?? null,
             },
           });
         }
@@ -166,6 +171,7 @@ export function buildBattleView(d: ViewData): BattleView {
         canVote: isCurrentVoting && voteBlockedReason === null,
         voteBlockedReason,
         parityTier,
+        playbackOptions,
       },
     };
   });
@@ -218,14 +224,23 @@ export function buildBattleView(d: ViewData): BattleView {
   };
 }
 
-/** The best tier every one of these source lists offers (excluding LINK_OUT). */
-function commonTier(lists: PlaybackSource[][]): PlaybackTier | null {
-  if (!lists.length) return null;
-  let common = new Set(lists[0]!.map((s) => s.tier).filter((t) => t !== "LINK_OUT"));
-  for (const l of lists.slice(1)) {
-    const tiers = new Set(l.map((s) => s.tier));
-    common = new Set([...common].filter((t) => tiers.has(t)));
+/**
+ * Every service the whole round can be heard on, best tier first. For each
+ * provider, the best tier that every track offers from it. Picking an option
+ * plays all tracks the same way, which keeps the battle fair.
+ */
+export function roundOptions(lists: PlaybackSource[][]): PlaybackOption[] {
+  if (!lists.length) return [];
+  const providers = [...new Set(lists.flatMap((l) => l.map((s) => s.provider)))];
+  const options: PlaybackOption[] = [];
+  for (const provider of providers) {
+    let common: PlaybackTier[] | null = null;
+    for (const l of lists) {
+      const tiers: PlaybackTier[] = l.filter((s) => s.provider === provider && s.tier !== "LINK_OUT").map((s) => s.tier);
+      common = common === null ? tiers : common.filter((t: PlaybackTier) => tiers.includes(t));
+    }
+    const best = [...(common ?? [])].sort((a, b) => TIER_RANK[b] - TIER_RANK[a])[0];
+    if (best) options.push({ provider, tier: best, label: PROVIDER_LABEL[provider] });
   }
-  return [...common].sort((a, b) => TIER_RANK[b] - TIER_RANK[a])[0] ?? null;
+  return options.sort((a, b) => TIER_RANK[b.tier] - TIER_RANK[a.tier]);
 }
-

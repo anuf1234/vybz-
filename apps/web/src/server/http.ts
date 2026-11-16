@@ -2,6 +2,7 @@ import "server-only";
 import { schema, eq } from "@vybz/db";
 import { NextResponse, after } from "next/server";
 import { ServiceError, type UserRow } from "./battles/service";
+import type { PlaybackCaps } from "./catalog";
 import { getAuth, publicOrigin } from "./context";
 import { getDb } from "./db";
 
@@ -79,4 +80,12 @@ export function background(fn: () => Promise<unknown>): void {
   } catch {
     void run();
   }
+}
+
+/**
+ * Playback capabilities the app reports for this device. The mobile app sends
+ * `X-VYBZ-Apple-Music: full` once MusicKit confirms an Apple Music subscription.
+ */
+export function playbackCaps(req: Request): PlaybackCaps {
+  return { appleMusicFull: req.headers.get("x-vybz-apple-music") === "full" };
 }

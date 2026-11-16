@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { EntryTrackView } from "@vybz/core";
+import { type EntryTrackView, requiredListenMs } from "@vybz/core";
 import type { PlaybackSource } from "@vybz/providers";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -7,6 +7,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/lib/api";
 import { TIER_LABEL, seconds } from "@/lib/format";
 import { ListenTracker } from "@/lib/listen-tracker";
+import { AppleMusicNativeModule } from "../../modules/apple-music";
 import { color, radius, space, type } from "./theme";
 import { YouTubeEmbed } from "./youtube-embed";
 
@@ -14,6 +15,10 @@ const REPORT_EVERY_MS = 5_000;
 
 export interface EntryPlayerProps {
   entry: EntryTrackView;
+  /** The source for the service the listener chose for this round. */
+  source: PlaybackSource | null;
+  /** The battle's fair-listen minimum. */
+  minPlayedMs: number;
   battleId: string;
   roundIndex: number;
   /** Only one entry plays at a time; others pause. */
@@ -29,14 +34,15 @@ export interface EntryPlayerProps {
  * Plays one track of a battle entry the way its provider allows and keeps the server's
  * listen proof up to date for the fair-listen vote gate.
  */
-export function EntryPlayer({ entry, battleId, roundIndex, active, onActivate, reportListens, onListenComplete }: EntryPlayerProps) {
-  const source = entry.playback;
-  const required = entry.listen.requiredMs;
-  const tracker = useRef(new ListenTracker(entry.listen.playedMs));
-  const [played, setPlayed] = useState(entry.listen.playedMs);
-  const [credited, setCredited] = useState(entry.listen.playedMs);
+export function EntryPlayer({ entry, source, minPlayedMs, battleId, roundIndex, active, onActivate, reportListens, onListenComplete }: EntryPlayerProps) {
+  // Progress recorded on another service/tier doesn't count here.
+  const prior = source && entry.listen.tier === source.tier ? entry.listen.playedMs : 0;
+  const required = source ? requiredListenMs(minPlayedMs, entry.track.durationMs, source.tier) : entry.listen.requiredMs;
+  const tracker = useRef(new ListenTracker(prior));
+  const [played, setPlayed] = useState(prior);
+  const [credited, setCredited] = useState(prior);
   const lastReport = useRef(0);
-  const completed = useRef(entry.listen.playedMs >= required);
+  const completed = useRef(prior >= required);
 
   const report = useCallback(async () => {
     if (!reportListens || !source || source.tier === "LINK_OUT") return;
@@ -119,8 +125,101 @@ function SourceView({ source, active, onPlayingChange, title }: { source: Playba
       </Pressable>
     );
   }
-  // PROVIDER_FULL (MusicKit) needs a native module; not offered on mobile yet.
-  return <Text style={type.small}>Available in the browser with Apple Music.</Text>;
+  if (source.tier === "PROVIDER_FULL") {
+    return <AppleMusicFullPlayer catalogId={source.sdk.catalogId} active={active} onPlayingChange={onPlayingChange} title={title} source={source} />;
+  }
+  return null;
+}
+
+/** The one MusicKit player is shared: remember which catalog song it holds. */
+let appleNowPlaying: string | null = null;
+
+/** Full-track Apple Music playback for subscribers, through the native MusicKit module. */
+function AppleMusicFullPlayer({
+  catalogId,
+  active,
+  onPlayingChange,
+  title,
+  source,
+}: {
+  catalogId: string;
+  active: boolean;
+  onPlayingChange: (p: boolean) => void;
+  title: string;
+  source: PlaybackSource;
+}) {
+  const [state, setState] = useState({ playing: false, position: 0 });
+  const [error, setError] = useState<string | null>(null);
+  const wasActive = useRef(active);
+
+  useEffect(() => {
+    const native = AppleMusicNativeModule;
+    if (!native) return;
+    let alive = true;
+    const t = setInterval(() => {
+      void native
+        .status()
+        .then((st) => {
+          if (!alive) return;
+          const mine = appleNowPlaying === catalogId;
+          setState((prev) => (mine ? st : { playing: false, position: prev.position }));
+        })
+        .catch(() => undefined);
+    }, 500);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      if (appleNowPlaying === catalogId) void native.pause().catch(() => undefined);
+    };
+  }, [catalogId]);
+
+  useEffect(() => {
+    onPlayingChange(state.playing);
+  }, [state.playing, onPlayingChange]);
+
+  useEffect(() => {
+    if (wasActive.current && !active && appleNowPlaying === catalogId) void AppleMusicNativeModule?.pause().catch(() => undefined);
+    wasActive.current = active;
+  }, [active, catalogId]);
+
+  const toggle = async () => {
+    const native = AppleMusicNativeModule;
+    if (!native) return setError("Apple Music isn't available in this build.");
+    setError(null);
+    try {
+      if (state.playing) await native.pause();
+      else if (appleNowPlaying === catalogId) await native.resume();
+      else {
+        appleNowPlaying = catalogId;
+        await native.play(catalogId);
+      }
+    } catch {
+      setError("Couldn't play on Apple Music. Reconnect it in Profile, or switch to another service.");
+    }
+  };
+
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={styles.audio}>
+        <Pressable
+          onPress={() => void toggle()}
+          accessibilityRole="button"
+          accessibilityLabel={state.playing ? `Pause ${title}` : `Play ${title}`}
+          style={({ pressed }) => [styles.playBtn, { backgroundColor: "#FA2D48" }, pressed && { opacity: 0.8 }]}
+        >
+          <Ionicons name={state.playing ? "pause" : "play"} size={22} color="#fff" />
+        </Pressable>
+        <View style={{ flex: 1, gap: 6 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={type.small}>{fmt(state.position)}</Text>
+            <Text style={type.small}>Apple Music · full track</Text>
+          </View>
+          <Attribution source={source} />
+        </View>
+      </View>
+      {error ? <Text style={[type.small, { color: color.danger }]}>{error}</Text> : null}
+    </View>
+  );
 }
 
 function AudioSourcePlayer({
@@ -196,7 +295,7 @@ function AudioSourcePlayer({
 
 function Attribution({ source }: { source: PlaybackSource }) {
   const { label, href } = source.attribution;
-  const prefix = source.tier === "PREVIEW" ? "Preview from" : source.tier === "EMBED" ? "Playing on" : "From";
+  const prefix = source.tier === "PREVIEW" ? "Preview from" : source.tier === "EMBED" || source.tier === "PROVIDER_FULL" ? "Playing on" : "From";
   if (!href) return <Text style={[type.small, { fontSize: 11 }]}>{`${prefix} ${label}`}</Text>;
   return (
     <Pressable onPress={() => void Linking.openURL(href)} accessibilityRole="link">

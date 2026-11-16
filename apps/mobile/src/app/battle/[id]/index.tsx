@@ -6,11 +6,12 @@ import { Platform, RefreshControl, ScrollView, Share, StyleSheet, Text, View } f
 import { EntryPlayer } from "@/components/entry-player";
 import { Scoreboard } from "@/components/scoreboard";
 import { color, radius, space, type } from "@/components/theme";
-import { Artwork, Button, Card, ErrorBanner, Loading, Pill, SectionTitle } from "@/components/ui";
+import { Artwork, Button, Card, ErrorBanner, Loading, Pill, SectionTitle, Segmented } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 import { API_URL } from "@/lib/config";
-import { STATUS_LABEL, VOTE_REASON, countdown, entryLabel, judgingSummary, termsList } from "@/lib/format";
+import { chooseOption, setPreferredService, usePreferredService } from "@/lib/listen-pref";
+import { TIER_LABEL, STATUS_LABEL, VOTE_REASON, countdown, entryLabel, judgingSummary, termsList } from "@/lib/format";
 import { useNow, useResource } from "@/lib/use-resource";
 
 export default function BattleScreen() {
@@ -214,6 +215,13 @@ function VotingPanel({
   reload: () => void;
 }) {
   const [active, setActive] = useState<string | null>(null);
+  const preferred = usePreferredService();
+  const options = round.viewer.playbackOptions;
+  const optionIndex = chooseOption(options, preferred);
+  const option = options[optionIndex];
+  const heardElsewhere = option
+    ? round.entries.some((e) => e.tracks.some((t) => t.listen.playedMs > 0 && t.listen.tier !== null && t.listen.tier !== option.tier))
+    : false;
   const left = countdown(round.votingClosesAt, now);
   const voted = round.viewer.votedSubmissionId;
   const reason = round.viewer.voteBlockedReason;
@@ -231,6 +239,29 @@ function VotingPanel({
         {left ? <Text style={type.small}>{left} left</Text> : null}
       </View>
 
+      {options.length > 1 ? (
+        <View style={{ gap: space.xs }}>
+          <Text style={type.label}>Listen on</Text>
+          <Segmented
+            value={String(optionIndex)}
+            onChange={(v) => {
+              const o = options[Number(v)];
+              if (o) {
+                setActive(null);
+                setPreferredService(o.provider);
+              }
+            }}
+            options={options.map((o, i) => ({ value: String(i), label: `${o.label} · ${o.tier === "PREVIEW" ? "30s" : "Full"}` }))}
+          />
+          <Text style={type.small}>
+            {option ? `Both sides play on ${option.label} (${TIER_LABEL[option.tier].toLowerCase()}), so they're heard the same way.` : ""}
+            {heardElsewhere && reportListens ? " Switching services restarts your listening for this round." : ""}
+          </Text>
+        </View>
+      ) : option ? (
+        <Text style={type.small}>Playing on {option.label} · {TIER_LABEL[option.tier].toLowerCase()}</Text>
+      ) : null}
+
       {round.entries.map((entry, i) => (
         <EntryCard
           key={entry.submissionId}
@@ -246,7 +277,10 @@ function VotingPanel({
             <View key={t.submissionId} style={{ gap: space.sm }}>
               {entry.tracks.length > 1 ? <TrackRow entryTrack={t.track} caption={`Track ${ti + 1}`} compact /> : null}
               <EntryPlayer
+                key={`${t.submissionId}:${option?.provider ?? "none"}:${option?.tier ?? ""}`}
                 entry={t}
+                source={t.sources[optionIndex] ?? t.playback}
+                minPlayedMs={b.rules.fairListen.minPlayedMs}
                 battleId={b.id}
                 roundIndex={round.index}
                 active={active === t.submissionId}

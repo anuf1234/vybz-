@@ -60,7 +60,11 @@ This is why the provider layer (Section 5) treats **metadata** and **playback ri
 | Rules set by the creator | **Negotiated terms** (2026-11-16): the challenged side accepts or counters (rounds, tracks per round 1–3, genre, era, judging, pace); up to 10 counter-offers; the battle starts on acceptance | Requested by Baba. |
 | Crowd voting only | **Judging modes** (2026-11-16): CROWD, AI, COMBINED (AI weight 10–90%), SEPARATE (two scorecards, crowd official). AI verdicts stored in `ai_verdict`, computed once when voting opens, blind to identities, hidden until scored | Requested by Baba. The AI judges from song knowledge and metadata, never audio. |
 
-Not built yet from Phase 1: Apple Music account connection (MusicKit) for `PROVIDER_FULL`, realtime channels, email "your turn" notifications, share cards (OG images), reporting/moderation queue, web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
+| Parity picks one tier for everyone (YouTube always won) | **Listen on: per-service options** (2026-11-16): for each round the server offers every service that can play all tracks at one shared tier; the listener picks; proofs still require one tier across all tracks | Requested by Baba: Apple Music and YouTube both usable in battles. |
+| MusicKit JS on the web | **Native MusicKit on iOS** via a local Expo module; capability self-reported per request (`X-VYBZ-Apple-Music: full`) | Battles happen in the app. The capability only unlocks a playback option, never votes. |
+| Apple as the only search catalog | **Search either catalog**; YouTube picks are matched to Apple (reverse of the Apple→YouTube matcher) | Lets players pick versions only on YouTube while keeping era/genre data. |
+
+Not built yet from Phase 1: realtime channels, email "your turn" notifications, share cards (OG images), reporting/moderation queue, web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
 
 ---
 

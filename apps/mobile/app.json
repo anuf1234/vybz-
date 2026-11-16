@@ -11,7 +11,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.urexp.vybz",
-      "infoPlist": { "UIBackgroundModes": ["audio"] }
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSAppleMusicUsageDescription": "VYBZ uses Apple Music to play full songs in battles for subscribers."
+      }
     },
     "android": {
       "package": "com.urexp.vybz",
@@ -31,7 +36,12 @@
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
-      ["expo-audio", { "microphonePermission": false }],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false
+        }
+      ],
       "expo-image"
     ],
     "experiments": {

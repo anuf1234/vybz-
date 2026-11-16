@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { castVote, getBattleView } from "@/server/battles/service";
 import { getBattleDeps } from "@/server/context";
-import { currentUser, parseRoundIndex, readJson, route } from "@/server/http";
+import { currentUser, playbackCaps, parseRoundIndex, readJson, route } from "@/server/http";
 
 export const POST = route<{ id: string; index: string }>(
   async (req, { params }) => {
@@ -10,7 +10,7 @@ export const POST = route<{ id: string; index: string }>(
     const user = await currentUser(req);
     const body = (await readJson(req)) as { submissionId?: unknown };
     await castVote(deps, user, id, parseRoundIndex(index), body?.submissionId);
-    return NextResponse.json(await getBattleView(deps, user, id));
+    return NextResponse.json(await getBattleView(deps, user, id, playbackCaps(req)));
   },
   { mutation: true },
 );

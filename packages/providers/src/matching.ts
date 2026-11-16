@@ -103,3 +103,29 @@ function tokenOverlap(a: string, b: string): number {
   for (const t of ta) if (tb.has(t)) hit++;
   return hit / ta.size;
 }
+
+// ── YouTube → Apple Music (for picks made from YouTube) ─────────────────────
+
+const VIDEO_NOISE = /\s*[([](official[^)\]]*|lyrics?[^)\]]*|audio|video|hd|hq|4k|visualizer|explicit|clean|m\/v|mv)[)\]]/gi;
+
+/** "Artist - Song (Official Video) [HD] | Label" → "Artist Song". */
+export function appleQueryForVideo(video: Pick<TrackCandidate, "title" | "artistName">): string {
+  let t = video.title.replace(VIDEO_NOISE, "").split(/\s+[|•]\s+/)[0]!.trim();
+  // Titles usually carry the artist ("Artist - Song"); otherwise add the channel.
+  if (!/\s[-–—]\s/.test(t)) t = `${video.artistName} ${t}`;
+  return t.replace(/\s[-–—]\s/, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The Apple Music recording a YouTube video most likely is. Scores each Apple
+ * result as the target against the video (the same test used the other way
+ * round), so both directions agree on what counts as a match.
+ */
+export function bestAppleMatchForVideo(video: TrackCandidate, appleCandidates: TrackCandidate[]): MatchResult | null {
+  let best: MatchResult | null = null;
+  for (const candidate of appleCandidates) {
+    const score = scoreMatch(candidate, video);
+    if (!best || score > best.score) best = { candidate, score };
+  }
+  return best && best.score >= MIN_MATCH_SCORE ? best : null;
+}

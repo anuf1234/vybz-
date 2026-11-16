@@ -34,7 +34,7 @@ import { type Database, type Executor, newId, schema, and, desc, eq, inArray, is
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
 import type { AiJudge, JudgeInput } from "../ai-judge";
 import { z } from "zod";
-import { type CatalogDeps, CatalogError, type StoredTrack, ensureTrack, guestViewer, refsForTracks } from "../catalog";
+import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, guestViewer, refsForTracks, viewerContext } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
 import { voterFacts } from "./eligibility";
 import { buildBattleView, type ViewData } from "./view";
@@ -348,7 +348,7 @@ const ListenSchema = z
   })
   .strict();
 
-export async function recordListen(deps: BattleDeps, actor: UserRow | null, id: string, roundIndex: number, body: unknown) {
+export async function recordListen(deps: BattleDeps, actor: UserRow | null, id: string, roundIndex: number, body: unknown, caps: PlaybackCaps = NO_CAPS) {
   if (!actor) throw new ServiceError(401, "SIGN_IN_REQUIRED");
   const parsed = ListenSchema.safeParse(body);
   if (!parsed.success) throw new ServiceError(400, "INVALID_REQUEST", z.prettifyError(parsed.error));
@@ -366,7 +366,7 @@ export async function recordListen(deps: BattleDeps, actor: UserRow | null, id: 
 
     // The reported tier must be one this viewer can actually get for this track.
     const refs = (await refsForTracks(tx, [sub.trackId])).get(sub.trackId) ?? [];
-    const tiers = new Set(resolvePlayback(refs, guestViewer(deps.catalog.storefront), deps.catalog.playback).map((s) => s.tier));
+    const tiers = new Set(resolvePlayback(refs, viewerContext(deps.catalog.storefront, caps, actor.id), deps.catalog.playback).map((s) => s.tier));
     if (!tiers.has(req.tier)) throw new ServiceError(400, "INVALID_TIER");
 
     const t = now(deps);
@@ -460,7 +460,7 @@ export async function rematch(deps: BattleDeps, actorIn: UserRow | null, id: str
 
 // ── Reads ──────────────────────────────────────────────────────────────────
 
-export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id: string): Promise<BattleView> {
+export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id: string, caps: PlaybackCaps = NO_CAPS): Promise<BattleView> {
   await advanceIfDue(deps, id);
   const loaded = await loadBattle(deps.db, id);
   if (!loaded) throw notFound();
@@ -495,6 +495,7 @@ export async function getBattleView(deps: BattleDeps, viewer: UserRow | null, id
     viewer,
     deploymentVerifiesEmail: deps.requireVerifiedEmail,
     now: now(deps),
+    caps,
     playback: deps.catalog.playback,
     storefront: deps.catalog.storefront,
   };

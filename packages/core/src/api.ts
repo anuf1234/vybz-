@@ -2,7 +2,7 @@
  * Shapes of the public /api/v1 responses, shared by the server and the apps.
  * Type-only: importing this file adds nothing to a bundle.
  */
-import type { PlaybackSource, PlaybackTier } from "@vybz/providers";
+import type { PlaybackSource, PlaybackTier, ProviderKind } from "@vybz/providers";
 import type { BattleStatus, RoundStatus } from "./engine";
 import type { BattleRules, BattleRulesInput } from "./rules";
 import type { Role } from "./policy";
@@ -51,13 +51,30 @@ export interface CatalogSearchResponse {
   items: CatalogHit[];
 }
 
+/**
+ * A way to hear the whole round: one service, at one tier, available for every
+ * track on both sides. Picking one keeps playback fair (both sides heard alike).
+ */
+export interface PlaybackOption {
+  provider: ProviderKind;
+  tier: PlaybackTier;
+  /** "YouTube", "Apple Music"... */
+  label: string;
+}
+
 /** One track in a side's set for a round. */
 export interface EntryTrackView {
   submissionId: string;
   track: TrackView;
-  /** The source to play for this viewer, at the round's parity tier. */
+  /** The source for the round's default option (the first of `viewer.playbackOptions`). */
   playback: PlaybackSource | null;
-  /** This viewer's listen progress on the track. */
+  /** One source per round playback option, in the same order. */
+  sources: PlaybackSource[];
+  /**
+   * This viewer's listen progress on the track. `tier` is the tier the progress
+   * was recorded at (null before any listening); it only counts toward a vote
+   * when every track was heard at the same tier.
+   */
   listen: { playedMs: number; requiredMs: number; tier: PlaybackTier | null };
 }
 
@@ -104,8 +121,10 @@ export interface RoundView {
     votedSubmissionId: string | null;
     canVote: boolean;
     voteBlockedReason: VoteBlockReason | null;
-    /** Tier both entries play at for this viewer. Null: voting stays locked (LINK_OUT only). */
+    /** Tier both entries play at by default for this viewer. Null: voting stays locked (LINK_OUT only). */
     parityTier: PlaybackTier | null;
+    /** Services this viewer can hear the whole round on, best first. */
+    playbackOptions: PlaybackOption[];
   };
 }
 
@@ -201,6 +220,10 @@ export interface CounterRequest {
 
 export interface ConfigResponse {
   aiJudge: { available: boolean; label: string | null; note: string };
+  /** Catalogs players can search when picking tracks, primary first. */
+  catalogs: { provider: ProviderKind; label: string }[];
+  /** Services configured for playback. */
+  playback: { appleMusic: boolean; youtube: boolean };
   genres: { key: string; label: string }[];
   decades: number[];
   roundCounts: number[];

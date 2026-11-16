@@ -1,5 +1,5 @@
-import type { PlaybackTier } from "@vybz/providers";
-import type { BattleRules, BattleStatus, JudgingMode, RoundStatus, VoteBlockReason } from "@vybz/core";
+import type { PlaybackTier, ProviderKind } from "@vybz/providers";
+import type { BattleRules, BattleStatus, JudgingMode, PlaybackOption, RoundStatus, VoteBlockReason } from "@vybz/core";
 import { themeLabel } from "@vybz/core";
 
 /** "2d 4h", "3h 12m", "4m 05s", "now". */
@@ -108,4 +108,10 @@ export function termsList(r: BattleRules): { key: string; label: string; value: 
     { key: "blind", label: "Blind voting", value: r.blindVoting ? "On" : "Off" },
     { key: "tallies", label: "Vote counts", value: r.revealTallies === "LIVE" ? "Live" : r.revealTallies === "AT_BATTLE_END" ? "At the end" : "After each round" },
   ];
+}
+
+/** Index of the option to use: the preferred service if this round offers it, else the best. */
+export function chooseOption(options: PlaybackOption[], preferredService: ProviderKind | null): number {
+  const i = options.findIndex((o) => o.provider === preferredService);
+  return i >= 0 ? i : 0;
 }

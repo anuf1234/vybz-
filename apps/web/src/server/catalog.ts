@@ -8,6 +8,8 @@ import {
   type TrackProviderRef,
   type ViewerContext,
   appleArtworkUrl,
+  appleQueryForVideo,
+  bestAppleMatchForVideo,
   bestMatch,
   resolvePlayback,
   youtubeSearchQuery,
@@ -39,8 +41,30 @@ export function guestViewer(storefront: string): ViewerContext {
   return { userId: null, storefront, connections: [] };
 }
 
-export async function searchCatalog(deps: CatalogDeps, q: string, viewer: ViewerContext): Promise<CatalogHit[]> {
-  const provider = deps.metadata[0];
+/**
+ * What the listener's device can play beyond what everyone gets. Self-reported
+ * by the app (e.g. after MusicKit confirms an Apple Music subscription); it only
+ * unlocks playback options, never voting rights.
+ */
+export interface PlaybackCaps {
+  appleMusicFull: boolean;
+}
+
+export const NO_CAPS: PlaybackCaps = { appleMusicFull: false };
+
+export function viewerContext(storefront: string, caps: PlaybackCaps = NO_CAPS, userId: string | null = null): ViewerContext {
+  return {
+    userId,
+    storefront,
+    connections: caps.appleMusicFull ? [{ provider: "APPLE_MUSIC", canPlayFullCatalog: true }] : [],
+  };
+}
+
+export const PROVIDER_LABEL: Record<ProviderKind, string> = { APPLE_MUSIC: "Apple Music", YOUTUBE: "YouTube", VYBZ_DEMO: "VYBZ demo" };
+
+/** Search one catalog (default: the primary one). */
+export async function searchCatalog(deps: CatalogDeps, q: string, viewer: ViewerContext, source?: ProviderKind): Promise<CatalogHit[]> {
+  const provider = source ? deps.metadata.find((m) => m.kind === source) : deps.metadata[0];
   if (!provider) return [];
   const candidates = await provider.search(q, { storefront: viewer.storefront, limit: 15 });
   return candidates.map((c) => {
@@ -90,6 +114,23 @@ export async function ensureTrack(db: Executor, deps: CatalogDeps, catalogId: st
   if (!provider) throw new CatalogError("PROVIDER_UNAVAILABLE");
   const candidate = await provider.getTrack(parsed.externalId, { storefront: deps.storefront });
   if (!candidate) throw new CatalogError("TRACK_NOT_FOUND");
+
+  // A YouTube pick: find the same recording on Apple Music so Apple listeners can
+  // hear it too, and so it gets a release year and genres for battle rules.
+  const apple = deps.metadata.find((m) => m.kind === "APPLE_MUSIC");
+  if (candidate.provider === "YOUTUBE" && apple) {
+    try {
+      const results = await apple.search(appleQueryForVideo(candidate), { storefront: deps.storefront, limit: 10 });
+      const match = bestAppleMatchForVideo(candidate, results);
+      if (match) {
+        const appleTrack = await ensureTrack(db, { ...deps, youtube: null }, `APPLE_MUSIC:${match.candidate.externalId}`);
+        await insertRef(db, appleTrack.track.id, toRef(candidate));
+        return (await findByRef(db, "YOUTUBE", candidate.externalId))!;
+      }
+    } catch (err) {
+      console.warn("apple match failed", err);
+    }
+  }
 
   let trackId: string | null = null;
   if (candidate.isrc) {

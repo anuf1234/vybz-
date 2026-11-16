@@ -27,6 +27,16 @@ Expo (SDK 58) app for iOS and Android, using Expo Router. It talks to the web ap
 
 Playback follows each provider's rules: Apple previews and VYBZ-hosted audio play through `expo-audio`, YouTube plays in its own visible player. Listening is counted as time actually playing (not the playhead), reported to the server, and the server caps it at wall-clock time before unlocking the vote.
 
+## Apple Music full tracks (iOS)
+
+Subscribers connect Apple Music in Profile → Music services. The app then plays full songs through MusicKit (`modules/apple-music`, a local Expo module in Swift) and tells the server it can, with the `X-VYBZ-Apple-Music: full` header, so battles offer "Apple Music · Full" next to YouTube.
+
+Setup before building:
+1. In the Apple Developer portal, enable the **MusicKit** App Service for the `com.urexp.vybz` App ID (Identifiers → your App ID → App Services). No API key is needed in the app; MusicKit signs requests automatically.
+2. Build a development or production build (`npx expo run:ios` or EAS). Expo Go doesn't include the module; there the option simply doesn't appear.
+
+Android and the web build play Apple Music 30-second previews (there's no Expo-compatible Apple Music SDK for Android yet) and YouTube full songs.
+
 ## Checks
 
 ```bash
