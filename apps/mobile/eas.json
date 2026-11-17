@@ -40,9 +40,16 @@
       "android": {
         "image": "latest"
       }
+    },
+    "testflight": {
+      "extends": "production",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://vybz-5d42.onrender.com"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "testflight": {}
   }
 }
