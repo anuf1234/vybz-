@@ -3,6 +3,7 @@ import type { ProviderKind } from "@vybz/providers";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { PlaylistCard } from "@/components/playlist-card";
 import { PreviewButton, usePreviewPlayer } from "@/components/preview-player";
 import { color, radius, space, type } from "@/components/theme";
 import { Artwork, Button, EmptyState, ErrorBanner, SectionTitle, Segmented } from "@/components/ui";
@@ -27,6 +28,8 @@ export default function Pick() {
   const [submitting, setSubmitting] = useState(false);
   const [picked, setPicked] = useState<CatalogHit[]>([]);
   const [artistId, setArtistId] = useState<string | null>(null);
+  const [browse, setBrowse] = useState<"suggested" | "saved" | "playlists">("suggested");
+  const [playlistId, setPlaylistId] = useState<string | null>(null);
   const battle = useResource(() => api.battle(id), [id]);
   const rules = battle.data?.rules;
   const need = rules?.tracksPerRound ?? 1;
@@ -42,6 +45,9 @@ export default function Pick() {
 
   const suggestions = useResource(rules ? () => api.suggestions({ genres: c?.genres, eraFrom: c?.eraFrom, eraTo: c?.eraTo }) : null, [rules ? JSON.stringify(c ?? {}) : null]);
   const artist = useResource(artistId ? () => api.artist(artistId) : null, [artistId]);
+  const saved = useResource(browse === "saved" ? () => api.library() : null, [browse]);
+  const playlists = useResource(browse === "playlists" ? () => api.playlists("mine") : null, [browse]);
+  const playlist = useResource(playlistId ? () => api.playlist(playlistId) : null, [playlistId]);
 
   // Debounced search: songs from the chosen catalog, artists alongside.
   useEffect(() => {
@@ -106,8 +112,25 @@ export default function Pick() {
 
   const searchingNow = q.trim().length >= 2;
   const viewingArtist = artistId !== null;
-  const list: CatalogHit[] = viewingArtist ? (artist.data?.topSongs ?? []) : searchingNow ? songs : (suggestions.data?.items ?? []);
-  const loading = viewingArtist ? artist.loading && !artist.data : searchingNow ? searching : suggestions.loading && !suggestions.data;
+  const viewingPlaylist = !searchingNow && !viewingArtist && browse === "playlists" && playlistId !== null;
+  const list: CatalogHit[] = viewingArtist
+    ? (artist.data?.topSongs ?? [])
+    : searchingNow
+      ? songs
+      : browse === "saved"
+        ? (saved.data?.items ?? [])
+        : browse === "playlists"
+          ? (playlist.data?.tracks ?? [])
+          : (suggestions.data?.items ?? []);
+  const loading = viewingArtist
+    ? artist.loading && !artist.data
+    : searchingNow
+      ? searching
+      : browse === "saved"
+        ? saved.loading && !saved.data
+        : browse === "playlists"
+          ? (playlistId ? playlist.loading && !playlist.data : playlists.loading && !playlists.data)
+          : suggestions.loading && !suggestions.data;
 
   const header = viewingArtist ? (
     <View style={{ gap: space.sm, marginBottom: space.sm }}>
@@ -143,9 +166,34 @@ export default function Pick() {
         {songs.length ? <SectionTitle>Songs</SectionTitle> : null}
       </View>
     ) : null
-  ) : suggestions.data?.items.length ? (
-    <SectionTitle>{suggestions.data.title}</SectionTitle>
-  ) : null;
+  ) : (
+    <View style={{ gap: space.sm, marginBottom: space.sm }}>
+      <Segmented
+        value={browse}
+        onChange={(v) => {
+          setBrowse(v);
+          setPlaylistId(null);
+        }}
+        options={[
+          { value: "suggested", label: "Suggested" },
+          { value: "saved", label: "Saved" },
+          { value: "playlists", label: "Playlists" },
+        ]}
+      />
+      {browse === "suggested" && suggestions.data?.items.length ? <SectionTitle>{suggestions.data.title}</SectionTitle> : null}
+      {browse === "playlists" && !playlistId
+        ? (playlists.data?.items ?? []).map((pl) => <PlaylistCard key={pl.id} p={pl} onPress={() => setPlaylistId(pl.id)} />)
+        : null}
+      {viewingPlaylist ? (
+        <>
+          <Pressable onPress={() => setPlaylistId(null)} accessibilityRole="button" hitSlop={8}>
+            <Text style={[type.small, { color: color.violetSoft }]}>‹ All playlists</Text>
+          </Pressable>
+          {playlist.data ? <SectionTitle>{playlist.data.title}</SectionTitle> : null}
+        </>
+      ) : null}
+    </View>
+  );
 
   return (
     <View style={{ flex: 1, padding: space.lg, gap: space.md }}>
@@ -184,6 +232,14 @@ export default function Pick() {
             artist.data ? <EmptyState title="No songs found" body="This artist has no songs available here." /> : undefined
           ) : searchingNow ? (
             artists.length ? undefined : <EmptyState title="No matches" body="Try the artist name or a different spelling." />
+          ) : browse === "saved" ? (
+            <EmptyState title="No saved songs yet" body="Bookmark songs in battles and searches to pick from them here." />
+          ) : browse === "playlists" ? (
+            playlistId ? (
+              <EmptyState title="This playlist is empty" />
+            ) : playlists.data?.items.length ? undefined : (
+              <EmptyState title="No playlists yet" body="Make playlists in the Library tab to pick from them here." />
+            )
           ) : (
             <EmptyState
               title={need > 1 ? `Find your ${need} picks` : "Find your pick"}
@@ -206,7 +262,7 @@ export default function Pick() {
               accessibilityState={{ checked: order >= 0, disabled }}
               accessibilityLabel={`${viewingArtist ? `Number ${index + 1}, ` : ""}${item.title} by ${item.artistName}`}
             >
-              {viewingArtist ? <Text style={styles.rank}>{index + 1}</Text> : null}
+              {viewingArtist || viewingPlaylist ? <Text style={styles.rank}>{index + 1}</Text> : null}
               <Artwork uri={item.artworkUrl} size={52} />
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[type.body, { fontWeight: "700" }]} numberOfLines={1}>

@@ -19,8 +19,13 @@ export function isStaff(u: UserRow | null): boolean {
 }
 
 export function codeMatches(row: BattleRow, code: string | null | undefined): boolean {
-  if (!code || !row.inviteCode || code.length !== row.inviteCode.length) return false;
-  return timingSafeEqual(Buffer.from(code), Buffer.from(row.inviteCode));
+  return secretMatches(row.inviteCode, code);
+}
+
+/** Constant-time comparison of a stored share code with one from a link. */
+export function secretMatches(expected: string | null | undefined, given: string | null | undefined): boolean {
+  if (!given || !expected || given.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(given), Buffer.from(expected));
 }
 
 /**

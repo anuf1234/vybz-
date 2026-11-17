@@ -518,6 +518,78 @@ export const moderationAction = pgTable("moderation_action", {
   createdAt: createdAt(),
 });
 
+// ── Library and playlists ──────────────────────────────────────────────────
+
+/** Songs a user saved. */
+export const libraryTrack = pgTable(
+  "library_track",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    trackId: text("track_id")
+      .notNull()
+      .references(() => track.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.trackId] }), index("library_track_user_idx").on(t.userId, t.createdAt)],
+);
+
+export const playlist = pgTable(
+  "playlist",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    visibility: text("visibility", { enum: ["PUBLIC", "PRIVATE"] })
+      .notNull()
+      .default("PRIVATE"),
+    /** Lets people with the link open a private playlist. */
+    shareCode: text("share_code").notNull(),
+    /** The theme it was generated for, if any (VYBZ genre keys and years). */
+    genres: text("genres").array().notNull().default(sql`'{}'::text[]`),
+    eraFrom: integer("era_from"),
+    eraTo: integer("era_to"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("playlist_owner_idx").on(t.ownerId, t.updatedAt), index("playlist_public_idx").on(t.visibility, t.updatedAt)],
+);
+
+export const playlistTrack = pgTable(
+  "playlist_track",
+  {
+    playlistId: text("playlist_id")
+      .notNull()
+      .references(() => playlist.id, { onDelete: "cascade" }),
+    trackId: text("track_id")
+      .notNull()
+      .references(() => track.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    addedById: text("added_by_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.playlistId, t.trackId] }), index("playlist_track_order_idx").on(t.playlistId, t.position)],
+);
+
+/** People the owner lets add, remove and reorder songs. */
+export const playlistCollaborator = pgTable(
+  "playlist_collaborator",
+  {
+    playlistId: text("playlist_id")
+      .notNull()
+      .references(() => playlist.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.playlistId, t.userId] }), index("playlist_collaborator_user_idx").on(t.userId)],
+);
+
 export type User = typeof user.$inferSelect;
 export type Track = typeof track.$inferSelect;
 export type TrackProviderRefRow = typeof trackProviderRef.$inferSelect;

@@ -6,6 +6,7 @@ import { color, space, type } from "@/components/theme";
 import { Button, Card, EmptyState, ErrorBanner, Field, Loading } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { signOut, useSession } from "@/lib/auth-client";
+import { clearLibrary } from "@/lib/library-store";
 import { useNow, useResource } from "@/lib/use-resource";
 import { appleMusicSupported, connectAppleMusic, disconnectAppleMusic, useAppleMusicFull } from "@/lib/apple-music";
 import { useServerConfig } from "@/lib/config";
@@ -92,7 +93,17 @@ export default function Profile() {
           <Button title="Moderation queue" kind="secondary" />
         </Link>
       ) : null}
-      <Button title="Sign out" kind="ghost" onPress={() => void signOut()} />
+      <Link href="/rankings" asChild>
+        <Button title="Rankings" kind="secondary" />
+      </Link>
+      <Button
+        title="Sign out"
+        kind="ghost"
+        onPress={() => {
+          clearLibrary();
+          void signOut();
+        }}
+      />
     </ScrollView>
   );
 }

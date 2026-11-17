@@ -68,6 +68,7 @@ This is why the provider layer (Section 5) treats **metadata** and **playback ri
 | Ably for live features | **Polling for chat, reactions and viewer counts** (`/live` every 3s, presence heartbeat every 15s, 30s window) | No extra service; fine at current scale. Swap the transport for Ably when live battles need sub-second updates. |
 | Email "your turn" notifications | **In-app notifications + Expo push** (`notification`, `push_token`), created from engine events after each transition commits | Push needs an EAS project id in the app (`eas init`) and real devices; the in-app list works without it. |
 | Moderation in a later phase | **Report queue** (`report`, `moderation_action` audit log), staff = MODERATOR or ADMIN | Needed before chat could ship. |
+| Playlists in a later phase | **Library and playlists** (2026-11-17, Step 2): `library_track`, `playlist`, `playlist_track`, `playlist_collaborator`; songs are canonical `track` rows so they can be picked in battles; generator reuses the theme suggestions; YouTube matching deferred until a stored song is picked | Requested by Baba (Step 2). No Spotify: its terms don't allow use in battles, and there's no key. |
 
 Not built yet from Phase 1: realtime channels (polling instead), email notifications, share cards (OG images), web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
 

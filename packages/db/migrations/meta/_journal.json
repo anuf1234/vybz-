@@ -29,6 +29,13 @@
       "when": 1794896000000,
       "tag": "0003_youtube_release_years",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794918272099,
+      "tag": "0004_library_playlists",
+      "breakpoints": true
     }
   ]
 }

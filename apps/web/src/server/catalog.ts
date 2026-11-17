@@ -244,20 +244,47 @@ export async function ensureTrack(db: Executor, deps: CatalogDeps, catalogId: st
   }
   await insertRef(db, trackId, toRef(candidate));
 
-  if (candidate.provider === "APPLE_MUSIC" && deps.youtube) {
-    try {
-      const videos = await deps.youtube.search(youtubeSearchQuery(candidate), { storefront: deps.storefront, limit: 5 });
-      const match = bestMatch(candidate, videos);
-      if (match) await insertRef(db, trackId, toRef(match.candidate));
-    } catch (err) {
-      // A missing video only means fewer playback options; the track still works via previews.
-      console.warn("youtube match failed", err);
-    }
-  }
+  if (candidate.provider === "APPLE_MUSIC" && deps.youtube) await matchYouTube(db, deps, trackId, candidate);
 
   const stored = await findByRef(db, parsed.provider, parsed.externalId);
   if (!stored) throw new CatalogError("TRACK_NOT_FOUND");
   return stored;
+}
+
+async function matchYouTube(db: Executor, deps: CatalogDeps, trackId: string, target: TrackCandidate): Promise<void> {
+  if (!deps.youtube) return;
+  try {
+    const videos = await deps.youtube.search(youtubeSearchQuery(target), { storefront: deps.storefront, limit: 5 });
+    const match = bestMatch(target, videos);
+    if (match && !(await findByRef(db, "YOUTUBE", match.candidate.externalId))) await insertRef(db, trackId, toRef(match.candidate));
+  } catch (err) {
+    // A missing video only means fewer playback options; the track still works via previews.
+    console.warn("youtube match failed", err);
+  }
+}
+
+/** Tracks whose YouTube match was tried this process, so a miss isn't retried (and paid for) on every pick. */
+const youtubeTried = new Set<string>();
+
+/**
+ * Songs stored from a library or playlist skip the YouTube search. When one is
+ * picked for a battle, find its video then, so everyone can hear the full song.
+ */
+export async function ensureYouTubeMatch(db: Executor, deps: CatalogDeps, stored: StoredTrack): Promise<StoredTrack> {
+  if (!deps.youtube || youtubeTried.has(stored.track.id)) return stored;
+  if (stored.refs.some((r) => r.provider === "YOUTUBE") || !stored.refs.some((r) => r.provider === "APPLE_MUSIC")) return stored;
+  youtubeTried.add(stored.track.id);
+  const t = stored.track;
+  await matchYouTube(db, deps, t.id, {
+    provider: "APPLE_MUSIC",
+    externalId: stored.refs.find((r) => r.provider === "APPLE_MUSIC")!.externalId,
+    title: t.title,
+    artistName: t.artistName,
+    ...(t.durationMs ? { durationMs: t.durationMs } : {}),
+    ...(t.isrc ? { isrc: t.isrc } : {}),
+  });
+  const apple = stored.refs.find((r) => r.provider === "APPLE_MUSIC")!;
+  return (await findByRef(db, "APPLE_MUSIC", apple.externalId)) ?? stored;
 }
 
 async function lookUpReleaseYear(deps: CatalogDeps, video: Pick<TrackCandidate, "title" | "artistName">): Promise<number | null> {

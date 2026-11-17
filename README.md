@@ -26,6 +26,8 @@ Sign up (email/password or Google), challenge someone (or post an open challenge
 
 **Finding songs.** The picker suggests songs that fit the battle's genres and era as soon as it opens (Apple Music's genre charts, or Apple's own decade playlists such as "90s R&B" when there's an era), shows matching artists above song results while you search, and opens an artist's songs ranked by popularity (Apple Music's top-songs list). Every row plays a short preview, and anything outside the battle's era is marked before you pick it.
 
+**Library and playlists (Step 2).** Save any song from a battle, search or playlist with the bookmark. Make playlists by hand or let VYBZ fill one for a genre and era (25 popular fitting songs to start), then add, remove and reorder songs. Playlists are private (shareable by link) or public, can have collaborators who add and reorder songs, and show up under Discover when public. Saved songs and playlists appear in the battle picker, so you can pick straight from them. Songs stored this way skip the YouTube search until they're picked for a battle, to spare the YouTube quota.
+
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.

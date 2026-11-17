@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { EntryPlayer } from "@/components/entry-player";
 import { LiveStrip } from "@/components/live-strip";
+import { SaveButton } from "@/components/save-button";
 import { Scoreboard } from "@/components/scoreboard";
 import { color, radius, sideColor, space, type } from "@/components/theme";
 import { Artwork, Button, Card, ErrorBanner, Loading, Pill, SectionTitle, Segmented } from "@/components/ui";
@@ -380,7 +381,7 @@ function VotingPanel({
         >
           {entry.tracks.map((t, ti) => (
             <View key={t.submissionId} style={{ gap: space.sm }}>
-              {entry.tracks.length > 1 ? <TrackRow entryTrack={t.track} caption={`Track ${ti + 1}`} compact /> : null}
+              {entry.tracks.length > 1 ? <TrackRow entryTrack={t.track} caption={`Track ${ti + 1}`} compact saveable /> : null}
               {canHeart ? <HeartButton b={b} round={round} submissionId={t.submissionId} reload={reload} /> : null}
               <EntryPlayer
                 key={`${t.submissionId}:${option?.provider ?? "none"}:${option?.tier ?? ""}`}
@@ -458,7 +459,7 @@ function EntryCard({
         <Text style={styles.entryTagText}>{label}</Text>
       </View>
       {entry.tracks.length === 1 ? (
-        <TrackRow entryTrack={entry.tracks[0]!.track} caption={owner ? `@${owner.handle}'s pick` : mine ? "Your pick" : undefined} />
+        <TrackRow entryTrack={entry.tracks[0]!.track} caption={owner ? `@${owner.handle}'s pick` : mine ? "Your pick" : undefined} saveable />
       ) : (
         <Text style={type.label}>{owner ? `@${owner.handle}'s set` : mine ? "Your set" : `Set ${label}`}</Text>
       )}
@@ -478,7 +479,7 @@ function EntryCard({
   );
 }
 
-function TrackRow({ entryTrack, caption, compact }: { entryTrack: TrackView; caption?: string | undefined; compact?: boolean }) {
+function TrackRow({ entryTrack, caption, compact, saveable }: { entryTrack: TrackView; caption?: string | undefined; compact?: boolean; saveable?: boolean }) {
   return (
     <View style={{ flexDirection: "row", gap: space.md, alignItems: "center" }}>
       <Artwork uri={entryTrack.artworkUrl} size={compact ? 44 : 64} />
@@ -493,6 +494,7 @@ function TrackRow({ entryTrack, caption, compact }: { entryTrack: TrackView; cap
           {entryTrack.releaseYear ? ` · ${entryTrack.releaseYear}` : ""}
         </Text>
       </View>
+      {saveable ? <SaveButton song={{ trackId: entryTrack.id, title: entryTrack.title }} size={30} /> : null}
     </View>
   );
 }
@@ -529,6 +531,7 @@ function ScoredRound({ b, round }: { b: BattleView; round: RoundView }) {
                   </Text>
                 </View>
                 {t.hearts ? <Text style={type.small}>♥ {t.hearts}</Text> : null}
+                <SaveButton song={{ trackId: t.track.id, title: t.track.title }} size={28} />
                 {i === 0 && e.votes ? <Text style={[type.display, { fontSize: 20 }]}>{e.votes.count}</Text> : null}
                 <Pressable
                   onPress={() => setReplay(replay === t.submissionId ? null : t.submissionId)}
