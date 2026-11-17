@@ -1,4 +1,8 @@
 import type {
+  LeaderboardMetric,
+  LeaderboardPeriod,
+  LeaderboardResponse,
+  LeaderboardScope,
   CommentView,
   ConversationView,
   CreatePostRequest,
@@ -258,5 +262,7 @@ export const api = {
   search: (q: string, source?: ProviderKind) =>
     request<CatalogSearchResponse>("GET", `/api/v1/catalog/search?q=${encodeURIComponent(q)}${source ? `&source=${source}` : ""}`),
   rankings: () => request<RankingsResponse>("GET", "/api/v1/rankings"),
+  leaderboard: (q: { scope: LeaderboardScope; genre?: string | null; period: LeaderboardPeriod; metric: LeaderboardMetric }) =>
+    request<LeaderboardResponse>("GET", `/api/v1/leaderboards?scope=${q.scope}&period=${q.period}&metric=${q.metric}${q.genre ? `&genre=${q.genre}` : ""}`),
   profile: (handle: string) => request<ProfileView>("GET", `/api/v1/users/${encodeURIComponent(handle)}`),
 };

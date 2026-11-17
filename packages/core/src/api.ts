@@ -566,3 +566,32 @@ export interface ConversationView {
   /** Why sending is off, when it is. */
   blockedReason: "BLOCKED" | "NOT_CONNECTED" | null;
 }
+
+// ── Leaderboards ───────────────────────────────────────────────────────────
+
+export type LeaderboardScope = "global" | "following" | "genre";
+export type LeaderboardPeriod = "week" | "month" | "all";
+export type LeaderboardMetric = "wins" | "rounds" | "xp";
+
+export interface LeaderboardEntry {
+  rank: number;
+  user: UserSummary;
+  /** The number ranked by (wins, rounds won or XP in the period). */
+  value: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  roundsWon: number;
+  battles: number;
+  level: number | null;
+}
+
+export interface LeaderboardResponse {
+  scope: LeaderboardScope;
+  genre: string | null;
+  period: LeaderboardPeriod;
+  metric: LeaderboardMetric;
+  items: LeaderboardEntry[];
+  /** The viewer's own row, even when outside the top of the list; null if signed out or not ranked. */
+  me: LeaderboardEntry | null;
+}
