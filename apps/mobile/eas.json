@@ -4,11 +4,11 @@
     "development": {
       "developmentClient": false,
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_API_URL": "https://staging.urexp.com" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://vybz-5d42.onrender.com" }
     },
     "preview": {
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_API_URL": "https://staging.urexp.com" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://vybz-5d42.onrender.com" }
     },
     "production": {
       "autoIncrement": true,
