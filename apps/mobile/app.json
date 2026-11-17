@@ -15,7 +15,8 @@
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSAppleMusicUsageDescription": "VYBZ uses Apple Music to play full songs in battles for subscribers."
+        "NSAppleMusicUsageDescription": "VYBZ uses Apple Music to play full songs in battles for subscribers.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -42,10 +43,17 @@
           "microphonePermission": false
         }
       ],
-      "expo-image"
+      "expo-image",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "owner": "acef1234",
+    "extra": {
+      "eas": {
+        "projectId": "c3e187e0-9853-454f-be60-cf8a28db6ecf"
+      }
     }
   }
 }
