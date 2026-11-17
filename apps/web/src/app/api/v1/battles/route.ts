@@ -4,7 +4,7 @@ import { createBattle, listBattles } from "@/server/battles/service";
 import { getBattleDeps } from "@/server/context";
 import { currentUser, noStore, readJson, route } from "@/server/http";
 
-const FEEDS: BattleFeed[] = ["home", "open", "mine", "vote"];
+const FEEDS: BattleFeed[] = ["home", "open", "mine", "vote", "featured", "daily"];
 
 export const GET = route(async (req) => {
   const raw = new URL(req.url).searchParams.get("feed") ?? "home";

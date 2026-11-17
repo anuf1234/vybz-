@@ -18,14 +18,20 @@ Expo (SDK 58) app for iOS and Android, using Expo Router. It talks to the web ap
 
 | Screen | |
 |---|---|
-| Home | Battles waiting for your vote, live battles, open challenges, recent results |
+| Home | Today's battle, featured battles, battles waiting for your vote, live battles, open challenges, recent results; notification bell |
 | Battles | Mine / Open / To vote |
-| Create | Theme presets (with era rules), rounds, open or direct challenge, pace, blind voting, live tallies |
-| Battle stage | Scoreboard and round tracker, sealed picks, blind A/B entries at the same playback tier, listen meter, vote, round results, final result and rematch |
+| Create | Duel or group battle (3–8 players), up to 3 genres, era, rounds, length preset, judging, open or direct challenge or invites, public or private |
+| Battle stage | Scoreboard and round tracker, sealed picks, blind A/B entries at the same playback tier, listen meter, vote, round results, final result with stats and rematch; group lobby; track hearts; chat, reactions and viewer count; report; moderator feature/void |
 | Pick | Catalog search; each hit shows how a guest would hear it |
+| Notifications | Challenges, invites, picks due, results; tap to open the battle |
+| Moderation | Staff only: open reports, hide message, void battle, suspend user, dismiss |
 | Rankings, Profile | Leaderboard by wins; record, recent battles, edit handle and name |
 
 Playback follows each provider's rules: Apple previews and VYBZ-hosted audio play through `expo-audio`, YouTube plays in its own visible player. Listening is counted as time actually playing (not the playhead), reported to the server, and the server caps it at wall-clock time before unlocking the vote.
+
+## Push notifications
+
+Push needs an EAS project: run `npx eas-cli@latest init` once (it writes `extra.eas.projectId` to the app config), then use a development build on a real phone. Without a project id, or on simulators and the web, the app skips push and the in-app notification list still works. On the server, `PUSH_NOTIFICATIONS=false` turns sending off; `EXPO_ACCESS_TOKEN` is needed only if you turn on push security in your Expo account.
 
 ## Apple Music full tracks (iOS)
 

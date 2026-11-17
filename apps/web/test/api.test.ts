@@ -193,6 +193,13 @@ describe.skipIf(!TEST_DB_URL)("HTTP API", () => {
 
     expect((await call("cron", "POST", "/api/cron/advance")).status).toBe(401);
     const ok = await call("cron", "POST", "/api/cron/advance", { headers: { authorization: "Bearer cron-secret-cron-secret" } });
-    expect(await ok.json()).toEqual({ advanced: 0, judged: 0, daily: expect.any(String) });
+    const { daily } = (await ok.json()) as { daily: string };
+    expect(daily).toEqual(expect.any(String));
+
+    // The daily and featured feeds are served as themselves, not the home feed.
+    const dailyFeed = await (await call("battles", "GET", "/api/v1/battles?feed=daily")).json();
+    expect(dailyFeed.items.map((b: { id: string }) => b.id)).toEqual([daily]);
+    const featured = await (await call("battles", "GET", "/api/v1/battles?feed=featured")).json();
+    expect(featured.items).toEqual([]);
   });
 });

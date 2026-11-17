@@ -84,6 +84,14 @@ export default function Profile() {
         <Button title="Edit profile" kind="secondary" onPress={() => setEditing(true)} />
       )}
       <MusicServices />
+      <Link href="/notifications" asChild>
+        <Button title="Notifications" kind="secondary" />
+      </Link>
+      {me.data && (me.data.role === "MODERATOR" || me.data.role === "ADMIN") ? (
+        <Link href="/mod" asChild>
+          <Button title="Moderation queue" kind="secondary" />
+        </Link>
+      ) : null}
       <Button title="Sign out" kind="ghost" onPress={() => void signOut()} />
     </ScrollView>
   );

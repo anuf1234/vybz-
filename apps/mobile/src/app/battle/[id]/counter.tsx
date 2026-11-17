@@ -40,7 +40,7 @@ export default function Counter() {
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: 80 }}>
       <Stack.Screen options={{ title: "Counter-offer" }} />
       <Text style={type.small}>Change anything you want. @{b.terms.proposedBy.handle} gets to accept your terms or counter again.</Text>
-      <TermsForm value={terms} onChange={setTerms} />
+      <TermsForm value={terms} onChange={setTerms} mode="counter" />
       {error ? <ErrorBanner message={error} /> : null}
       <Button title="Send counter-offer" onPress={() => void send()} loading={busy} />
     </ScrollView>

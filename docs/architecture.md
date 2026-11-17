@@ -63,8 +63,13 @@ This is why the provider layer (Section 5) treats **metadata** and **playback ri
 | Parity picks one tier for everyone (YouTube always won) | **Listen on: per-service options** (2026-11-16): for each round the server offers every service that can play all tracks at one shared tier; the listener picks; proofs still require one tier across all tracks | Requested by Baba: Apple Music and YouTube both usable in battles. |
 | MusicKit JS on the web | **Native MusicKit on iOS** via a local Expo module; capability self-reported per request (`X-VYBZ-Apple-Music: full`) | Battles happen in the app. The capability only unlocks a playback option, never votes. |
 | Apple as the only search catalog | **Search either catalog**; YouTube picks are matched to Apple (reverse of the Apple→YouTube matcher) | Lets players pick versions only on YouTube while keeping era/genre data. |
+| Duels only | **Group battles** (2026-11-16): 2–8 entrants (`rules.entrants`), lobby with join/leave/start, N-way scoring; sudden death only between the tied leaders (`battle_round.contender_ids`); a player who doesn't pick forfeits that round | Requested by Baba (Step 1 of the feature plan). |
+| Public battles only | **Private battles**: `battle.visibility` + `invite_code`; opening a valid link grants lasting access (`battle_access`); others get 404 | Same. |
+| Ably for live features | **Polling for chat, reactions and viewer counts** (`/live` every 3s, presence heartbeat every 15s, 30s window) | No extra service; fine at current scale. Swap the transport for Ably when live battles need sub-second updates. |
+| Email "your turn" notifications | **In-app notifications + Expo push** (`notification`, `push_token`), created from engine events after each transition commits | Push needs an EAS project id in the app (`eas init`) and real devices; the in-app list works without it. |
+| Moderation in a later phase | **Report queue** (`report`, `moderation_action` audit log), staff = MODERATOR or ADMIN | Needed before chat could ship. |
 
-Not built yet from Phase 1: realtime channels, email "your turn" notifications, share cards (OG images), reporting/moderation queue, web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
+Not built yet from Phase 1: realtime channels (polling instead), email notifications, share cards (OG images), web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
 
 ---
 

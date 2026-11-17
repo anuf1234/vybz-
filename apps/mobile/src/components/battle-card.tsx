@@ -2,11 +2,12 @@ import type { BattleListItem, ViewerAction } from "@vybz/core";
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { countdown, roundPhase, STATUS_LABEL } from "@/lib/format";
-import { color, radius, space, type } from "./theme";
+import { color, radius, sideColor, space, type } from "./theme";
 import { Avatar, Pill } from "./ui";
 
 const ACTION_LABEL: Record<ViewerAction, string | null> = {
   accept: "Accept",
+  join: "Join",
   submit: "Your pick",
   vote: "Vote",
   wait: null,
@@ -30,10 +31,30 @@ export function BattleCard({ battle, now }: { battle: BattleListItem; now: numbe
           <Pill text={live ? `Round ${(battle.currentRoundIndex ?? 0) + 1}/${battle.roundCount} · ${roundPhase(battle.currentRoundStatus)}` : STATUS_LABEL[battle.status]} tone={live ? "live" : "default"} />
           {action ? <Pill text={action} tone="violet" /> : left && live ? <Text style={type.small}>{left}</Text> : null}
         </View>
-        <Text style={type.heading} numberOfLines={1}>
-          {battle.title}
-        </Text>
+        <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
+          <Text style={[type.heading, { flexShrink: 1 }]} numberOfLines={1}>
+            {battle.title}
+          </Text>
+          {battle.visibility === "PRIVATE" ? <Text style={type.small}>🔒</Text> : null}
+          {battle.featured ? <Pill text="Featured" tone="violet" /> : null}
+        </View>
         {battle.theme ? <Text style={type.small}>{battle.theme}</Text> : null}
+        {battle.format === "MULTI" ? (
+          <View style={styles.group}>
+            {battle.participants.map((p) => (
+              <View key={p.id} style={{ alignItems: "center", gap: 2 }}>
+                <Avatar name={p.user.displayName} size={30} ring={winner === p.id ? color.win : sideColor(p.side)} />
+                {started ? <Text style={[type.small, { fontSize: 11 }]}>{p.roundsWon}</Text> : null}
+              </View>
+            ))}
+            {Array.from({ length: Math.max(0, battle.maxEntrants - battle.participants.length) }, (_, i) => (
+              <View key={`open-${i}`} style={styles.openSeat} />
+            ))}
+            <Text style={[type.small, { marginLeft: "auto" }]}>
+              {battle.participants.length}/{battle.maxEntrants} players
+            </Text>
+          </View>
+        ) : (
         <View style={styles.vs}>
           <Side name={sideA.displayName} handle={sideA.handle} score={started ? a?.roundsWon : undefined} ring={color.sideA} won={!!winner && winner === a?.id} />
           <Text style={styles.vsText}>VS</Text>
@@ -45,6 +66,7 @@ export function BattleCard({ battle, now }: { battle: BattleListItem; now: numbe
             </View>
           )}
         </View>
+        )}
       </Pressable>
     </Link>
   );
@@ -70,4 +92,6 @@ const styles = StyleSheet.create({
   vs: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: space.sm, gap: space.sm },
   vsText: { ...type.display, fontSize: 16, color: color.muted },
   side: { flex: 1, flexDirection: "row", alignItems: "center", gap: space.sm },
+  group: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: space.sm, flexWrap: "wrap" },
+  openSeat: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderStyle: "dashed", borderColor: color.line },
 });

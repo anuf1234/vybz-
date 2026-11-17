@@ -2,10 +2,11 @@ import type { BattleView, EntryView, RoundView, TrackView } from "@vybz/core";
 import * as Haptics from "expo-haptics";
 import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { Platform, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { EntryPlayer } from "@/components/entry-player";
+import { LiveStrip } from "@/components/live-strip";
 import { Scoreboard } from "@/components/scoreboard";
-import { color, radius, space, type } from "@/components/theme";
+import { color, radius, sideColor, space, type } from "@/components/theme";
 import { Artwork, Button, Card, ErrorBanner, Loading, Pill, SectionTitle, Segmented } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
@@ -15,12 +16,12 @@ import { TIER_LABEL, STATUS_LABEL, VOTE_REASON, countdown, entryLabel, judgingSu
 import { useNow, useResource } from "@/lib/use-resource";
 
 export default function BattleScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
   const router = useRouter();
   const session = useSession();
   const signedIn = Boolean(session.data);
   // Poll while open so opponents' picks, votes and deadlines show up.
-  const battle = useResource(() => api.battle(id), [id, signedIn], { pollMs: 8_000 });
+  const battle = useResource(() => api.battle(id, code), [id, code, signedIn], { pollMs: 8_000 });
   const now = useNow(1000);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export default function BattleScreen() {
       <Stack.Screen options={{ title: b.title }} />
       <View style={{ gap: space.xs }}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, alignItems: "center" }}>
-          <Pill text={STATUS_LABEL[b.status]} tone={live ? "live" : b.status === "COMPLETE" ? "violet" : "default"} />
+          <Pill text={b.format === "MULTI" && b.status === "OPEN_CHALLENGE" ? "Lobby" : STATUS_LABEL[b.status]} tone={live ? "live" : b.status === "COMPLETE" ? "violet" : "default"} />
           {b.rules.judging.mode !== "CROWD" ? <Pill text={b.rules.judging.mode === "AI" ? "AI judge" : "Crowd + AI"} tone="violet" /> : null}
           {b.rules.tracksPerRound > 1 ? <Pill text={`${b.rules.tracksPerRound} tracks/round`} /> : null}
           {b.rules.blindVoting ? <Pill text="Blind" /> : null}
@@ -78,7 +79,11 @@ export default function BattleScreen() {
       <Scoreboard battle={b} />
       {error ? <ErrorBanner message={error} /> : null}
 
-      {(b.status === "OPEN_CHALLENGE" || b.status === "PENDING_ACCEPT") && <ChallengePanel b={b} now={now} busy={busy} act={act} />}
+      {b.format === "MULTI" && b.status === "OPEN_CHALLENGE" ? (
+        <LobbyPanel b={b} now={now} busy={busy} act={act} code={code ?? null} />
+      ) : (b.status === "OPEN_CHALLENGE" || b.status === "PENDING_ACCEPT") ? (
+        <ChallengePanel b={b} now={now} busy={busy} act={act} code={code ?? null} />
+      ) : null}
       {b.status === "COMPLETE" && <ResultPanel b={b} busy={busy} act={act} />}
       {current && current.status === "SUBMISSIONS_OPEN" && <PickPanel b={b} round={current} now={now} />}
       {current && current.status === "VOTING_OPEN" && (
@@ -89,19 +94,116 @@ export default function BattleScreen() {
       {past.map((r) => (
         <ScoredRound key={r.index} b={b} round={r} />
       ))}
+
+      {b.status !== "CANCELLED" && b.status !== "EXPIRED" && b.status !== "VOIDED" ? (
+        <LiveStrip battleId={b.id} canChat={b.viewer.canChat} isModerator={b.viewer.isModerator} signedIn={signedIn} />
+      ) : null}
+      <BattleFooter b={b} signedIn={signedIn} busy={busy} act={act} />
     </ScrollView>
   );
 }
 
 type Act = (key: string, fn: () => Promise<BattleView | { id: string }>) => Promise<void>;
 
-function ChallengePanel({ b, now, busy, act }: { b: BattleView; now: number; busy: string | null; act: Act }) {
+function inviteLink(b: BattleView): string {
+  return `${API_URL}/battle/${b.id}${b.visibility === "PRIVATE" && b.inviteCode ? `?code=${b.inviteCode}` : ""}`;
+}
+
+/** Group battles gather entrants until full, the host starts, or the join window closes. */
+function LobbyPanel({ b, now, busy, act, code }: { b: BattleView; now: number; busy: string | null; act: Act; code: string | null }) {
+  const left = countdown(b.acceptDeadline, now);
+  const { joined, min, max } = b.entrants;
+  const players = b.participants;
+  const share = () =>
+    void Share.share({ message: `Join my VYBZ group battle "${b.title}" (${joined}/${max} in). ${inviteLink(b)}` });
+  return (
+    <Card>
+      <View style={styles.panelHead}>
+        <Text style={type.heading}>Lobby · {joined}/{max}</Text>
+        {left ? <Text style={type.small}>Closes in {left}</Text> : null}
+      </View>
+      <Text style={type.small}>
+        Starts when it's full{b.viewer.canStart ? ", when you start it," : ""} or when the join window closes with at least {min} players.
+        {b.visibility === "PRIVATE" ? " Invite only." : ""}
+      </Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+        {players.map((p) => (
+          <View key={p.id} style={[styles.seat, { borderColor: sideColor(p.side) }]}>
+            <Text style={[type.small, { color: color.text }]}>@{p.user.handle}</Text>
+          </View>
+        ))}
+        {Array.from({ length: Math.max(0, max - players.length) }, (_, i) => (
+          <View key={`open-${i}`} style={[styles.seat, { borderStyle: "dashed" }]}>
+            <Text style={type.small}>Open seat</Text>
+          </View>
+        ))}
+      </View>
+      <TermsTable b={b} />
+      {b.viewer.canJoin ? <Button title="Join battle" onPress={() => void act("join", () => api.join(b.id, code))} loading={busy === "join"} /> : null}
+      {b.viewer.canStart ? <Button title="Start now" onPress={() => void act("start", () => api.start(b.id))} loading={busy === "start"} /> : null}
+      {b.viewer.participantId ? <Button title="Invite players" kind="secondary" onPress={share} /> : null}
+      {b.viewer.canLeave ? <Button title="Leave" kind="ghost" onPress={() => void act("leave", () => api.leave(b.id))} loading={busy === "leave"} /> : null}
+      {b.viewer.canCancel ? <Button title="Cancel battle" kind="danger" onPress={() => void act("cancel", () => api.cancel(b.id))} loading={busy === "cancel"} /> : null}
+      {!b.viewer.userId ? (
+        <Link href="/sign-in" asChild>
+          <Button title="Sign in to join" />
+        </Link>
+      ) : null}
+    </Card>
+  );
+}
+
+/** Report, plus feature/void for moderators. */
+function BattleFooter({ b, signedIn, busy, act }: { b: BattleView; signedIn: boolean; busy: string | null; act: Act }) {
+  const [reported, setReported] = useState(false);
+  const report = async () => {
+    try {
+      await api.report({ subjectType: "BATTLE", subjectId: b.id, reason: "Reported from the battle screen" });
+      setReported(true);
+    } catch (err) {
+      Alert.alert("Couldn't send report", err instanceof ApiRequestError ? err.message : "Try again.");
+    }
+  };
+  const confirmVoid = () => {
+    if (Platform.OS === "web") return void act("void", () => api.voidBattle(b.id));
+    Alert.alert("Void this battle?", "It ends now with no winner. This can't be undone.", [
+      { text: "Keep", style: "cancel" },
+      { text: "Void", style: "destructive", onPress: () => void act("void", () => api.voidBattle(b.id)) },
+    ]);
+  };
+  if (!signedIn) return null;
+  return (
+    <View style={{ gap: space.sm, marginTop: space.md }}>
+      {b.viewer.isModerator ? (
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <Button
+            title={b.featured ? "Unfeature" : "Feature"}
+            kind="secondary"
+            style={{ flex: 1 }}
+            loading={busy === "feature"}
+            onPress={() => void act("feature", () => api.feature(b.id, !b.featured))}
+          />
+          {b.status !== "COMPLETE" && b.status !== "CANCELLED" && b.status !== "VOIDED" ? (
+            <Button title="Void" kind="danger" style={{ flex: 1 }} loading={busy === "void"} onPress={confirmVoid} />
+          ) : null}
+        </View>
+      ) : null}
+      {!b.viewer.participantId ? (
+        <Pressable onPress={() => void report()} disabled={reported} accessibilityRole="button">
+          <Text style={[type.small, { textAlign: "center" }]}>{reported ? "Thanks, a moderator will take a look." : "Report this battle"}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function ChallengePanel({ b, now, busy, act, code }: { b: BattleView; now: number; busy: string | null; act: Act; code: string | null }) {
   const left = countdown(b.acceptDeadline, now);
   const me = b.viewer.userId;
   const iProposed = me !== null && b.terms.proposedBy.id === me;
   const share = () =>
     void Share.share({
-      message: `I'm calling you out on VYBZ: "${b.title}". ${b.rounds.length} rounds, the crowd decides. ${API_URL}/battle/${b.id}`,
+      message: `I'm calling you out on VYBZ: "${b.title}". ${b.rounds.length} rounds, the crowd decides. ${inviteLink(b)}`,
     });
   const heading =
     b.status === "OPEN_CHALLENGE"
@@ -117,7 +219,7 @@ function ChallengePanel({ b, now, busy, act }: { b: BattleView; now: number; bus
       <Text style={type.heading}>{heading}</Text>
       <Text style={type.small}>{b.viewer.canAccept ? "Accept these terms to start, or send back your own." : "The battle starts when both sides agree on the terms."}{left ? ` Expires in ${left}.` : ""}</Text>
       <TermsTable b={b} />
-      {b.viewer.canAccept ? <Button title="Accept terms & start" onPress={() => void act("accept", () => api.accept(b.id))} loading={busy === "accept"} /> : null}
+      {b.viewer.canAccept ? <Button title="Accept terms & start" onPress={() => void act("accept", () => api.accept(b.id, code))} loading={busy === "accept"} /> : null}
       {b.viewer.canCounter ? (
         <Link href={{ pathname: "/battle/[id]/counter", params: { id: b.id } }} asChild>
           <Button title="Counter-offer" kind="secondary" />
@@ -172,13 +274,14 @@ function PickPanel({ b, round, now }: { b: BattleView; round: RoundView; now: nu
         <Text style={type.heading}>{round.suddenDeath ? "Sudden death" : `Round ${round.index + 1}`} · Picks</Text>
         {left ? <Text style={type.small}>{left} left</Text> : null}
       </View>
+      <ContendersNote b={b} round={round} />
       {isParticipant ? (
         mine ? (
           <>
             {mine.tracks.map((t, i) => (
               <TrackRow key={t.id} entryTrack={t} caption={mine.tracks.length > 1 ? `Your pick ${i + 1} (sealed)` : "Your pick (sealed)"} />
             ))}
-            <Text style={type.small}>{round.viewer.opponentSubmitted ? "Both picks are in. Voting opens now." : "Waiting for your opponent's pick."}</Text>
+            <Text style={type.small}>{round.viewer.opponentSubmitted ? "All picks are in. Voting opens now." : b.format === "MULTI" ? "Waiting for the other players' picks." : "Waiting for your opponent's pick."}</Text>
           </>
         ) : (
           <>
@@ -191,7 +294,7 @@ function PickPanel({ b, round, now }: { b: BattleView; round: RoundView; now: nu
           </>
         )
       ) : (
-        <Text style={type.body}>Picks are sealed. Voting opens when both are in{left ? ` or in ${left}` : ""}.</Text>
+        <Text style={type.body}>Picks are sealed. Voting opens when {b.format === "MULTI" ? "everyone's" : "both are"} in{left ? ` or in ${left}` : ""}.</Text>
       )}
     </Card>
   );
@@ -229,6 +332,7 @@ function VotingPanel({
   const aiOnly = b.rules.judging.mode === "AI";
   // Listening only matters for people who can vote.
   const reportListens = signedIn && !isParticipant && !voted && !aiOnly;
+  const canHeart = signedIn && !isParticipant;
 
   return (
     <View style={{ gap: space.md }}>
@@ -238,6 +342,7 @@ function VotingPanel({
         </Text>
         {left ? <Text style={type.small}>{left} left</Text> : null}
       </View>
+      <ContendersNote b={b} round={round} />
 
       {options.length > 1 ? (
         <View style={{ gap: space.xs }}>
@@ -268,7 +373,7 @@ function VotingPanel({
           b={b}
           entry={entry}
           label={entryLabel(i)}
-          tint={i === 0 ? color.sideA : color.sideB}
+          tint={tintFor(b, entry, i)}
           totalVotes={round.totalVotes}
           selected={voted === entry.submissionId}
           mine={round.viewer.mySubmission?.submissionId === entry.submissionId}
@@ -276,6 +381,7 @@ function VotingPanel({
           {entry.tracks.map((t, ti) => (
             <View key={t.submissionId} style={{ gap: space.sm }}>
               {entry.tracks.length > 1 ? <TrackRow entryTrack={t.track} caption={`Track ${ti + 1}`} compact /> : null}
+              {canHeart ? <HeartButton b={b} round={round} submissionId={t.submissionId} reload={reload} /> : null}
               <EntryPlayer
                 key={`${t.submissionId}:${option?.provider ?? "none"}:${option?.tier ?? ""}`}
                 entry={t}
@@ -392,6 +498,7 @@ function TrackRow({ entryTrack, caption, compact }: { entryTrack: TrackView; cap
 }
 
 function ScoredRound({ b, round }: { b: BattleView; round: RoundView }) {
+  const [replay, setReplay] = useState<string | null>(null);
   const handle = (pid: string | null) => b.participants.find((p) => p.id === pid);
   const winner = handle(round.winnerParticipantId);
   const forfeits = round.forfeitParticipantIds.map((pid) => handle(pid)?.user.handle).filter(Boolean);
@@ -401,7 +508,7 @@ function ScoredRound({ b, round }: { b: BattleView; round: RoundView }) {
     <Card style={{ gap: space.sm }}>
       <View style={styles.panelHead}>
         <Text style={type.heading}>{round.suddenDeath ? "Sudden death" : `Round ${round.index + 1}`}</Text>
-        <Text style={[type.small, winner && { color: winner.side === 0 ? color.sideA : color.sideB, fontWeight: "700" }]}>
+        <Text style={[type.small, winner && { color: sideColor(winner.side), fontWeight: "700" }]}>
           {winner ? `@${winner.user.handle} wins` : "Draw"}
         </Text>
       </View>
@@ -421,9 +528,33 @@ function ScoredRound({ b, round }: { b: BattleView; round: RoundView }) {
                     {t.track.artistName} · @{owner?.user.handle ?? "?"}
                   </Text>
                 </View>
+                {t.hearts ? <Text style={type.small}>♥ {t.hearts}</Text> : null}
                 {i === 0 && e.votes ? <Text style={[type.display, { fontSize: 20 }]}>{e.votes.count}</Text> : null}
+                <Pressable
+                  onPress={() => setReplay(replay === t.submissionId ? null : t.submissionId)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Replay ${t.track.title}`}
+                  hitSlop={8}
+                >
+                  <Text style={[type.small, { color: color.violet }]}>{replay === t.submissionId ? "Close" : "Replay"}</Text>
+                </Pressable>
               </View>
             ))}
+            {e.tracks.map((t) =>
+              replay === t.submissionId ? (
+                <EntryPlayer
+                  key={`replay-${t.submissionId}`}
+                  entry={t}
+                  source={t.playback}
+                  minPlayedMs={b.rules.fairListen.minPlayedMs}
+                  battleId={b.id}
+                  roundIndex={round.index}
+                  active
+                  onActivate={() => undefined}
+                  reportListens={false}
+                />
+              ) : null,
+            )}
           </View>
         );
       })}
@@ -466,10 +597,73 @@ function ResultPanel({ b, busy, act }: { b: BattleView; busy: string | null; act
         </Text>
       ) : null}
       <Text style={type.small}>Judged by: {judgingSummary(b.rules)}</Text>
+      {b.stats ? <StatsGrid b={b} /> : null}
       {b.viewer.canRematch ? (
         <Button title="Run it back" onPress={() => void act("rematch", () => api.rematch(b.id))} loading={busy === "rematch"} style={{ alignSelf: "stretch" }} />
       ) : null}
     </Card>
+  );
+}
+
+function tintFor(b: BattleView, entry: EntryView, index: number): string {
+  const p = entry.participantId ? b.participants.find((x) => x.id === entry.participantId) : null;
+  return sideColor(p ? p.side : index);
+}
+
+/** Who's still in it: shown for sudden death and for group rounds. */
+function ContendersNote({ b, round }: { b: BattleView; round: RoundView }) {
+  if (!round.suddenDeath || round.contenderIds.length === b.participants.length) return null;
+  const names = round.contenderIds.map((id) => b.participants.find((p) => p.id === id)?.user.handle).filter(Boolean);
+  return <Text style={type.small}>Tie-breaker between @{names.join(", @")}.</Text>;
+}
+
+function HeartButton({ b, round, submissionId, reload }: { b: BattleView; round: RoundView; submissionId: string; reload: () => void }) {
+  const serverOn = round.viewer.heartedSubmissionIds.includes(submissionId);
+  const [on, setOn] = useState(serverOn);
+  const toggle = async () => {
+    const next = !on;
+    setOn(next);
+    try {
+      await api.heart(b.id, round.index, submissionId, next);
+      if (next && Platform.OS !== "web") void Haptics.selectionAsync();
+      reload();
+    } catch {
+      setOn(!next);
+    }
+  };
+  return (
+    <Pressable onPress={() => void toggle()} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={on ? "Remove heart" : "Heart this track"} style={styles.heart}>
+      <Text style={[type.small, { color: on ? color.live : color.muted }]}>{on ? "♥ Hearted" : "♡ Heart this track"}</Text>
+    </Pressable>
+  );
+}
+
+function StatsGrid({ b }: { b: BattleView }) {
+  const s = b.stats!;
+  const top = s.topTrack;
+  const owner = top ? b.participants.find((p) => p.id === top.participantId) : null;
+  const cells: [string, string][] = [
+    ["Votes", String(s.totalVotes)],
+    ["Voters", String(s.uniqueVoters)],
+    ["Listened → voted", `${Math.round(s.completionRate * 100)}%`],
+    ["Reactions", String(s.reactions)],
+  ];
+  return (
+    <View style={{ alignSelf: "stretch", gap: space.sm }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+        {cells.map(([k, v]) => (
+          <View key={k} style={styles.stat}>
+            <Text style={[type.display, { fontSize: 20 }]}>{v}</Text>
+            <Text style={type.small}>{k}</Text>
+          </View>
+        ))}
+      </View>
+      {top ? (
+        <Text style={[type.small, { textAlign: "center" }]}>
+          Most hearted: {top.track.title} by {top.track.artistName} (♥ {top.hearts}{owner ? `, @${owner.user.handle}'s pick` : ""})
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -488,5 +682,8 @@ const styles = StyleSheet.create({
   shareFill: { height: 6 },
   terms: { borderRadius: radius.md, borderWidth: 1, borderColor: color.line, paddingHorizontal: space.md },
   termRow: { flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.line },
+  seat: { borderWidth: 1, borderColor: color.line, borderRadius: radius.md, paddingHorizontal: 10, paddingVertical: 6 },
+  heart: { alignSelf: "flex-start", paddingVertical: 4 },
+  stat: { flexGrow: 1, flexBasis: "45%", backgroundColor: color.surface2, borderRadius: radius.md, padding: space.md, alignItems: "center" },
   aiCard: { backgroundColor: color.surface2, borderRadius: radius.md, padding: space.md, gap: 4, borderLeftWidth: 3, borderLeftColor: color.violet },
 });

@@ -23,6 +23,10 @@ export const color = {
   sideB: "#F5A524",
 } as const;
 
+/** One colour per seat (A, B, C...). Duels use the first two. */
+export const sideColors = ["#8B5CF6", "#F5A524", "#22D3EE", "#F472B6", "#A3E635", "#FB923C", "#60A5FA", "#E879F9"] as const;
+export const sideColor = (side: number) => sideColors[side % sideColors.length]!;
+
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 export const radius = { sm: 8, md: 12, lg: 18, pill: 999 } as const;
 

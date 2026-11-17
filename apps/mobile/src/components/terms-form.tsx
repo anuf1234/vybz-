@@ -1,4 +1,20 @@
-import { type BattleRules, type BattleRulesInput, DECADES, GENRES, type JudgingMode, ROUND_COUNTS, type RoundCount, TRACKS_PER_ROUND, type TracksPerRound, decadeLabel, themeLabel } from "@vybz/core";
+import {
+  type BattleRules,
+  type BattleRulesInput,
+  DECADES,
+  DURATION_PRESETS,
+  GENRES,
+  type JudgingMode,
+  MAX_ENTRANTS,
+  ROUND_COUNTS,
+  type RoundCount,
+  TRACKS_PER_ROUND,
+  type TracksPerRound,
+  battleLengthMinutes,
+  decadeLabel,
+  themeLabel,
+  windowsForDuration,
+} from "@vybz/core";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { JUDGING_HELP, JUDGING_LABEL } from "@/lib/format";
 import { useServerConfig } from "@/lib/config";
@@ -9,34 +25,47 @@ import { SectionTitle, Segmented } from "./ui";
  * Battle terms both players agree on: genre and era, rounds, tracks per round,
  * judging, pace and voting rules. Used to create a battle and to counter one.
  */
+export type DurationKey = (typeof DURATION_PRESETS)[number]["key"];
+
 export interface Terms {
-  genre: string | null;
+  format: "DUEL" | "MULTI";
+  /** Group battles: most players allowed. */
+  maxEntrants: number;
+  /** Up to 3 genre keys; empty = any genre. */
+  genres: string[];
   /** Start year of a decade, or null for any era. */
   decade: number | null;
   rounds: RoundCount;
   tracksPerRound: TracksPerRound;
   judging: JudgingMode;
   aiWeight: number;
-  pace: Pace;
+  duration: DurationKey;
   blind: boolean;
   liveTallies: boolean;
 }
 
-export const PACES = {
-  quick: { label: "10 min", minutes: 10 },
-  hour: { label: "1 hour", minutes: 60 },
-  day: { label: "24 h", minutes: 24 * 60 },
-} as const;
-export type Pace = keyof typeof PACES;
-
 const AI_WEIGHTS = [25, 40, 50, 75] as const;
 
-export const DEFAULT_TERMS: Terms = { genre: "rnb", decade: 1990, rounds: 5, tracksPerRound: 1, judging: "CROWD", aiWeight: 40, pace: "day", blind: true, liveTallies: false };
+export const DEFAULT_TERMS: Terms = {
+  format: "DUEL",
+  maxEntrants: 4,
+  genres: ["rnb"],
+  decade: 1990,
+  rounds: 5,
+  tracksPerRound: 1,
+  judging: "CROWD",
+  aiWeight: 40,
+  duration: "24h",
+  blind: true,
+  liveTallies: false,
+};
+
+const MAX_GENRES = 3;
 
 export function termsToRules(t: Terms, base?: BattleRules): BattleRulesInput {
-  const minutes = PACES[t.pace].minutes;
+  const total = DURATION_PRESETS.find((d) => d.key === t.duration)!.minutes;
   const constraints = {
-    ...(t.genre ? { genres: [t.genre] } : {}),
+    ...(t.genres.length ? { genres: t.genres } : {}),
     ...(t.decade !== null ? { eraFrom: t.decade, eraTo: t.decade + 9 } : {}),
   };
   return {
@@ -48,7 +77,8 @@ export function termsToRules(t: Terms, base?: BattleRules): BattleRulesInput {
     tracksPerRound: t.tracksPerRound,
     blindVoting: t.blind,
     revealTallies: t.liveTallies ? "LIVE" : "AT_ROUND_CLOSE",
-    timing: { submissionWindowMinutes: minutes, votingWindowMinutes: minutes },
+    timing: windowsForDuration(total, t.rounds),
+    entrants: t.format === "DUEL" ? { min: 2, max: 2 } : { min: Math.min(3, t.maxEntrants), max: t.maxEntrants },
     judging: { mode: t.judging, aiWeightPercent: t.aiWeight },
     ...(Object.keys(constraints).length ? { constraints } : {}),
   };
@@ -57,38 +87,76 @@ export function termsToRules(t: Terms, base?: BattleRules): BattleRulesInput {
 export function rulesToTerms(r: BattleRules): Terms {
   const c = r.constraints;
   const decade = c?.eraFrom !== undefined && c.eraFrom % 10 === 0 && c.eraTo === c.eraFrom + 9 ? c.eraFrom : null;
-  const minutes = r.timing.submissionWindowMinutes;
-  const pace: Pace = minutes <= 10 ? "quick" : minutes <= 60 ? "hour" : "day";
+  const length = battleLengthMinutes(r);
+  // The closest preset to the battle's actual length.
+  const duration = [...DURATION_PRESETS].sort((a, b) => Math.abs(a.minutes - length) - Math.abs(b.minutes - length))[0]!.key;
   return {
-    genre: c?.genres?.[0] ?? null,
+    format: r.entrants.max === 2 ? "DUEL" : "MULTI",
+    maxEntrants: r.entrants.max === 2 ? 4 : r.entrants.max,
+    genres: c?.genres ?? [],
     decade,
     rounds: r.roundCount as RoundCount,
     tracksPerRound: r.tracksPerRound as TracksPerRound,
     judging: r.judging.mode,
     aiWeight: r.judging.aiWeightPercent,
-    pace,
+    duration,
     blind: r.blindVoting,
     liveTallies: r.revealTallies === "LIVE",
   };
 }
 
 export function termsTheme(t: Terms): string | null {
-  return themeLabel({ genres: t.genre ? [t.genre] : undefined, eraFrom: t.decade ?? undefined, eraTo: t.decade !== null ? t.decade + 9 : undefined });
+  return themeLabel({ genres: t.genres.length ? t.genres : undefined, eraFrom: t.decade ?? undefined, eraTo: t.decade !== null ? t.decade + 9 : undefined });
 }
 
-export function TermsForm({ value, onChange }: { value: Terms; onChange: (t: Terms) => void }) {
+/** `counter`: a duel counter-offer, so the format can't change. */
+export function TermsForm({ value, onChange, mode = "create" }: { value: Terms; onChange: (t: Terms) => void; mode?: "create" | "counter" }) {
   const config = useServerConfig();
   const aiAvailable = config?.aiJudge.available ?? false;
   const set = <K extends keyof Terms>(k: K, v: Terms[K]) => onChange({ ...value, [k]: v });
   const theme = termsTheme(value);
+  const toggleGenre = (key: string) => {
+    const has = value.genres.includes(key);
+    if (has) return set("genres", value.genres.filter((g) => g !== key));
+    if (value.genres.length >= MAX_GENRES) return set("genres", [...value.genres.slice(1), key]);
+    set("genres", [...value.genres, key]);
+  };
+  const total = DURATION_PRESETS.find((d) => d.key === value.duration)!.minutes;
+  const perRound = windowsForDuration(total, value.rounds);
+  const fmt = (m: number) => (m >= 1440 && m % 1440 === 0 ? `${m / 1440}d` : m >= 60 ? `${Math.round((m / 60) * 10) / 10}h` : `${m}m`);
 
   return (
     <View style={{ gap: space.md }}>
-      <SectionTitle right={theme ? <Text style={[type.small, { color: color.violetSoft, fontWeight: "700" }]}>{theme}</Text> : undefined}>Genre</SectionTitle>
+      {mode === "create" ? (
+        <>
+          <SectionTitle>Format</SectionTitle>
+          <Segmented
+            value={value.format}
+            onChange={(v) => set("format", v)}
+            options={[
+              { value: "DUEL", label: "Duel · 1 vs 1" },
+              { value: "MULTI", label: "Group battle" },
+            ]}
+          />
+          {value.format === "MULTI" ? (
+            <View style={{ gap: space.xs }}>
+              <Text style={type.label}>Up to how many players</Text>
+              <Segmented
+                value={String(value.maxEntrants)}
+                onChange={(v) => set("maxEntrants", Number(v))}
+                options={Array.from({ length: MAX_ENTRANTS - 2 }, (_, i) => i + 3).map((n) => ({ value: String(n), label: String(n) }))}
+              />
+              <Text style={type.small}>It starts when it's full, or you can start it once 3 have joined.</Text>
+            </View>
+          ) : null}
+        </>
+      ) : null}
+
+      <SectionTitle right={theme ? <Text style={[type.small, { color: color.violetSoft, fontWeight: "700" }]}>{theme}</Text> : undefined}>Genres (up to 3)</SectionTitle>
       <View style={styles.chips}>
-        <Chip label="Any" active={value.genre === null} onPress={() => set("genre", null)} />
+        <Chip label="Any" active={value.genres.length === 0} onPress={() => set("genres", [])} />
         {GENRES.map((g) => (
-          <Chip key={g.key} label={g.label} active={value.genre === g.key} onPress={() => set("genre", g.key)} />
+          <Chip key={g.key} label={g.label} active={value.genres.includes(g.key)} onPress={() => toggleGenre(g.key)} />
         ))}
       </View>
 
@@ -145,9 +213,15 @@ export function TermsForm({ value, onChange }: { value: Terms; onChange: (t: Ter
         {value.judging !== "CROWD" && config ? <Text style={type.small}>{config.aiJudge.note}</Text> : null}
       </View>
 
-      <SectionTitle>Pace</SectionTitle>
-      <Segmented value={value.pace} onChange={(v) => set("pace", v)} options={(Object.keys(PACES) as Pace[]).map((k) => ({ value: k, label: PACES[k].label }))} />
-      <Text style={type.small}>Time to pick each round, then the same again to vote.</Text>
+      <SectionTitle>Battle length</SectionTitle>
+      <View style={styles.chips}>
+        {DURATION_PRESETS.map((d) => (
+          <Chip key={d.key} label={d.label} active={value.duration === d.key} onPress={() => set("duration", d.key)} />
+        ))}
+      </View>
+      <Text style={type.small}>
+        Each round: {fmt(perRound.submissionWindowMinutes)} to pick, then {fmt(perRound.votingWindowMinutes)} to vote.
+      </Text>
 
       <SectionTitle>Voting rules</SectionTitle>
       <Row label="Blind voting" hint="Hide who picked what until the round ends">
