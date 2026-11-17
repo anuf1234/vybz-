@@ -46,7 +46,7 @@ async function dailyHost(deps: BattleDeps) {
   if (existing) return existing;
   const [created] = await deps.db
     .insert(schema.user)
-    .values({ id: newId(), name: "VYBZ Daily", handle: DAILY_HOST_HANDLE, email: "daily@system.urexp.com", emailVerified: true, role: "ADMIN" })
+    .values({ id: newId(), name: "VYBZ Daily", handle: DAILY_HOST_HANDLE, email: "daily@system.urexp.com", emailVerified: true, role: "ADMIN", isSystem: true })
     .onConflictDoNothing()
     .returning();
   return created ?? (await deps.db.select().from(schema.user).where(eq(schema.user.handle, DAILY_HOST_HANDLE)))[0]!;

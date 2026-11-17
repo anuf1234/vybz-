@@ -1,3 +1,4 @@
+import { frameColor } from "@vybz/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { FollowButton } from "@/components/follow-button";
@@ -29,7 +30,7 @@ export default function Follows() {
       renderItem={({ item }) => (
         <View style={styles.row}>
           <Pressable onPress={() => router.push({ pathname: "/user/[handle]", params: { handle: item.handle } })} style={styles.who} accessibilityRole="link" accessibilityLabel={`@${item.handle}`}>
-            <Avatar name={item.displayName} image={item.image} size={40} />
+            <Avatar name={item.displayName} image={item.image} size={40} ring={frameColor(item.frame)} />
             <View style={{ flexShrink: 1 }}>
               <Text style={[type.body, { fontWeight: "700" }]} numberOfLines={1}>
                 {item.displayName}

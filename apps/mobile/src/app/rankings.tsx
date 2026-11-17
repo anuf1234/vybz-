@@ -1,4 +1,4 @@
-import { GENRES, type LeaderboardEntry, type LeaderboardMetric, type LeaderboardPeriod } from "@vybz/core";
+import { GENRES, type LeaderboardEntry, type LeaderboardMetric, type LeaderboardPeriod, frameColor } from "@vybz/core";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -85,7 +85,7 @@ function Row({ e, unit, mine }: { e: LeaderboardEntry; unit: string; mine?: bool
       accessibilityLabel={`Rank ${e.rank}, @${e.user.handle}, ${e.value} ${unit}`}
     >
       <Text style={styles.rank}>{medal ?? e.rank}</Text>
-      <Avatar name={e.user.displayName} image={e.user.image} size={36} />
+      <Avatar name={e.user.displayName} image={e.user.image} size={36} ring={frameColor(e.user.frame)} />
       <View style={{ flex: 1 }}>
         <Text style={[type.body, { fontWeight: "700" }]} numberOfLines={1}>
           @{e.user.handle}

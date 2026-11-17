@@ -96,6 +96,9 @@ export default function Profile() {
       <Link href="/wallet" asChild>
         <Button title="XP & coins" kind="secondary" />
       </Link>
+      <Link href="/shop" asChild>
+        <Button title="Shop" kind="secondary" />
+      </Link>
       <Link href="/achievements" asChild>
         <Button title="Achievements" kind="secondary" />
       </Link>

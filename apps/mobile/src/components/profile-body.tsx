@@ -1,3 +1,4 @@
+import { frameColor } from "@vybz/core";
 import type { ProfileView } from "@vybz/core";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -13,7 +14,7 @@ export function ProfileBody({ profile, now, actions }: { profile: ProfileView; n
   return (
     <View style={{ gap: space.md }}>
       <View style={styles.header}>
-        <Avatar name={user.displayName} image={user.image} size={72} ring={color.violet} />
+        <Avatar name={user.displayName} image={user.image} size={72} ring={frameColor(user.frame) ?? color.violet} />
         <Text style={type.title}>{user.displayName}</Text>
         <Text style={type.small}>@{user.handle}</Text>
         <View style={styles.counts}>

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@better-auth/expo": "^1.7.25",
+    "@fontsource/inter": "^5.3.0",
     "@vybz/core": "workspace:*",
     "@vybz/db": "workspace:*",
     "@vybz/providers": "workspace:*",

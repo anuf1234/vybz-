@@ -4,6 +4,7 @@ import {
   type LedgerReason,
   type WalletResponse,
   achievementDef,
+  shopItem,
   battleReward, type DailyClaimResponse, type DailyRewardState, type ProgressView, type Reward, ladderDay, levelForXp, levelProgress, levelUpCoins,
 } from "@vybz/core";
 import { type BattleAggregate } from "@vybz/core";
@@ -100,7 +101,11 @@ export function shiftDay(day: string, by: number): string {
 /** After a time-zone change, a new "day" only counts once this much real time has passed. */
 const ZONE_CHANGE_GAP_MS = 4 * 3600_000;
 
-async function dailyStateWith(db: Executor, userId: string, tz: string, at: Date): Promise<DailyRewardState & { nextStreakDay: number }> {
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+async function dailyStateWith(db: Executor, userId: string, tz: string, at: Date): Promise<DailyRewardState & { nextStreakDay: number; frozenDays: string[] }> {
   const [[last], progress] = await Promise.all([
     db.select().from(schema.dailyClaim).where(eq(schema.dailyClaim.userId, userId)).orderBy(desc(schema.dailyClaim.day)).limit(1),
     db.select().from(schema.userProgress).where(eq(schema.userProgress.userId, userId)),
@@ -109,9 +114,13 @@ async function dailyStateWith(db: Executor, userId: string, tz: string, at: Date
   const claimedToday = last?.day === today;
   const zoneChanged = Boolean(progress[0]?.timeZone && progress[0].timeZone !== tz);
   const canClaim = !last || (today > last.day && (!zoneChanged || at.getTime() - last.createdAt.getTime() >= ZONE_CHANGE_GAP_MS));
-  const alive = last ? last.day >= shiftDay(today, -1) : false;
+  // Missed days a held streak freeze can cover (used when you next claim).
+  const missed = last && last.day < today ? daysBetween(last.day, today) - 1 : 0;
+  const covered = missed >= 1 && missed <= (progress[0]?.streakFreezes ?? 0);
+  const frozenDays = covered ? Array.from({ length: missed }, (_, i) => shiftDay(last!.day, i + 1)) : [];
+  const alive = last ? last.day >= shiftDay(today, -1) || covered : false;
   const streak = alive ? last!.streakDay : 0;
-  const nextStreakDay = alive && !claimedToday && last!.day < today ? last!.streakDay + 1 : alive ? last!.streakDay : 1;
+  const nextStreakDay = alive && !claimedToday && last!.day < today ? last!.streakDay + frozenDays.length + 1 : alive ? last!.streakDay : 1;
   const step = claimedToday || !canClaim ? ladderDay(streak || 1) : ladderDay(nextStreakDay);
   return {
     today,
@@ -122,13 +131,15 @@ async function dailyStateWith(db: Executor, userId: string, tz: string, at: Date
     reward: DAILY_LADDER[step - 1]!,
     ladder: [...DAILY_LADDER],
     balance: { xp: progress[0]?.xp ?? 0, coins: progress[0]?.coins ?? 0 },
+    streakFreezes: progress[0]?.streakFreezes ?? 0,
     nextStreakDay,
+    frozenDays,
   };
 }
 
 export async function dailyState(db: Executor, user: UserRow | null, tzIn: unknown, at = new Date()): Promise<DailyRewardState> {
   if (!user) throw new ServiceError(401, "SIGN_IN_REQUIRED");
-  const { nextStreakDay: _n, ...state } = await dailyStateWith(db, user.id, validTimeZone(tzIn) ?? "UTC", at);
+  const { nextStreakDay: _n, frozenDays: _f, ...state } = await dailyStateWith(db, user.id, validTimeZone(tzIn) ?? "UTC", at);
   return state;
 }
 
@@ -148,6 +159,14 @@ export async function claimDaily(db: Database, push: PushSender | null | undefin
     const s = await dailyStateWith(tx, user.id, tz, at);
     if (!s.canClaim) throw new ServiceError(409, "ALREADY_CLAIMED", "You've claimed today's reward. Come back tomorrow.");
     const r = DAILY_LADDER[ladderDay(s.nextStreakDay) - 1]!;
+    if (s.frozenDays.length) {
+      const base = s.nextStreakDay - s.frozenDays.length - 1;
+      await tx.insert(schema.dailyClaim).values(s.frozenDays.map((day, i) => ({ userId: user.id, day, streakDay: base + i + 1, frozen: true, createdAt: at })));
+      await tx
+        .update(schema.userProgress)
+        .set({ streakFreezes: sql`${schema.userProgress.streakFreezes} - ${s.frozenDays.length}` })
+        .where(eq(schema.userProgress.userId, user.id));
+    }
     await tx.insert(schema.dailyClaim).values({ userId: user.id, day: s.today, streakDay: s.nextStreakDay, createdAt: at });
     await grant(tx, user.id, "DAILY", s.today, r);
     await tx.update(schema.userProgress).set({ timeZone: tz }).where(eq(schema.userProgress.userId, user.id));
@@ -168,7 +187,9 @@ export async function progressFor(db: Executor, userId: string): Promise<Progres
 
 /** XP and coins for everyone who played a finished battle. Once per battle per person. */
 export async function awardBattle(db: Database, agg: BattleAggregate): Promise<void> {
+  const system = await systemIds(db, agg.participants.map((p) => p.userId));
   for (const p of agg.participants) {
+    if (system.has(p.userId)) continue;
     const won = agg.winnerParticipantId === p.id;
     const roundsWon = agg.rounds.filter((r) => r.winnerParticipantId === p.id).length;
     await grant(db, p.userId, "BATTLE", agg.id, battleReward({ won, roundsWon }));
@@ -235,6 +256,10 @@ export async function wallet(db: Executor, user: UserRow | null, cursor?: string
       }
       case "POST":
         return { label: "Posted", link: `/post/${r.ref}` };
+      case "PURCHASE": {
+        const item = shopItem(r.ref.split(":")[0]);
+        return { label: `Bought ${item ? `${item.icon} ${item.title}` : "an item"}`, link: "/shop" };
+      }
       default:
         return { label: r.reason, link: null };
     }
@@ -246,4 +271,11 @@ export async function wallet(db: Executor, user: UserRow | null, cursor?: string
     history: page.map((r) => ({ id: r.id, reason: r.reason as LedgerReason, ...label(r), xp: r.xp, coins: r.coins, createdAt: r.createdAt.toISOString() })),
     nextCursor: rows.length > PAGE && last ? `${last.createdAt.toISOString()}_${last.id}` : null,
   };
+}
+
+/** VYBZ's own accounts among these ids: they earn nothing. */
+export async function systemIds(db: Executor, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await db.select({ id: schema.user.id }).from(schema.user).where(and(inArray(schema.user.id, ids), eq(schema.user.isSystem, true)));
+  return new Set(rows.map((r) => r.id));
 }

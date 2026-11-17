@@ -141,6 +141,7 @@ async function transition(
       console.error("notify failed", id, err);
     }
     if (result.events.some((e) => e.type === "battle.completed")) await afterBattleCompleted(deps, result.battle);
+    if (result.events.some((e) => e.type === "round.submissions_opened")) await letBotPlay(deps, id);
     return result;
   }
 }
@@ -158,6 +159,16 @@ function mapError(err: unknown): unknown {
     return new ServiceError(status, err.code, err.message);
   }
   return err;
+}
+
+/** If the VYBZ bot is in this battle and a round just opened, it picks. Never fails the transition. */
+async function letBotPlay(deps: BattleDeps, id: string): Promise<void> {
+  try {
+    const { botPlay } = await import("../bot");
+    await botPlay(deps, id);
+  } catch (err) {
+    console.error("bot play failed", id, err);
+  }
 }
 
 /** Progression for everyone who played. Never fails the battle. */
@@ -214,7 +225,7 @@ function requireBattler(deps: BattleDeps, actor: UserRow | null): UserRow {
   return actor;
 }
 
-export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown, opts: { dailyDate?: string } = {}): Promise<{ id: string }> {
+export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown, opts: { dailyDate?: string; quickMatch?: boolean } = {}): Promise<{ id: string }> {
   const actor = requireBattler(deps, actorIn);
   const parsed = CreateBattleSchema.safeParse(body);
   if (!parsed.success) throw new ServiceError(400, "INVALID_REQUEST", z.prettifyError(parsed.error));
@@ -249,7 +260,7 @@ export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, bo
   const theme = req.theme?.trim() || themeLabel(rulesResult.constraints);
   const visibility = req.visibility ?? "PUBLIC";
   await deps.db.transaction(async (tx) => {
-    await insertBattle(tx, battle, { title: req.title, theme, visibility, inviteCode: newInviteCode(), dailyDate: opts.dailyDate ?? null });
+    await insertBattle(tx, battle, { title: req.title, theme, visibility, inviteCode: newInviteCode(), dailyDate: opts.dailyDate ?? null, quickMatch: opts.quickMatch ?? false });
     if (invitees.length) await tx.insert(schema.battleInvite).values(invitees.map((u) => ({ battleId: battle.id, userId: u.id })));
   });
 
@@ -737,8 +748,9 @@ export async function voidBattleAsModerator(deps: BattleDeps, actor: UserRow | n
 export async function usersById(db: Executor, ids: string[]): Promise<Map<string, UserSummary>> {
   if (!ids.length) return new Map();
   const rows = await db
-    .select({ id: schema.user.id, handle: schema.user.handle, displayName: schema.user.name, image: schema.user.image })
+    .select({ id: schema.user.id, handle: schema.user.handle, displayName: schema.user.name, image: schema.user.image, frame: schema.userProgress.frame })
     .from(schema.user)
+    .leftJoin(schema.userProgress, eq(schema.userProgress.userId, schema.user.id))
     .where(inArray(schema.user.id, ids));
   return new Map(rows.map((r) => [r.id, r]));
 }
@@ -872,7 +884,7 @@ export async function rankings(deps: BattleDeps, limit = 50): Promise<RankingEnt
     })
     .from(p)
     .innerJoin(b, eq(b.id, p.battleId))
-    .where(eq(b.status, "COMPLETE"))
+    .where(and(eq(b.status, "COMPLETE"), sql`${p.userId} not in (select id from "user" where is_system)`))
     .groupBy(p.userId)
     .orderBy(sql`2 desc`, sql`5 desc`, sql`4 asc`)
     .limit(limit);
@@ -887,7 +899,7 @@ export async function profile(deps: BattleDeps, viewer: UserRow | null, handle: 
   const battleIds = deps.db.select({ id: schema.battleParticipant.battleId }).from(schema.battleParticipant).where(eq(schema.battleParticipant.userId, u.id));
   const rows = await deps.db.select().from(schema.battle).where(inArray(schema.battle.id, battleIds)).orderBy(desc(schema.battle.updatedAt)).limit(20);
   return {
-    user: { id: u.id, handle: u.handle, displayName: u.name, image: u.image },
+    user: (await usersById(deps.db, [u.id])).get(u.id)!,
     record: all,
     recent: await toListItems(deps, viewer, rows),
     social: await socialFor(deps.db, viewer, u.id),

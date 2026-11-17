@@ -1,3 +1,4 @@
+import { frameColor } from "@vybz/core";
 import { Ionicons } from "@expo/vector-icons";
 import type { PostView } from "@vybz/core";
 import * as Haptics from "expo-haptics";
@@ -96,7 +97,7 @@ export function PostCard({
     <View style={styles.card}>
       <View style={styles.head}>
         <Pressable onPress={() => router.push({ pathname: "/user/[handle]", params: { handle: p.author.handle } })} style={styles.author} accessibilityRole="link" accessibilityLabel={`@${p.author.handle}'s profile`}>
-          <Avatar name={p.author.displayName} image={p.author.image} size={36} />
+          <Avatar name={p.author.displayName} image={p.author.image} size={36} ring={frameColor(p.author.frame)} />
           <View>
             <Text style={[type.body, { fontWeight: "700" }]}>{p.author.displayName}</Text>
             <Text style={type.small}>

@@ -38,7 +38,7 @@ async function totals(deps: BattleDeps, viewer: UserRow | null, q: LeaderboardQu
   const p = schema.battleParticipant;
   const b = schema.battle;
   const since = q.period === "all" ? null : new Date(Date.now() - PERIOD_DAYS[q.period] * 86_400_000);
-  const conds: SQL[] = [eq(b.status, "COMPLETE"), eq(schema.user.status, "ACTIVE")];
+  const conds: SQL[] = [eq(b.status, "COMPLETE"), eq(schema.user.status, "ACTIVE"), eq(schema.user.isSystem, false)];
   if (since) conds.push(gte(b.endedAt, since));
   if (q.scope === "genre") conds.push(sql`(${b.rules} -> 'constraints' -> 'genres') ? ${q.genre}`);
   if (q.scope === "following") {
@@ -64,7 +64,7 @@ async function totals(deps: BattleDeps, viewer: UserRow | null, q: LeaderboardQu
   if (q.metric === "xp") {
     // XP comes from the ledger (battles, votes, posts, rewards), in the same period and scope.
     const l = schema.ledgerEntry;
-    const xconds: SQL[] = [eq(schema.user.status, "ACTIVE")];
+    const xconds: SQL[] = [eq(schema.user.status, "ACTIVE"), eq(schema.user.isSystem, false)];
     if (since) xconds.push(gte(l.createdAt, since));
     if (q.scope === "following") {
       const followed = deps.db.select({ id: schema.follow.followeeId }).from(schema.follow).where(eq(schema.follow.followerId, viewer!.id));

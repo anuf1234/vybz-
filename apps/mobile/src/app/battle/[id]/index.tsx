@@ -65,7 +65,17 @@ export default function BattleScreen() {
       contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: 60 }}
       refreshControl={<RefreshControl tintColor={color.violet} refreshing={battle.refreshing} onRefresh={() => void battle.reload()} />}
     >
-      <Stack.Screen options={{ title: b.title }} />
+      <Stack.Screen
+        options={{
+          title: b.title,
+          headerRight: () =>
+            b.visibility === "PUBLIC" || b.inviteCode ? (
+              <Pressable onPress={() => shareBattle(b)} accessibilityRole="button" accessibilityLabel="Share battle" hitSlop={12} style={{ paddingHorizontal: 8 }}>
+                <Text style={{ color: color.text, fontSize: 15, fontWeight: "700" }}>Share</Text>
+              </Pressable>
+            ) : null,
+        }}
+      />
       <View style={{ gap: space.xs }}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, alignItems: "center" }}>
           <Pill text={b.format === "MULTI" && b.status === "OPEN_CHALLENGE" ? "Lobby" : STATUS_LABEL[b.status]} tone={live ? "live" : b.status === "COMPLETE" ? "violet" : "default"} />
@@ -108,6 +118,20 @@ type Act = (key: string, fn: () => Promise<BattleView | { id: string }>) => Prom
 
 function inviteLink(b: BattleView): string {
   return `${API_URL}/battle/${b.id}${b.visibility === "PRIVATE" && b.inviteCode ? `?code=${b.inviteCode}` : ""}`;
+}
+
+/** A message that fits where the battle is: a result to brag about, a vote to get, or a challenge to take. */
+function shareBattle(b: BattleView) {
+  const link = inviteLink(b);
+  const [x, y] = [...b.participants].sort((p, q) => q.roundsWon - p.roundsWon);
+  const winner = b.participants.find((p) => p.id === b.winnerParticipantId);
+  let message: string;
+  if (b.status === "COMPLETE" && winner && b.format === "DUEL" && x && y) message = `@${winner.user.handle} beat @${(winner.id === x.id ? y : x).user.handle} ${x.roundsWon}–${y.roundsWon} in "${b.title}" on VYBZ. ${link}`;
+  else if (b.status === "COMPLETE" && winner) message = `@${winner.user.handle} won "${b.title}" on VYBZ. ${link}`;
+  else if (b.status === "IN_PROGRESS") message = `"${b.title}" is live on VYBZ. Listen to both picks and vote: ${link}`;
+  else if (b.status === "OPEN_CHALLENGE" && b.format === "DUEL") message = `Think your taste beats mine? Take my VYBZ challenge "${b.title}": ${link}`;
+  else message = `"${b.title}" on VYBZ: ${link}`;
+  void Share.share({ message });
 }
 
 /** Group battles gather entrants until full, the host starts, or the join window closes. */
