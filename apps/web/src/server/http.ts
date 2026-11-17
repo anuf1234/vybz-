@@ -56,6 +56,8 @@ export function route<P = Record<string, never>>(fn: Handler<P>, opts: { mutatio
       if (opts.mutation) assertSameOrigin(req);
       return await fn(req, ctx);
     } catch (err) {
+      // Rejected changes are logged with their code (no bodies or user data) so problems reported from the app can be traced.
+      if (err instanceof ServiceError && req.method !== "GET") console.warn(`[api] ${req.method} ${new URL(req.url).pathname} -> ${err.status} ${err.code}`);
       return errorResponse(err);
     }
   };

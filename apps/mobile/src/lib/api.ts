@@ -70,7 +70,14 @@ async function request<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: str
     throw new ApiRequestError(0, "NETWORK", "Can't reach VYBZ. Check your connection.");
   }
   const text = await res.text();
-  const json = text ? (JSON.parse(text) as unknown) : null;
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    // Not JSON: usually the server restarting behind its load balancer.
+    if (!res.ok) throw new ApiRequestError(res.status, "UNAVAILABLE", "VYBZ is restarting. Try again in a few seconds.");
+    throw new ApiRequestError(res.status, "BAD_RESPONSE", "Got an unexpected answer from VYBZ. Try again.");
+  }
   if (!res.ok) {
     const err = (json ?? {}) as Partial<ApiError>;
     throw new ApiRequestError(res.status, err.error ?? "ERROR", err.message ?? describeError(err.error ?? "", res.status));
@@ -117,10 +124,27 @@ const MESSAGES: Record<string, string> = {
   NO_PROVIDERS_CONFIGURED: "Music search isn't set up on the server yet.",
   ARTIST_NOT_FOUND: "That artist isn't available.",
   PROVIDER_ERROR: "The music service didn't answer. Try again in a moment.",
+  NOT_PARTICIPANT: "Only players in this battle can do that.",
+  NOT_IN_PROGRESS: "This battle isn't live right now.",
+  ROUND_NOT_CURRENT: "That round has moved on. Pull down to refresh.",
+  TRACK_TOO_LONG: "That track is longer than this battle allows.",
+  TRACK_NOT_FOUND: "That song isn't available anymore. Pick another.",
+  INVALID_CATALOG_ID: "That song can't be used. Pick another.",
+  PROVIDER_UNAVAILABLE: "That music service isn't available right now. Try the other one.",
+  NOT_CREATOR: "Only the person who made this battle can do that.",
+  NOT_A_DUEL: "That only works in a 1-vs-1 battle.",
+  NOT_MULTI: "That only works in a group battle.",
+  INVALID_TERMS: "Those terms aren't valid. Check them and try again.",
+  INVALID_ROUND: "That round doesn't exist.",
+  INVALID_REQUEST: "Something about that request wasn't right. Try again.",
+  BAD_ORIGIN: "Request blocked for security. Update the app and try again.",
+  LISTEN_REQUIRED: "Listen to every entry before voting.",
+  UNKNOWN_SUBMISSION: "That entry isn't in this round.",
 };
 
 export function describeError(code: string, status = 0): string {
-  return MESSAGES[code] ?? (status >= 500 ? "Something went wrong on our side. Try again." : "That didn't work. Try again.");
+  // Unknown codes show their name, so a screenshot is enough to tell what happened.
+  return MESSAGES[code] ?? (status >= 500 ? `Something went wrong on our side (${code || status}). Try again.` : `That didn't work (${code || status}). Try again.`);
 }
 
 export const api = {
