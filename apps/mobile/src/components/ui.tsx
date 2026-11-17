@@ -78,9 +78,11 @@ export function Avatar({ name, image, size = 36, ring }: { name: string; image?:
   );
 }
 
-export function Artwork({ uri, size = 56 }: { uri: string | null | undefined; size?: number }) {
-  if (!uri) return <View style={[styles.art, { width: size, height: size }]} />;
-  return <Image source={{ uri }} style={[styles.art, { width: size, height: size }]} contentFit="cover" transition={150} />;
+/** Square cover art; `round` for artist photos. */
+export function Artwork({ uri, size = 56, round = false }: { uri: string | null | undefined; size?: number; round?: boolean }) {
+  const shape = [styles.art, { width: size, height: size }, round && { borderRadius: size / 2 }];
+  if (!uri) return <View style={shape} />;
+  return <Image source={{ uri }} style={shape} contentFit="cover" transition={150} />;
 }
 
 export function Field({ label, error, ...rest }: { label: string; error?: string | null } & TextInputProps) {

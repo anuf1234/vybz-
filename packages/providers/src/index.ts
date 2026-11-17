@@ -1,7 +1,7 @@
 export * from "./types";
 export * from "./resolver";
 export * from "./matching";
-export { AppleMusicAdapter, appleArtworkUrl, type AppleMusicAdapterConfig } from "./apple-music/adapter";
+export { AppleMusicAdapter, APPLE_GENRES, appleArtworkUrl, type AppleMusicAdapterConfig } from "./apple-music/adapter";
 export {
   DeveloperTokenCache,
   signDeveloperToken,

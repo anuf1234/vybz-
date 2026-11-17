@@ -1,4 +1,4 @@
-import type { BattleView, CatalogSearchResponse } from "@vybz/core";
+import type { BattleView, ArtistDetailResponse, ArtistSearchResponse, CatalogSearchResponse, SuggestionsResponse } from "@vybz/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_DB_URL, freshDb } from "./helpers";
 
@@ -32,6 +32,9 @@ describe.skipIf(!TEST_DB_URL)("HTTP API", () => {
       load("auth", "../src/app/api/auth/[...all]/route"),
       load("me", "../src/app/api/v1/me/route"),
       load("search", "../src/app/api/v1/catalog/search/route"),
+      load("artists", "../src/app/api/v1/catalog/artists/route"),
+      load("artist", "../src/app/api/v1/catalog/artists/[id]/route"),
+      load("suggestions", "../src/app/api/v1/catalog/suggestions/route"),
       load("battles", "../src/app/api/v1/battles/route"),
       load("battle", "../src/app/api/v1/battles/[id]/route"),
       load("accept", "../src/app/api/v1/battles/[id]/accept/route"),
@@ -120,6 +123,32 @@ describe.skipIf(!TEST_DB_URL)("HTTP API", () => {
     expect(body.items).toHaveLength(8);
     expect(body.items[0]!.sources[0]).toMatchObject({ tier: "HOSTED_FULL", url: expect.stringContaining("/demo/") });
     expect((await call("search", "GET", "/api/v1/catalog/search?q=")).status).toBe(400);
+  });
+
+  it("finds artists and lists their songs, most popular first", async () => {
+    const found = (await (await call("artists", "GET", "/api/v1/catalog/artists?q=kaia")).json()) as ArtistSearchResponse;
+    expect(found.items[0]).toMatchObject({ artistId: "VYBZ_DEMO:kaia-stone", name: "Kaia Stone" });
+    const id = encodeURIComponent(found.items[0]!.artistId);
+    const detail = (await (await call("artist", "GET", `/api/v1/catalog/artists/${id}`, { params: { id } })).json()) as ArtistDetailResponse;
+    expect(detail.artist.name).toBe("Kaia Stone");
+    expect(detail.topSongs.map((s) => s.title)).toEqual(["Velvet Circuit"]);
+    expect(detail.topSongs[0]!.catalogId).toBe("VYBZ_DEMO:velvet-circuit");
+    const missing = encodeURIComponent("VYBZ_DEMO:nobody");
+    expect((await call("artist", "GET", `/api/v1/catalog/artists/${missing}`, { params: { id: missing } })).status).toBe(404);
+    const bad = "nope";
+    expect((await call("artist", "GET", `/api/v1/catalog/artists/${bad}`, { params: { id: bad } })).status).toBe(400);
+  });
+
+  it("suggests only songs that fit the battle's genres and era", async () => {
+    const get = async (qs: string) => call("suggestions", "GET", `/api/v1/catalog/suggestions?${qs}`);
+    const rnb2000s = (await (await get("genres=rnb&eraFrom=2000&eraTo=2009")).json()) as SuggestionsResponse;
+    expect(rnb2000s.title).toBe("Suggested for 2000s R&B");
+    expect(rnb2000s.items.map((s) => s.title).sort()).toEqual(["Low Tide Signal", "Midnight Static", "Neon Hallway", "Velvet Circuit"]);
+    const any = (await (await get("genres=")).json()) as SuggestionsResponse;
+    expect(any.items).toHaveLength(8);
+    expect(any.title).toBe("Popular right now");
+    expect((await get("genres=polka")).status).toBe(400);
+    expect((await get("genres=rnb&eraFrom=2010&eraTo=2000")).status).toBe(400);
   });
 
   let battleId = "";

@@ -1,4 +1,7 @@
 import type {
+  ArtistDetailResponse,
+  ArtistSearchResponse,
+  SuggestionsResponse,
   ApiError,
   BattleFeed,
   BattleListResponse,
@@ -112,6 +115,8 @@ const MESSAGES: Record<string, string> = {
   FORBIDDEN: "You don't have permission to do that.",
   CATALOG_UNAVAILABLE: "That catalog isn't available.",
   NO_PROVIDERS_CONFIGURED: "Music search isn't set up on the server yet.",
+  ARTIST_NOT_FOUND: "That artist isn't available.",
+  PROVIDER_ERROR: "The music service didn't answer. Try again in a moment.",
 };
 
 export function describeError(code: string, status = 0): string {
@@ -157,6 +162,14 @@ export const api = {
     request<{ playedMs: number; requiredMs: number }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rounds/${round}/listen`, body),
   vote: (id: string, round: number, submissionId: string) =>
     request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rounds/${round}/vote`, { submissionId }),
+  artists: (q: string) => request<ArtistSearchResponse>("GET", `/api/v1/catalog/artists?q=${encodeURIComponent(q)}`),
+  artist: (artistId: string) => request<ArtistDetailResponse>("GET", `/api/v1/catalog/artists/${encodeURIComponent(artistId)}`),
+  suggestions: (t: { genres?: readonly string[] | undefined; eraFrom?: number | undefined; eraTo?: number | undefined }) => {
+    const qs = new URLSearchParams({ genres: (t.genres ?? []).join(",") });
+    if (t.eraFrom !== undefined) qs.set("eraFrom", String(t.eraFrom));
+    if (t.eraTo !== undefined) qs.set("eraTo", String(t.eraTo));
+    return request<SuggestionsResponse>("GET", `/api/v1/catalog/suggestions?${qs}`);
+  },
   search: (q: string, source?: ProviderKind) =>
     request<CatalogSearchResponse>("GET", `/api/v1/catalog/search?q=${encodeURIComponent(q)}${source ? `&source=${source}` : ""}`),
   rankings: () => request<RankingsResponse>("GET", "/api/v1/rankings"),

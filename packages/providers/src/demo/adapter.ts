@@ -1,9 +1,12 @@
 import type {
+  ArtistCandidate,
+  BrowseProvider,
   MetadataProvider,
   PlaybackProvider,
   PlaybackSource,
   SearchOptions,
   TrackCandidate,
+  ThemeQuery,
   TrackProviderRef,
 } from "../types";
 
@@ -40,7 +43,7 @@ export interface DemoCatalogConfig {
   assetBaseUrl: string;
 }
 
-export class DemoCatalog implements MetadataProvider, PlaybackProvider {
+export class DemoCatalog implements MetadataProvider, PlaybackProvider, BrowseProvider {
   readonly kind = "VYBZ_DEMO" as const;
 
   constructor(private readonly config: DemoCatalogConfig) {}
@@ -59,6 +62,39 @@ export class DemoCatalog implements MetadataProvider, PlaybackProvider {
   async getTrack(externalId: string): Promise<TrackCandidate | null> {
     const t = DEMO_TRACKS.find((d) => d.id === externalId);
     return t ? this.toCandidate(t) : null;
+  }
+
+  async searchArtists(query: string, opts: SearchOptions): Promise<ArtistCandidate[]> {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const names = [...new Set(DEMO_TRACKS.map((t) => t.artistName))];
+    return names
+      .filter((n) => q === "demo" || n.toLowerCase().includes(q))
+      .slice(0, opts.limit ?? 8)
+      .map((n) => this.toArtist(n));
+  }
+
+  async artistTopSongs(artistId: string): Promise<{ artist: ArtistCandidate; songs: TrackCandidate[] } | null> {
+    const tracks = DEMO_TRACKS.filter((t) => artistSlug(t.artistName) === artistId);
+    if (!tracks.length) return null;
+    // Newest first stands in for popularity in the demo catalog.
+    const songs = [...tracks].sort((a, b) => b.releaseYear - a.releaseYear).map((t) => this.toCandidate(t));
+    return { artist: this.toArtist(tracks[0]!.artistName), songs };
+  }
+
+  async suggestions(_theme: ThemeQuery, opts: SearchOptions): Promise<TrackCandidate[]> {
+    return DEMO_TRACKS.slice(0, opts.limit ?? 60).map((t) => this.toCandidate(t));
+  }
+
+  private toArtist(name: string): ArtistCandidate {
+    const first = DEMO_TRACKS.find((t) => t.artistName === name)!;
+    return {
+      provider: "VYBZ_DEMO",
+      externalId: artistSlug(name),
+      name,
+      genres: [...new Set(DEMO_TRACKS.filter((t) => t.artistName === name).flatMap((t) => t.genres))],
+      artwork: { url: this.asset(first.id, "jpg"), width: 300, height: 300 },
+    };
   }
 
   sources(ref: TrackProviderRef): PlaybackSource[] {
@@ -92,4 +128,8 @@ export class DemoCatalog implements MetadataProvider, PlaybackProvider {
       artwork: { url: this.asset(t.id, "jpg"), width: 300, height: 300 },
     };
   }
+}
+
+function artistSlug(name: string): string {
+  return name.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }

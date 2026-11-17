@@ -51,6 +51,30 @@ export interface CatalogSearchResponse {
   items: CatalogHit[];
 }
 
+/** An artist from catalog search. `artistId` is "<PROVIDER>:<id>". */
+export interface ArtistHit {
+  artistId: string;
+  name: string;
+  genres: string[];
+  artworkUrl?: string;
+}
+
+export interface ArtistSearchResponse {
+  items: ArtistHit[];
+}
+
+/** An artist and their songs, most popular first. */
+export interface ArtistDetailResponse {
+  artist: ArtistHit;
+  topSongs: CatalogHit[];
+}
+
+/** Songs that fit a battle's genres and era, most relevant first. */
+export interface SuggestionsResponse {
+  title: string;
+  items: CatalogHit[];
+}
+
 /**
  * A way to hear the whole round: one service, at one tier, available for every
  * track on both sides. Picking one keeps playback fair (both sides heard alike).

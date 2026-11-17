@@ -36,3 +36,8 @@ services:
         value: "false"
       - key: PUSH_NOTIFICATIONS
         value: "true"
+      # Apple Music: the team id isn't secret. Add APPLE_MUSIC_KEY_ID,
+      # APPLE_MUSIC_PRIVATE_KEY and YOUTUBE_API_KEY on the service's
+      # Environment page in the Render dashboard; they stay out of this file.
+      - key: APPLE_MUSIC_TEAM_ID
+        value: "37S9T5SMU5"

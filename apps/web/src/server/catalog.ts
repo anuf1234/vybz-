@@ -1,13 +1,17 @@
-import type { CatalogHit, TrackView } from "@vybz/core";
+import { type ArtistHit, type CatalogHit, type TrackView, themeLabel, trackMatchesGenres } from "@vybz/core";
 import { type Executor, newId, schema, and, eq, inArray } from "@vybz/db";
 import {
+  type ArtistCandidate,
+  type BrowseProvider,
   type MetadataProvider,
   type ProviderKind,
   type ProviderRegistry,
+  type ThemeQuery,
   type TrackCandidate,
   type TrackProviderRef,
   type ViewerContext,
   appleArtworkUrl,
+  isBrowseProvider,
   appleQueryForVideo,
   bestAppleMatchForVideo,
   bestMatch,
@@ -67,20 +71,95 @@ export async function searchCatalog(deps: CatalogDeps, q: string, viewer: Viewer
   const provider = source ? deps.metadata.find((m) => m.kind === source) : deps.metadata[0];
   if (!provider) return [];
   const candidates = await provider.search(q, { storefront: viewer.storefront, limit: 15 });
-  return candidates.map((c) => {
-    const ref = toRef(c);
-    return {
-      catalogId: `${c.provider}:${c.externalId}`,
-      title: c.title,
-      artistName: c.artistName,
-      ...(c.albumName ? { albumName: c.albumName } : {}),
-      ...(c.releaseYear ? { releaseYear: c.releaseYear } : {}),
-      ...(c.durationMs ? { durationMs: c.durationMs } : {}),
-      ...(c.artwork ? { artworkUrl: artworkFor(c) } : {}),
-      ...(c.explicit !== undefined ? { explicit: c.explicit } : {}),
-      sources: resolvePlayback([ref], viewer, deps.playback),
-    };
-  });
+  return candidates.map((c) => toHit(deps, c, viewer));
+}
+
+function toHit(deps: CatalogDeps, c: TrackCandidate, viewer: ViewerContext): CatalogHit {
+  return {
+    catalogId: `${c.provider}:${c.externalId}`,
+    title: c.title,
+    artistName: c.artistName,
+    ...(c.albumName ? { albumName: c.albumName } : {}),
+    ...(c.releaseYear ? { releaseYear: c.releaseYear } : {}),
+    ...(c.durationMs ? { durationMs: c.durationMs } : {}),
+    ...(c.artwork ? { artworkUrl: artworkFor(c) } : {}),
+    ...(c.explicit !== undefined ? { explicit: c.explicit } : {}),
+    sources: resolvePlayback([toRef(c)], viewer, deps.playback),
+  };
+}
+
+// ── Browsing: artists, top songs, theme suggestions ─────────────────────────
+
+/** The catalog that answers browsing: the first configured one that supports it (Apple Music before the demo). */
+export function browseProvider(deps: CatalogDeps): BrowseProvider | null {
+  return (deps.metadata.find((m) => isBrowseProvider(m)) as BrowseProvider | undefined) ?? null;
+}
+
+export const ARTIST_ID = /^(APPLE_MUSIC|VYBZ_DEMO):([A-Za-z0-9_-]{1,64})$/;
+
+/** Charts and top songs change slowly; cache provider answers per server for a while. */
+const BROWSE_TTL_MS = 30 * 60_000;
+const browseCache = new Map<string, { at: number; value: Promise<unknown> }>();
+function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const hit = browseCache.get(key);
+  if (hit && Date.now() - hit.at < BROWSE_TTL_MS) return hit.value as Promise<T>;
+  const value = load();
+  browseCache.set(key, { at: Date.now(), value });
+  value.catch(() => browseCache.delete(key));
+  if (browseCache.size > 500) browseCache.delete(browseCache.keys().next().value!);
+  return value;
+}
+
+/** For tests. */
+export function clearBrowseCache() {
+  browseCache.clear();
+}
+
+function toArtistHit(a: ArtistCandidate): ArtistHit {
+  const art = a.artwork ? (a.provider === "APPLE_MUSIC" ? appleArtworkUrl(a.artwork.url, 300) : a.artwork.url) : undefined;
+  return { artistId: `${a.provider}:${a.externalId}`, name: a.name, genres: a.genres ?? [], ...(art ? { artworkUrl: art } : {}) };
+}
+
+export async function searchArtists(deps: CatalogDeps, q: string, viewer: ViewerContext): Promise<ArtistHit[]> {
+  const p = browseProvider(deps);
+  if (!p) return [];
+  const found = await cached(`artists:${p.kind}:${viewer.storefront}:${q.toLowerCase()}`, () => p.searchArtists(q, { storefront: viewer.storefront, limit: 8 }));
+  return found.map(toArtistHit);
+}
+
+export async function artistDetail(deps: CatalogDeps, artistId: string, viewer: ViewerContext): Promise<{ artist: ArtistHit; topSongs: CatalogHit[] } | null> {
+  const m = ARTIST_ID.exec(artistId);
+  if (!m) return null;
+  const p = deps.metadata.find((x) => x.kind === m[1] && isBrowseProvider(x)) as BrowseProvider | undefined;
+  if (!p) return null;
+  const res = await cached(`top:${artistId}:${viewer.storefront}`, () => p.artistTopSongs(m[2]!, { storefront: viewer.storefront, limit: 40 }));
+  if (!res) return null;
+  return { artist: toArtistHit(res.artist), topSongs: res.songs.map((c) => toHit(deps, c, viewer)) };
+}
+
+/** Whether a candidate passes a battle's genre and era rules, judged the way submissions are. */
+export function fitsTheme(c: TrackCandidate, theme: ThemeQuery): boolean {
+  if (theme.eraFrom !== undefined || theme.eraTo !== undefined) {
+    if (c.releaseYear === undefined) return false;
+    if ((theme.eraFrom !== undefined && c.releaseYear < theme.eraFrom) || (theme.eraTo !== undefined && c.releaseYear > theme.eraTo)) return false;
+  }
+  return !theme.genres.length || trackMatchesGenres(c.genres, theme.genres) !== false;
+}
+
+export async function suggestionsFor(deps: CatalogDeps, theme: ThemeQuery, viewer: ViewerContext): Promise<{ title: string; items: CatalogHit[] }> {
+  const label = themeLabel({ genres: theme.genres, eraFrom: theme.eraFrom, eraTo: theme.eraTo });
+  const title = label ? `Suggested for ${label}` : "Popular right now";
+  const p = browseProvider(deps);
+  if (!p) return { title, items: [] };
+  const key = `suggest:${p.kind}:${viewer.storefront}:${[...theme.genres].sort().join(",")}:${theme.eraFrom ?? ""}-${theme.eraTo ?? ""}`;
+  const candidates = await cached(key, () => p.suggestions(theme, { storefront: viewer.storefront, limit: 80 }));
+  const items = candidates
+    .filter((c) => fitsTheme(c, theme))
+    .slice(0, 40)
+    .map((c) => toHit(deps, c, viewer))
+    // A guest has to be able to hear it, same as for submissions.
+    .filter((h) => h.sources.some((s) => s.tier !== "LINK_OUT"));
+  return { title, items };
 }
 
 export interface StoredTrack {
