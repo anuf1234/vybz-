@@ -34,6 +34,8 @@ Sign up (email/password or Google), challenge someone (or post an open challenge
 
 **Engagement (Step 5).** Quick battle: one tap matches you with someone waiting for the same genre and era, or opens a battle others can take; quick battles are 3 rounds of one song, 30 minutes to pick, and AI-judged when the judge is set up. The VYBZ bot (a house account, kept off leaderboards and out of rewards) plays anyone whose quick battle nobody took within 2 minutes, or right away on request, and enters every daily battle; it needs the AI judge (`ANTHROPIC_API_KEY`). Battle links unfurl as share cards (matchup, score, status) and open a page with the scoreboard and every scored round's songs; the app's Share button writes a message that fits the moment. An evening "your streak ends tonight" push (7–10pm local, at most once a day). A coin shop: streak freezes (cover a missed day) and profile frames shown on avatars.
 
+**Sharing, watch parties and imports (Step 6, part A).** Every public battle has a 9:16 story card (`/battle/:id/story`) that the app shares through the phone's share sheet to Instagram and Facebook Stories, Snapchat, TikTok or Messages. Watch-party mode (`/watch/:id`) is a full-screen view of a live battle (scoreboard, picks, vote bars, reactions, chat, and a QR code to listen and vote) for casting to a TV or as an OBS/Streamlabs browser source when going live; it carries no audio, so streams don't rebroadcast the music. Paste a public YouTube or YouTube Music playlist link to import it (up to 100 songs) as a VYBZ playlist you can battle from.
+
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.
