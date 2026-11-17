@@ -67,7 +67,7 @@ function Badge({ a }: { a: AchievementView }) {
             <View style={[styles.fill, { width: `${Math.round((a.progress / a.target) * 100)}%` }]} />
           </View>
           <Text style={[type.small, { textAlign: "center", fontSize: 11 }]}>
-            {a.progress}/{a.target} · +{a.xp} XP · +{a.coins} 🪙
+            {[`${a.progress}/${a.target}`, a.xp ? `+${a.xp} XP` : null, a.coins ? `+${a.coins} 🪙` : null].filter(Boolean).join(" · ")}
           </Text>
         </View>
       )}
