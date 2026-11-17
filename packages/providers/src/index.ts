@@ -4,6 +4,7 @@ export * from "./matching";
 export { AppleMusicAdapter, APPLE_GENRES, appleArtworkUrl, type AppleMusicAdapterConfig } from "./apple-music/adapter";
 export {
   DeveloperTokenCache,
+  normalizePrivateKey,
   signDeveloperToken,
   type AppleMusicKeyConfig,
   type DeveloperTokenOptions,

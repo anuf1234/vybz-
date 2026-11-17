@@ -1,6 +1,6 @@
 import { generateKeyPair, exportPKCS8, decodeJwt, decodeProtectedHeader } from "jose";
 import { describe, expect, it } from "vitest";
-import { AppleMusicAdapter, DeveloperTokenCache, appleArtworkUrl, signDeveloperToken } from "../src";
+import { AppleMusicAdapter, DeveloperTokenCache, appleArtworkUrl, normalizePrivateKey, signDeveloperToken } from "../src";
 import type { ViewerContext } from "../src";
 import { appleSong, stubFetch } from "./fixtures";
 
@@ -31,6 +31,24 @@ describe("Apple Music developer token", () => {
     const { privateKey } = await generateKeyPair("ES256", { extractable: true });
     const escaped = (await exportPKCS8(privateKey)).replace(/\n/g, "\\n");
     await expect(signDeveloperToken({ teamId: "T", keyId: "K", privateKey: escaped })).resolves.toBeDefined();
+  });
+
+  it("accepts keys whose line breaks were lost or mangled when pasted", async () => {
+    const { privateKey } = await generateKeyPair("ES256", { extractable: true });
+    const pem = await exportPKCS8(privateKey);
+    const body = pem.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
+    const variants = [
+      pem.replace(/\n/g, " "), // single-line input turned breaks into spaces
+      `"${pem}"`, // pasted with quotes
+      pem.replace(/\n/g, "\r\n"), // Windows line endings
+      body, // only the base64 body
+      pem.replace(/\n/g, "\\r\\n"), // escaped Windows breaks
+    ];
+    for (const v of variants) {
+      expect(normalizePrivateKey(v)).toBe(normalizePrivateKey(pem));
+      await expect(signDeveloperToken({ teamId: "T", keyId: "K", privateKey: v })).resolves.toBeDefined();
+    }
+    expect(() => normalizePrivateKey("not a key!")).toThrow(/not a .p8/);
   });
 
   it("caches the token until close to expiry", async () => {
