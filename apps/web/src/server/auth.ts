@@ -100,6 +100,9 @@ export function createAuth(cfg: AuthConfig) {
       database: { generateId: () => newId() },
       cookiePrefix: "vybz",
       useSecureCookies: cfg.baseURL.startsWith("https://"),
+      // On Render, requests arrive through Cloudflare, which sets the client's address in
+      // headers clients can't forge; elsewhere, don't trust forwarding headers.
+      ...(process.env.RENDER ? { ipAddress: { ipAddressHeaders: ["cf-connecting-ip", "true-client-ip", "x-forwarded-for"] } } : {}),
     },
     plugins: [expo()],
   });

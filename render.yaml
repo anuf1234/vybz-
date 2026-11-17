@@ -1,5 +1,5 @@
 # Render Blueprint for the VYBZ API and website (apps/web) plus its database.
-# Test deployment: demo catalog on, email verification off. See README "Deploying".
+# Test deployment: real catalogs (Apple Music, YouTube), email verification off. See README "Deploying".
 databases:
   - name: vybz-db
     plan: basic-256mb
@@ -31,7 +31,7 @@ services:
       - key: CRON_SECRET
         generateValue: true
       - key: VYBZ_DEMO_CATALOG
-        value: "true"
+        value: "false"
       - key: AUTH_REQUIRE_EMAIL_VERIFICATION
         value: "false"
       - key: PUSH_NOTIFICATIONS
