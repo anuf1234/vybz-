@@ -1,6 +1,6 @@
 # VYBZ — Production Architecture & Implementation Plan
 
-**Status:** Draft v1.1. Launch providers set to **YouTube and Apple Music** (Baba, 2026-10-15). Spotify is deferred.
+**Status:** Draft v1.2. Launch providers set to **YouTube and Apple Music** (Baba, 2026-10-15). Spotify is deferred. Backend core and the native app were built 2026-11-15; see "Changes during implementation" below.
 **Date:** 2026-10-15
 **Domain:** urexp.com
 
@@ -15,7 +15,7 @@
 | App framework | **Next.js (App Router) + React + TypeScript + Tailwind** | Matches your preference. Server Components and Server Actions cover most backend needs. |
 | Backend shape | **Modular monolith inside Next.js**, plus **durable background jobs (Inngest)** and **one small media worker container** | Battle timers and audio processing need work that outlives a request. A separate Node API is not justified until Live DJ battles. |
 | Repo layout | **pnpm + Turborepo monorepo** (`apps/web`, `apps/worker`, `packages/core`, `packages/db`, `packages/providers`, `packages/ui`) | Keeps battle rules and provider logic as pure, testable TypeScript, independent of Next.js. |
-| Database | **PostgreSQL on Neon**, **Prisma** ORM | Serverless-friendly pooling, a database branch per preview deploy, point-in-time recovery. |
+| Database | **PostgreSQL on Neon**, **Drizzle** ORM (was Prisma; see changes above) | Serverless-friendly pooling, a database branch per preview deploy, point-in-time recovery. |
 | Cache / rate limits / live tallies | **Upstash Redis** | HTTP-based, works from serverless and edge. |
 | Auth | **Better Auth** (Prisma adapter, database sessions) | Email/password, Google now and Apple later as plugins. User table stays in our Postgres. Built-in rate limiting and 2FA. |
 | Realtime | **Ably** behind a `RealtimeBus` interface | Managed WebSockets with presence, history, and server-issued, capability-scoped tokens. The server publishes and clients only subscribe. |
@@ -45,6 +45,31 @@ The provider terms below shape the product more than any technical choice. Befor
 - **DJ mixes** of commercial tracks are the hardest case. Hosting them ourselves needs licenses (in the US, PRO blanket licenses plus sound-recording rights). Mixcloud and SoundCloud embeds rely on their own licenses.
 
 This is why the provider layer (Section 5) treats **metadata** and **playback rights** as separate concerns resolved per viewer, and why the app still works when nobody connects Spotify.
+
+### Changes during implementation (2026-11-15)
+
+| Plan | Built | Why |
+|---|---|---|
+| Prisma ORM | **Drizzle ORM** (`packages/db`), SQL migrations in the repo | Pure TypeScript with no engine binaries to download, so it runs in any CI or sandbox; Better Auth supports it directly. Schema and constraints follow Section 3. |
+| Inngest for round timers | **Lazy advance + scheduler route.** Every read or write of a battle applies due transitions first; `/api/cron/advance` (Vercel Cron, every minute) catches battles nobody is viewing | No extra service for Phase 1. The engine exposes `nextDeadline()`, so moving to Inngest `sleepUntil` later is a small change. |
+| Ably realtime | **Polling** (battle screen every 8s, lists every 15–30s) | Enough for async battles. Live battles (Phase 5) still need Ably or similar. |
+| Native apps in Phase 6 | **Expo app now** (`apps/mobile`), sharing `packages/core` types and the `/api/v1` API | Requested by Baba. MusicKit full playback stays web-only for now (needs a native module). |
+| Upstash rate limits | Better Auth's limiter on auth routes; DB unique constraints on votes and submissions | Remaining limits (votes per minute, battle creation per day) are still to do. |
+| Fair-listen proof with signed nonces | Server records when a listener started each track and caps reported play time at elapsed wall-clock time; both sides must be heard at the same tier | Same cost-raising goal, fewer moving parts. |
+
+| Rules set by the creator | **Negotiated terms** (2026-11-16): the challenged side accepts or counters (rounds, tracks per round 1–3, genre, era, judging, pace); up to 10 counter-offers; the battle starts on acceptance | Requested by Baba. |
+| Crowd voting only | **Judging modes** (2026-11-16): CROWD, AI, COMBINED (AI weight 10–90%), SEPARATE (two scorecards, crowd official). AI verdicts stored in `ai_verdict`, computed once when voting opens, blind to identities, hidden until scored | Requested by Baba. The AI judges from song knowledge and metadata, never audio. |
+
+| Parity picks one tier for everyone (YouTube always won) | **Listen on: per-service options** (2026-11-16): for each round the server offers every service that can play all tracks at one shared tier; the listener picks; proofs still require one tier across all tracks | Requested by Baba: Apple Music and YouTube both usable in battles. |
+| MusicKit JS on the web | **Native MusicKit on iOS** via a local Expo module; capability self-reported per request (`X-VYBZ-Apple-Music: full`) | Battles happen in the app. The capability only unlocks a playback option, never votes. |
+| Apple as the only search catalog | **Search either catalog**; YouTube picks are matched to Apple (reverse of the Apple→YouTube matcher) | Lets players pick versions only on YouTube while keeping era/genre data. |
+| Duels only | **Group battles** (2026-11-16): 2–8 entrants (`rules.entrants`), lobby with join/leave/start, N-way scoring; sudden death only between the tied leaders (`battle_round.contender_ids`); a player who doesn't pick forfeits that round | Requested by Baba (Step 1 of the feature plan). |
+| Public battles only | **Private battles**: `battle.visibility` + `invite_code`; opening a valid link grants lasting access (`battle_access`); others get 404 | Same. |
+| Ably for live features | **Polling for chat, reactions and viewer counts** (`/live` every 3s, presence heartbeat every 15s, 30s window) | No extra service; fine at current scale. Swap the transport for Ably when live battles need sub-second updates. |
+| Email "your turn" notifications | **In-app notifications + Expo push** (`notification`, `push_token`), created from engine events after each transition commits | Push needs an EAS project id in the app (`eas init`) and real devices; the in-app list works without it. |
+| Moderation in a later phase | **Report queue** (`report`, `moderation_action` audit log), staff = MODERATOR or ADMIN | Needed before chat could ship. |
+
+Not built yet from Phase 1: realtime channels (polling instead), email notifications, share cards (OG images), web push, post-round fraud scan. The website has no battle pages yet: battles are played in the mobile app, with the API ready for web screens.
 
 ---
 

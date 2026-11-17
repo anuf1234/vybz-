@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "VYBZ",
+    "slug": "vybz",
+    "scheme": "vybz",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0614",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.urexp.vybz",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSAppleMusicUsageDescription": "VYBZ uses Apple Music to play full songs in battles for subscribers.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.urexp.vybz",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0614",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false
+        }
+      ],
+      "expo-image",
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "owner": "ace-it-solutions",
+    "extra": {
+      "eas": {
+        "projectId": "c3e187e0-9853-454f-be60-cf8a28db6ecf"
+      }
+    }
+  }
+}

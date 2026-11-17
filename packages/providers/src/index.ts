@@ -1,9 +1,10 @@
 export * from "./types";
 export * from "./resolver";
 export * from "./matching";
-export { AppleMusicAdapter, appleArtworkUrl, type AppleMusicAdapterConfig } from "./apple-music/adapter";
+export { AppleMusicAdapter, APPLE_GENRES, appleArtworkUrl, type AppleMusicAdapterConfig } from "./apple-music/adapter";
 export {
   DeveloperTokenCache,
+  normalizePrivateKey,
   signDeveloperToken,
   type AppleMusicKeyConfig,
   type DeveloperTokenOptions,
@@ -12,6 +13,9 @@ export {
   YouTubeAdapter,
   cleanChannelName,
   parseIsoDuration,
+  releaseYearFromDescription,
   watchUrl,
   type YouTubeAdapterConfig,
 } from "./youtube/adapter";
+export { DemoCatalog, DEMO_TRACKS, type DemoCatalogConfig } from "./demo/adapter";
+export { MusicBrainzReleaseYears, type MusicBrainzConfig, type ReleaseYearLookup } from "./musicbrainz";

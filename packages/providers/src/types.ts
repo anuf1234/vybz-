@@ -8,7 +8,8 @@
  *                   request, never stored, never proxied or re-hosted.
  */
 
-export type ProviderKind = "APPLE_MUSIC" | "YOUTUBE";
+/** VYBZ_DEMO: a built-in catalog of synthesized tracks for development. Never enabled in production. */
+export type ProviderKind = "APPLE_MUSIC" | "YOUTUBE" | "VYBZ_DEMO";
 
 /** Ordered best → worst. See `TIER_RANK`. */
 export type PlaybackTier =
@@ -90,6 +91,13 @@ export interface PlaybackRestrictions {
 
 export type PlaybackSource =
   | {
+      tier: "HOSTED_FULL";
+      provider: "VYBZ_DEMO";
+      url: string;
+      attribution: Attribution;
+      restrictions: PlaybackRestrictions;
+    }
+  | {
       tier: "PROVIDER_FULL";
       provider: "APPLE_MUSIC";
       sdk: { kind: "musickit"; catalogId: string };
@@ -127,6 +135,41 @@ export interface MetadataProvider {
   readonly kind: ProviderKind;
   search(query: string, opts: SearchOptions): Promise<TrackCandidate[]>;
   getTrack(externalId: string, opts: SearchOptions): Promise<TrackCandidate | null>;
+}
+
+/** A provider's view of an artist. */
+export interface ArtistCandidate {
+  provider: ProviderKind;
+  externalId: string;
+  name: string;
+  genres?: string[];
+  artwork?: Artwork;
+  externalUrl?: string;
+}
+
+/** What a battle allows: VYBZ genre keys (see @vybz/core GENRES) and an optional release-year range. */
+export interface ThemeQuery {
+  genres: string[];
+  eraFrom?: number;
+  eraTo?: number;
+}
+
+/**
+ * Browsing beyond plain search: artists, their most popular songs, and
+ * suggestions for a battle's theme. Results are raw candidates; callers apply
+ * the battle's genre and era rules.
+ */
+export interface BrowseProvider {
+  readonly kind: ProviderKind;
+  searchArtists(query: string, opts: SearchOptions): Promise<ArtistCandidate[]>;
+  /** The artist and their songs, most popular first. Null when the artist doesn't exist. */
+  artistTopSongs(artistId: string, opts: SearchOptions): Promise<{ artist: ArtistCandidate; songs: TrackCandidate[] } | null>;
+  /** Songs likely to fit the theme, most relevant first. */
+  suggestions(theme: ThemeQuery, opts: SearchOptions): Promise<TrackCandidate[]>;
+}
+
+export function isBrowseProvider(p: unknown): p is BrowseProvider {
+  return typeof p === "object" && p !== null && "artistTopSongs" in p && "suggestions" in p && "searchArtists" in p;
 }
 
 export interface PlaybackProvider {

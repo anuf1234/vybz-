@@ -11,6 +11,20 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL_TEST: postgres://postgres:postgres@localhost:5432/vybz_test
+      DATABASE_URL_TEST_WEB: postgres://postgres:postgres@localhost:5432/vybz_test_web
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -18,7 +32,16 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - name: Create test databases
+        run: |
+          psql postgres://postgres:postgres@localhost:5432/postgres -c "create database vybz_test"
+          psql postgres://postgres:postgres@localhost:5432/postgres -c "create database vybz_test_web"
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: Bundle the mobile app (iOS, Android, web)
+        working-directory: apps/mobile
+        run: npx expo export --platform ios --platform android --platform web --output-dir dist
+        env:
+          EXPO_OFFLINE: "1"

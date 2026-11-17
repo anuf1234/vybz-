@@ -27,7 +27,7 @@ export async function signDeveloperToken(
   const iat = Math.floor((opts.now ?? new Date()).getTime() / 1000);
   const exp = iat + ttl;
 
-  const key = await importPKCS8(config.privateKey.replace(/\\n/g, "\n"), "ES256");
+  const key = await importPKCS8(normalizePrivateKey(config.privateKey), "ES256");
   const claims = opts.origins?.length ? { origin: opts.origins } : {};
 
   const token = await new SignJWT(claims)
@@ -38,6 +38,21 @@ export async function signDeveloperToken(
     .sign(key);
 
   return { token, expiresAt: new Date(exp * 1000) };
+}
+
+/**
+ * Rebuilds a PEM from however the .p8 contents reached the environment: with
+ * real or escaped (`\\n`) line breaks, line breaks turned into spaces by a
+ * single-line input, Windows line endings, surrounding quotes, or only the
+ * base64 body without the BEGIN/END lines.
+ */
+export function normalizePrivateKey(raw: string): string {
+  let s = raw.trim().replace(/^["']|["']$/g, "").replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\r/g, "");
+  s = s.replace(/-----(BEGIN|END) [A-Z ]*PRIVATE KEY-----/g, " ");
+  const body = s.replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/=]+$/.test(body)) throw new Error("APPLE_MUSIC_PRIVATE_KEY is not a .p8 private key");
+  const lines = body.match(/.{1,64}/g) ?? [];
+  return `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----\n`;
 }
 
 /**
