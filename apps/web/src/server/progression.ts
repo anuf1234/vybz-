@@ -168,7 +168,9 @@ export async function progressFor(db: Executor, userId: string): Promise<Progres
 
 /** XP and coins for everyone who played a finished battle. Once per battle per person. */
 export async function awardBattle(db: Database, agg: BattleAggregate): Promise<void> {
+  const system = await systemIds(db, agg.participants.map((p) => p.userId));
   for (const p of agg.participants) {
+    if (system.has(p.userId)) continue;
     const won = agg.winnerParticipantId === p.id;
     const roundsWon = agg.rounds.filter((r) => r.winnerParticipantId === p.id).length;
     await grant(db, p.userId, "BATTLE", agg.id, battleReward({ won, roundsWon }));
@@ -246,4 +248,11 @@ export async function wallet(db: Executor, user: UserRow | null, cursor?: string
     history: page.map((r) => ({ id: r.id, reason: r.reason as LedgerReason, ...label(r), xp: r.xp, coins: r.coins, createdAt: r.createdAt.toISOString() })),
     nextCursor: rows.length > PAGE && last ? `${last.createdAt.toISOString()}_${last.id}` : null,
   };
+}
+
+/** VYBZ's own accounts among these ids: they earn nothing. */
+export async function systemIds(db: Executor, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await db.select({ id: schema.user.id }).from(schema.user).where(and(inArray(schema.user.id, ids), eq(schema.user.isSystem, true)));
+  return new Set(rows.map((r) => r.id));
 }

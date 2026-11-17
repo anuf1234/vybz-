@@ -80,7 +80,7 @@ export async function blockedIds(db: Executor, userId: string): Promise<string[]
   return [...new Set(rows.map((r) => (r.a === userId ? r.b : r.a)))];
 }
 
-async function isBlockedBetween(db: Executor, a: string, b: string): Promise<boolean> {
+export async function isBlockedBetween(db: Executor, a: string, b: string): Promise<boolean> {
   const [row] = await db
     .select({ x: schema.block.blockerId })
     .from(schema.block)
@@ -189,7 +189,11 @@ export async function peopleSuggestions(deps: BattleDeps, user: UserRow | null):
     .limit(30);
   add(top.map((r) => r.id), "Top player");
 
-  const ids = [...reasons.keys()].slice(0, 12);
+  const candidates = [...reasons.keys()];
+  const system = candidates.length
+    ? new Set((await deps.db.select({ id: schema.user.id }).from(schema.user).where(and(inArray(schema.user.id, candidates), eq(schema.user.isSystem, true)))).map((r) => r.id))
+    : new Set<string>();
+  const ids = candidates.filter((id) => !system.has(id)).slice(0, 12);
   const people = await usersById(deps.db, ids);
   return { items: ids.flatMap((id) => (people.get(id) ? [{ ...people.get(id)!, viewerFollows: false, reason: reasons.get(id)! }] : [])) };
 }

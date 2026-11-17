@@ -52,9 +52,14 @@ export default function Battles() {
               body={tab === "open" ? "Post an open challenge and anyone can take you on." : undefined}
               action={
                 tab !== "vote" ? (
-                  <Link href="/create" asChild>
-                    <Button title="Start a battle" kind="secondary" />
-                  </Link>
+                  <View style={{ gap: space.sm, alignSelf: "stretch" }}>
+                    <Link href="/quick" asChild>
+                      <Button title="⚡ Quick battle" />
+                    </Link>
+                    <Link href="/create" asChild>
+                      <Button title="Start a battle" kind="secondary" />
+                    </Link>
+                  </View>
                 ) : undefined
               }
             />

@@ -1,4 +1,6 @@
 import type {
+  QuickBattleRequest,
+  QuickBattleResponse,
   WalletResponse,
   ProgressView,
   DailyClaimResponse,
@@ -132,6 +134,7 @@ const MESSAGES: Record<string, string> = {
   ALREADY_SUBMITTED: "You already picked for this round.",
   ALREADY_VOTED: "You already voted this round.",
   INVALID_QUERY: "That leaderboard isn't available.",
+  BOT_UNAVAILABLE: "The VYBZ bot isn't available right now.",
   ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
   VOTING_CLOSED: "Voting has closed for this round.",
   HANDLE_TAKEN: "That handle is taken.",
@@ -221,6 +224,7 @@ export const api = {
     request<null>("POST", `/api/v1/mod/reports/${encodeURIComponent(id)}`, { action, ...(note ? { note } : {}) }),
   hideMessage: (id: string) => request<null>("POST", `/api/v1/mod/messages/${encodeURIComponent(id)}/hide`),
   decline: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/decline`),
+  quickBattle: (body: QuickBattleRequest) => request<QuickBattleResponse>("POST", "/api/v1/quick-battle", body),
   cancel: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/cancel`),
   rematch: (id: string) => request<{ id: string }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rematch`),
   submit: (id: string, round: number, catalogIds: string[]) =>

@@ -1,7 +1,7 @@
 import { ACHIEVEMENTS, type AchievementDef, type AchievementMetric, type AchievementsResponse } from "@vybz/core";
 import { type Database, type Executor, eq, inArray, schema, sql } from "@vybz/db";
 import { createNotifications, type PushSender } from "./notifications";
-import { grant } from "./progression";
+import { grant, systemIds } from "./progression";
 import { streaksFor } from "./streaks";
 
 /**
@@ -61,7 +61,9 @@ export async function achievementStats(db: Executor, userId: string): Promise<Ac
  */
 export async function checkAchievements(db: Database, push: PushSender | null | undefined, userIds: (string | null | undefined)[]): Promise<AchievementDef[]> {
   const unlocked: AchievementDef[] = [];
-  for (const userId of new Set(userIds.filter((u): u is string => !!u))) {
+  const ids = [...new Set(userIds.filter((u): u is string => !!u))];
+  const system = await systemIds(db, ids);
+  for (const userId of ids.filter((u) => !system.has(u))) {
     try {
       // Rewards can unlock more (XP → level achievements), so look twice at most.
       for (let pass = 0; pass < 3; pass++) {

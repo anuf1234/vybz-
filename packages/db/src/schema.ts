@@ -45,6 +45,8 @@ export const user = pgTable(
     status: text("status", { enum: ["ACTIVE", "SUSPENDED", "BANNED"] })
       .notNull()
       .default("ACTIVE"),
+    /** VYBZ's own accounts (the daily host, the bot): kept off leaderboards and out of rewards. */
+    isSystem: boolean("is_system").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -178,6 +180,8 @@ export const battle = pgTable(
     featured: boolean("featured").notNull().default(false),
     /** Set on the system's daily battle: one per UTC day. */
     dailyDate: text("daily_date").unique(),
+    /** An open challenge from Quick Battle: anyone may take it, and the VYBZ bot does if nobody does. */
+    quickMatch: boolean("quick_match").notNull().default(false),
     /** When the scheduler next needs to look at this battle. */
     nextDeadlineAt: ts("next_deadline_at"),
     /** Optimistic lock for state transitions. */

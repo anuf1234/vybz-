@@ -2,7 +2,9 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { advanceAllDue, ensureAllAiVerdicts } from "@/server/battles/service";
 import { getBattleDeps } from "@/server/context";
+import { botJoinDaily, botPlayAll } from "@/server/bot";
 import { ensureDailyBattle } from "@/server/daily";
+import { botTakeStaleQuick } from "@/server/quick";
 import { serverEnv } from "@/server/env";
 
 /**
@@ -19,9 +21,13 @@ async function handle(req: Request) {
   const deps = getBattleDeps();
   // Verdicts first, so AI-judged rounds closing now can be scored.
   const daily = await ensureDailyBattle(deps).catch((err) => (console.error("daily battle failed", err), null));
+  if (daily) await botJoinDaily(deps, daily).catch((err) => console.error("bot daily failed", err));
   const judged = await ensureAllAiVerdicts(deps);
   const advanced = await advanceAllDue(deps);
-  return NextResponse.json({ advanced, judged, daily });
+  // The bot takes quick battles nobody took, then makes any picks it owes.
+  const quick = await botTakeStaleQuick(deps).catch((err) => (console.error("bot quick failed", err), 0));
+  const botPicks = await botPlayAll(deps).catch((err) => (console.error("bot play failed", err), 0));
+  return NextResponse.json({ advanced, judged, daily, quick, botPicks });
 }
 
 export { handle as GET, handle as POST };

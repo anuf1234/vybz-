@@ -41,6 +41,11 @@ export default function Home() {
         </Link>
       ) : null}
 
+      {signedIn ? (
+        <Link href="/quick" asChild>
+          <Button title="⚡ Quick battle" />
+        </Link>
+      ) : null}
       {signedIn ? <DailyReward key={session.data?.user.id} /> : null}
 
       {feed.error ? <ErrorBanner message={feed.error.message} onRetry={() => void feed.reload()} /> : null}

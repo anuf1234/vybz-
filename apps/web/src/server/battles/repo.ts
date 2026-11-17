@@ -103,6 +103,7 @@ export interface NewBattleFields {
   visibility?: "PUBLIC" | "PRIVATE";
   inviteCode?: string | null;
   dailyDate?: string | null;
+  quickMatch?: boolean;
 }
 
 export async function insertBattle(db: Executor, agg: BattleAggregate, fields: NewBattleFields): Promise<void> {
@@ -121,6 +122,7 @@ export async function insertBattle(db: Executor, agg: BattleAggregate, fields: N
     visibility: fields.visibility ?? "PUBLIC",
     inviteCode: fields.inviteCode ?? null,
     dailyDate: fields.dailyDate ?? null,
+    quickMatch: fields.quickMatch ?? false,
     nextDeadlineAt: nextDeadline(agg),
     version: 0,
   });

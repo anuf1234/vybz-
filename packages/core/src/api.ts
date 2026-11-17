@@ -597,3 +597,20 @@ export interface LeaderboardResponse {
   /** The viewer's own row, even when outside the top of the list; null if signed out or not ranked. */
   me: LeaderboardEntry | null;
 }
+
+// ── Quick Battle ───────────────────────────────────────────────────────────
+
+export interface QuickBattleRequest {
+  /** A VYBZ genre key; omit for any genre. */
+  genre?: string | null;
+  /** A decade start year (1990); omit for any era. */
+  decade?: number | null;
+  /** Skip the wait and play the VYBZ bot (only when the AI judge is set up). */
+  vsBot?: boolean;
+}
+
+export interface QuickBattleResponse {
+  id: string;
+  /** player: you took someone's waiting battle; bot: the VYBZ bot took yours; waiting: yours is open for others. */
+  matched: "player" | "bot" | "waiting";
+}
