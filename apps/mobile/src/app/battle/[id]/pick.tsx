@@ -75,7 +75,8 @@ export default function Pick() {
 
   function eraProblem(hit: CatalogHit): string | null {
     if (!c || (c.eraFrom === undefined && c.eraTo === undefined)) return null;
-    if (!hit.releaseYear) return "No release year";
+    // YouTube results rarely state a release year; the server looks it up when you lock in.
+    if (!hit.releaseYear) return hit.catalogId.startsWith("YOUTUBE:") ? null : "No release year";
     if ((c.eraFrom !== undefined && hit.releaseYear < c.eraFrom) || (c.eraTo !== undefined && hit.releaseYear > c.eraTo)) return `Outside ${theme ?? "the era"}`;
     return null;
   }
@@ -218,6 +219,9 @@ export default function Pick() {
                 </Text>
                 {best && !problem ? <Text style={[type.small, { fontSize: 11, letterSpacing: 0.5 }]}>{TIER_LABEL[best.tier].toUpperCase()}</Text> : null}
                 {problem ? <Text style={[type.small, { color: color.danger }]}>{problem}</Text> : null}
+                {!problem && !item.releaseYear && c && (c.eraFrom !== undefined || c.eraTo !== undefined) ? (
+                  <Text style={[type.small, { fontSize: 11 }]}>Release year checked when you lock in</Text>
+                ) : null}
               </View>
               <PreviewButton hit={item} playing={preview.currentId === item.catalogId} onPress={() => preview.toggle(item)} />
               {order >= 0 ? (

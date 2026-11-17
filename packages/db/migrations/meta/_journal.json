@@ -22,6 +22,13 @@
       "when": 1794864318584,
       "tag": "0002_multi_live_moderation",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794896000000,
+      "tag": "0003_youtube_release_years",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import type { MetadataProvider, ProviderRegistry } from "@vybz/providers";
-import { DemoCatalog } from "@vybz/providers";
+import { DemoCatalog, MusicBrainzReleaseYears } from "@vybz/providers";
 import { apple, defaultStorefront, registry, youtube } from "@/lib/providers";
 import { type AiJudge, AnthropicJudge, DemoJudge } from "./ai-judge";
 import { type Auth, createAuth } from "./auth";
@@ -27,7 +27,9 @@ export function getCatalogDeps(): CatalogDeps {
   // Demo catalog answers searches only when no real provider is configured.
   if (demo && (apple || youtube)) metadata.push(metadata.splice(metadata.indexOf(demo), 1)[0]!);
   const playback: ProviderRegistry = { ...registry, ...(demo ? { VYBZ_DEMO: demo } : {}) };
-  g.__vybzCatalog = { metadata, playback, youtube: apple ? youtube : null, storefront: defaultStorefront };
+  // YouTube picks need a real release year; MusicBrainz is free and keyless.
+  const releaseYears = youtube ? new MusicBrainzReleaseYears({ userAgent: `VYBZ/0.1 ( ${publicOrigin()} )` }) : null;
+  g.__vybzCatalog = { metadata, playback, youtube: apple ? youtube : null, releaseYears, storefront: defaultStorefront };
   return g.__vybzCatalog;
 }
 

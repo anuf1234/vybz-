@@ -6,6 +6,7 @@ import {
   type MetadataProvider,
   type ProviderKind,
   type ProviderRegistry,
+  type ReleaseYearLookup,
   type ThemeQuery,
   type TrackCandidate,
   type TrackProviderRef,
@@ -15,6 +16,7 @@ import {
   appleQueryForVideo,
   bestAppleMatchForVideo,
   bestMatch,
+  parseVideoTitle,
   resolvePlayback,
   youtubeSearchQuery,
 } from "@vybz/providers";
@@ -31,6 +33,8 @@ export interface CatalogDeps {
   playback: ProviderRegistry;
   /** Used to match Apple tracks to YouTube videos at submission time. */
   youtube?: MetadataProvider | null;
+  /** Original release years for YouTube picks without an Apple Music match (MusicBrainz). */
+  releaseYears?: ReleaseYearLookup | null;
   storefront: string;
 }
 
@@ -187,7 +191,7 @@ export async function ensureTrack(db: Executor, deps: CatalogDeps, catalogId: st
   if (!parsed) throw new CatalogError("INVALID_CATALOG_ID");
 
   const existing = await findByRef(db, parsed.provider, parsed.externalId);
-  if (existing) return existing;
+  if (existing) return existing.track.releaseYear === null ? await fillMissingYear(db, deps, existing) : existing;
 
   const provider = deps.metadata.find((m) => m.kind === parsed.provider);
   if (!provider) throw new CatalogError("PROVIDER_UNAVAILABLE");
@@ -209,6 +213,13 @@ export async function ensureTrack(db: Executor, deps: CatalogDeps, catalogId: st
     } catch (err) {
       console.warn("apple match failed", err);
     }
+  }
+
+  // A YouTube video's date is when it was uploaded, not when the song came out.
+  // Without an Apple Music match, look the original release year up.
+  if (candidate.provider === "YOUTUBE" && candidate.releaseYear === undefined) {
+    const year = await lookUpReleaseYear(deps, candidate);
+    if (year) candidate.releaseYear = year;
   }
 
   let trackId: string | null = null;
@@ -247,6 +258,52 @@ export async function ensureTrack(db: Executor, deps: CatalogDeps, catalogId: st
   const stored = await findByRef(db, parsed.provider, parsed.externalId);
   if (!stored) throw new CatalogError("TRACK_NOT_FOUND");
   return stored;
+}
+
+async function lookUpReleaseYear(deps: CatalogDeps, video: Pick<TrackCandidate, "title" | "artistName">): Promise<number | null> {
+  if (!deps.releaseYears) return null;
+  const { artist, title } = parseVideoTitle(video);
+  try {
+    return await deps.releaseYears.firstReleaseYear(artist, title);
+  } catch (err) {
+    console.warn("release year lookup failed", err);
+    return null;
+  }
+}
+
+/**
+ * A stored YouTube-only track without a release year (never found, or cleared
+ * because it held the upload year): try an Apple Music match, then MusicBrainz,
+ * and save what's found.
+ */
+async function fillMissingYear(db: Executor, deps: CatalogDeps, stored: StoredTrack): Promise<StoredTrack> {
+  const yt = stored.refs.find((r) => r.provider === "YOUTUBE");
+  if (!yt || stored.refs.some((r) => r.provider !== "YOUTUBE")) return stored;
+  const video = { title: stored.track.title, artistName: stored.track.artistName };
+  let year: number | null = null;
+  let genres: string[] | null = null;
+  const apple = deps.metadata.find((m) => m.kind === "APPLE_MUSIC");
+  if (apple) {
+    try {
+      const results = await apple.search(appleQueryForVideo(video), { storefront: deps.storefront, limit: 10 });
+      const match = bestAppleMatchForVideo({ provider: "YOUTUBE", externalId: yt.externalId, ...video, ...(stored.track.durationMs ? { durationMs: stored.track.durationMs } : {}) }, results);
+      if (match?.candidate.releaseYear) {
+        year = match.candidate.releaseYear;
+        genres = match.candidate.genres ?? null;
+        // Link the Apple recording too, unless it already belongs to another track.
+        if (!(await findByRef(db, "APPLE_MUSIC", match.candidate.externalId))) await insertRef(db, stored.track.id, toRef(match.candidate));
+      }
+    } catch (err) {
+      console.warn("apple match failed", err);
+    }
+  }
+  year ??= await lookUpReleaseYear(deps, video);
+  if (!year) return stored;
+  await db
+    .update(schema.track)
+    .set({ releaseYear: year, ...(genres?.length && !stored.track.genres.length ? { genres } : {}) })
+    .where(eq(schema.track.id, stored.track.id));
+  return (await findByRef(db, "YOUTUBE", yt.externalId))!;
 }
 
 export async function refsForTracks(db: Executor, trackIds: string[]): Promise<Map<string, TrackProviderRef[]>> {

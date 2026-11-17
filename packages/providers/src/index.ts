@@ -13,7 +13,9 @@ export {
   YouTubeAdapter,
   cleanChannelName,
   parseIsoDuration,
+  releaseYearFromDescription,
   watchUrl,
   type YouTubeAdapterConfig,
 } from "./youtube/adapter";
 export { DemoCatalog, DEMO_TRACKS, type DemoCatalogConfig } from "./demo/adapter";
+export { MusicBrainzReleaseYears, type MusicBrainzConfig, type ReleaseYearLookup } from "./musicbrainz";

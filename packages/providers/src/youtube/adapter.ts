@@ -30,6 +30,7 @@ const VideoSchema = z.object({
     title: z.string(),
     channelTitle: z.string(),
     publishedAt: z.string().optional(),
+    description: z.string().optional(),
     thumbnails: z.record(z.string(), z.object({ url: z.string(), width: z.number().optional(), height: z.number().optional() })).optional(),
   }),
   contentDetails: z.object({ duration: z.string() }).optional(),
@@ -130,6 +131,21 @@ export function parseIsoDuration(iso: string): number | undefined {
   return ((((d ?? 0) * 24 + (h ?? 0)) * 60 + (min ?? 0)) * 60 + (s ?? 0)) * 1000;
 }
 
+/**
+ * The release year an official upload states: "Released on: 1993-11-09" in
+ * YouTube's auto-generated artist uploads, else the earliest "℗ 1993" line.
+ * Undefined when the description doesn't say.
+ */
+export function releaseYearFromDescription(description: string | undefined): number | undefined {
+  if (!description) return undefined;
+  const released = /Released on:\s*(\d{4})-\d{2}-\d{2}/i.exec(description);
+  const now = new Date().getUTCFullYear() + 1;
+  const ok = (y: number) => y >= 1900 && y <= now;
+  if (released && ok(Number(released[1]))) return Number(released[1]);
+  const p = [...description.matchAll(/℗\s*(\d{4})/g)].map((m) => Number(m[1])).filter(ok);
+  return p.length ? Math.min(...p) : undefined;
+}
+
 /** Auto-generated artist channels are named "Artist - Topic". */
 export function cleanChannelName(channelTitle: string): string {
   return channelTitle.replace(/\s+-\s+Topic$/i, "").replace(/VEVO$/i, "").trim();
@@ -139,15 +155,17 @@ function toCandidate(v: Video): TrackCandidate {
   const thumbs = v.snippet.thumbnails ?? {};
   const thumb = thumbs.maxres ?? thumbs.high ?? thumbs.medium ?? thumbs.default;
   const durationMs = v.contentDetails ? parseIsoDuration(v.contentDetails.duration) : undefined;
-  const year = v.snippet.publishedAt ? Number.parseInt(v.snippet.publishedAt.slice(0, 4), 10) : undefined;
+  // The upload date says when the video went up (a 1993 song uploaded in 2009),
+  // so it is never used as the release year. Official artist uploads state the
+  // release date in the description; anything else is looked up at pick time.
+  const year = releaseYearFromDescription(v.snippet.description);
   return {
     provider: "YOUTUBE",
     externalId: v.id,
     title: v.snippet.title,
     artistName: cleanChannelName(v.snippet.channelTitle),
     ...(durationMs ? { durationMs } : {}),
-    // Upload year, not release year; only used as a weak hint.
-    ...(year && Number.isFinite(year) ? { releaseYear: year } : {}),
+    ...(year ? { releaseYear: year } : {}),
     ...(thumb ? { artwork: { url: thumb.url, width: thumb.width, height: thumb.height } } : {}),
     externalUrl: watchUrl(v.id),
     embeddable: v.status?.embeddable ?? true,

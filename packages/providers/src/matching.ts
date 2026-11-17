@@ -108,6 +108,29 @@ function tokenOverlap(a: string, b: string): number {
 
 const VIDEO_NOISE = /\s*[([](official[^)\]]*|lyrics?[^)\]]*|audio|video|hd|hq|4k|visualizer|explicit|clean|m\/v|mv)[)\]]/gi;
 
+/** "Artist - Song (Official Video) [HD] | Label" → { artist: "Artist", title: "Song" }; the channel when the title has no artist. */
+export function parseVideoTitle(video: Pick<TrackCandidate, "title" | "artistName">): { artist: string; title: string } {
+  const t = video.title.replace(VIDEO_NOISE, "").split(/\s+[|•]\s+/)[0]!.trim();
+  const m = /^(.+?)\s[-–—]\s(.+)$/.exec(t);
+  const [artist, title] = m ? [m[1]!, m[2]!] : [video.artistName, t];
+  return { artist: primaryArtist(artist.trim()), title: stripFeat(title.replace(/["“”]/g, "").trim()) };
+}
+
+/** Whether two song titles name the same song, ignoring feat. credits, punctuation and "the". */
+export function sameSongTitle(a: string, b: string): boolean {
+  const n = (s: string) => normalize(stripFeat(s)).replace(/\b(the|a|an)\b/g, "").replace(/\s+/g, " ").trim();
+  const x = n(a);
+  const y = n(b);
+  return x === y || (x.length > 3 && y.length > 3 && tokenOverlap(x, y) >= 0.8 && tokenOverlap(y, x) >= 0.8);
+}
+
+/** Whether two artist credits share their primary artist. */
+export function sameArtist(a: string, b: string): boolean {
+  const x = normalize(primaryArtist(a)).replace(/\bthe\b/g, "").trim();
+  const y = normalize(primaryArtist(b)).replace(/\bthe\b/g, "").trim();
+  return x === y || x.replace(/ /g, "") === y.replace(/ /g, "");
+}
+
 /** "Artist - Song (Official Video) [HD] | Label" → "Artist Song". */
 export function appleQueryForVideo(video: Pick<TrackCandidate, "title" | "artistName">): string {
   let t = video.title.replace(VIDEO_NOISE, "").split(/\s+[|•]\s+/)[0]!.trim();

@@ -88,7 +88,7 @@ const MESSAGES: Record<string, string> = {
   NOT_INVITED: "This challenge was sent to someone else.",
   TRACK_ALREADY_USED: "That track is already in this battle. Pick another.",
   TRACK_OUTSIDE_ERA: "That track is outside this battle's era.",
-  TRACK_YEAR_UNKNOWN: "This battle has an era rule and that track has no release year.",
+  TRACK_YEAR_UNKNOWN: "We couldn't find when that song first came out, so it can't be checked against this battle's era. Try finding it under Apple Music.",
   TRACK_NOT_PLAYABLE: "That track can't be played for everyone. Try another version.",
   ROUND_NOT_ACCEPTING_SUBMISSIONS: "Picks are closed for this round.",
   ALREADY_SUBMITTED: "You already picked for this round.",
