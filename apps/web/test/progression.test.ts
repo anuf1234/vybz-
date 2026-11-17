@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BattleDeps, UserRow } from "../src/server/battles/service";
 import { leaderboard } from "../src/server/leaderboards";
 import { achievementsFor, checkAchievements } from "../src/server/achievements";
-import { balanceOf, claimDaily, dailyState, grant, progressFor } from "../src/server/progression";
+import { awardPost, awardVote, balanceOf, claimDaily, dailyState, grant, progressFor, wallet } from "../src/server/progression";
 import { streaksFor } from "../src/server/streaks";
 import { createPost, followUser } from "../src/server/social";
 import { TEST_DB_URL, freshDb } from "./helpers";
@@ -198,6 +198,40 @@ describe.skipIf(!TEST_DB_URL)("progression", () => {
       const got = await checkAchievements(h.db, null, [x!.id]);
       expect(got.map((d) => d.code)).toEqual(["level_5"]);
       expect(await balanceOf(h.db, x!.id)).toEqual({ xp: 1050, coins: 90 + 50 + 50, level: 5 });
+    });
+  });
+
+  describe("xp and coins", () => {
+    it("pays for votes and posts up to a daily cap", async () => {
+      const [x] = await h.db.insert(schema.user).values({ id: "u_cap", name: "cap", email: "cap@x.com", handle: "capper" }).returning();
+      const day = new Date("2026-05-01T12:00:00Z");
+      for (let i = 0; i < 12; i++) await awardVote(h.db, x!.id, "b_test", i, day);
+      await awardVote(h.db, x!.id, "b_test", 0, day); // same round: once only
+      for (let i = 0; i < 7; i++) await awardPost(h.db, x!.id, `p${i}`, day);
+      // Caps are per UTC day, counted on entries made today.
+      const w = await wallet(h.db, x!);
+      const votes = w.history.filter((e) => e.reason === "VOTE").length;
+      const posts = w.history.filter((e) => e.reason === "POST").length;
+      expect(votes).toBe(10);
+      expect(posts).toBe(5);
+      expect(w.xp).toBe(10 * 2 + 5 * 5);
+    });
+
+    it("lists the wallet newest first with labels and pages", async () => {
+      const w = await wallet(h.db, u.ann!);
+      expect(w.history.length).toBeGreaterThan(0);
+      expect(w.history.some((e) => e.reason === "ACHIEVEMENT" && e.label.includes("First win") && e.link === "/achievements")).toBe(true);
+      expect(w.history.some((e) => e.reason === "LEVEL_UP" && e.label === "Reached level 2")).toBe(true);
+      expect(w.nextCursor).toBeNull();
+      await expect(wallet(h.db, null)).rejects.toMatchObject({ code: "SIGN_IN_REQUIRED" });
+    });
+
+    it("ranks by XP earned in the period", async () => {
+      const lb = await leaderboard(deps, u.ann!, { scope: "global", period: "all", metric: "xp" });
+      const values = lb.items.map((e) => e.value);
+      expect(values).toEqual([...values].sort((a, b) => b - a));
+      expect(lb.items.find((e) => e.user.handle === "lev")).toMatchObject({ level: 5, wins: 0 });
+      expect(lb.me).toMatchObject({ wins: 2, level: 2 });
     });
   });
 });

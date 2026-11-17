@@ -1,6 +1,7 @@
 import type { DailyRewardState } from "@vybz/core";
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { color, radius, space, type } from "./theme";
@@ -8,6 +9,7 @@ import { Button, Card } from "./ui";
 
 /** Home's daily reward: a 7-day ladder and a claim button. */
 export function DailyReward({ onClaimed }: { onClaimed?: () => void }) {
+  const router = useRouter();
   const state = useResource(() => api.daily(), []);
   const [claimed, setClaimed] = useState<DailyRewardState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,9 +36,11 @@ export function DailyReward({ onClaimed }: { onClaimed?: () => void }) {
     <Card style={{ gap: space.md }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <Text style={type.heading}>Daily reward</Text>
-        <Text style={type.small}>
-          {s.streak ? `🔥 ${s.streak}-day streak` : "Start a streak"} · 🪙 {s.balance.coins}
-        </Text>
+        <Pressable onPress={() => router.push("/wallet")} accessibilityRole="link" accessibilityLabel={`${s.balance.coins} coins. Open XP and coins`}>
+          <Text style={type.small}>
+            {s.streak ? `🔥 ${s.streak}-day streak` : "Start a streak"} · 🪙 {s.balance.coins} ›
+          </Text>
+        </Pressable>
       </View>
       <View style={styles.ladder}>
         {s.ladder.map((r, i) => {

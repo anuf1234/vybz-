@@ -225,3 +225,47 @@ export interface ProgressView extends LevelProgress {
   coins: number;
   streaks: Streaks;
 }
+
+// ── Earning XP and coins ───────────────────────────────────────────────────
+
+export const EARN = {
+  /** Every finished battle you played in. */
+  battlePlayed: { xp: 20, coins: 2 },
+  /** On top, for winning it. */
+  battleWon: { xp: 30, coins: 10 },
+  /** Per round you won. */
+  roundWon: { xp: 5, coins: 0 },
+  /** Per round you vote in, up to votesPerDay a day. */
+  vote: { xp: 2, coins: 0 },
+  votesPerDay: 10,
+  /** Per post, up to postsPerDay a day. */
+  post: { xp: 5, coins: 0 },
+  postsPerDay: 5,
+} as const;
+
+/** XP and coins for one finished battle. */
+export function battleReward(o: { won: boolean; roundsWon: number }): Reward {
+  return {
+    xp: EARN.battlePlayed.xp + (o.won ? EARN.battleWon.xp : 0) + EARN.roundWon.xp * Math.max(0, o.roundsWon),
+    coins: EARN.battlePlayed.coins + (o.won ? EARN.battleWon.coins : 0),
+  };
+}
+
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST";
+
+export interface WalletEntry {
+  id: string;
+  reason: LedgerReason;
+  label: string;
+  xp: number;
+  coins: number;
+  createdAt: string;
+  /** In-app path for the thing it was for, if any. */
+  link: string | null;
+}
+
+export interface WalletResponse extends LevelProgress {
+  coins: number;
+  history: WalletEntry[];
+  nextCursor: string | null;
+}

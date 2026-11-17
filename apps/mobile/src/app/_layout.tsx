@@ -51,6 +51,7 @@ export default function RootLayout() {
         <Stack.Screen name="notifications" options={{ title: "Notifications" }} />
         <Stack.Screen name="rankings" options={{ title: "Rankings" }} />
         <Stack.Screen name="achievements" options={{ title: "Achievements" }} />
+        <Stack.Screen name="wallet" options={{ title: "XP & coins" }} />
         <Stack.Screen name="playlist/[id]/index" options={{ title: "Playlist" }} />
         <Stack.Screen name="playlist/[id]/add" options={{ title: "Add songs", presentation: "modal" }} />
         <Stack.Screen name="playlist/new" options={{ title: "New playlist", presentation: "modal" }} />

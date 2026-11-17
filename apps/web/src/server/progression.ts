@@ -1,5 +1,13 @@
-import { DAILY_LADDER, type DailyClaimResponse, type DailyRewardState, type ProgressView, type Reward, ladderDay, levelForXp, levelProgress, levelUpCoins } from "@vybz/core";
-import { type Database, type Executor, desc, eq, newId, schema, sql } from "@vybz/db";
+import {
+  DAILY_LADDER,
+  EARN,
+  type LedgerReason,
+  type WalletResponse,
+  achievementDef,
+  battleReward, type DailyClaimResponse, type DailyRewardState, type ProgressView, type Reward, ladderDay, levelForXp, levelProgress, levelUpCoins,
+} from "@vybz/core";
+import { type BattleAggregate } from "@vybz/core";
+import { type Database, type Executor, and, desc, eq, gte, inArray, lt, newId, or, schema, sql } from "@vybz/db";
 import { z } from "zod";
 import { checkAchievements } from "./achievements";
 import { ServiceError, type UserRow } from "./battles/service";
@@ -11,7 +19,6 @@ import { streaksFor } from "./streaks";
  * keyed by (user, reason, ref), so retries and races can't pay twice.
  */
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP";
 
 export interface Balance {
   xp: number;
@@ -155,4 +162,88 @@ export async function claimDaily(db: Database, push: PushSender | null | undefin
 export async function progressFor(db: Executor, userId: string): Promise<ProgressView> {
   const [bal, streaks] = await Promise.all([balanceOf(db, userId), streaksFor(db, userId)]);
   return { ...levelProgress(bal.xp), coins: bal.coins, streaks };
+}
+
+// ── Earning ────────────────────────────────────────────────────────────────
+
+/** XP and coins for everyone who played a finished battle. Once per battle per person. */
+export async function awardBattle(db: Database, agg: BattleAggregate): Promise<void> {
+  for (const p of agg.participants) {
+    const won = agg.winnerParticipantId === p.id;
+    const roundsWon = agg.rounds.filter((r) => r.winnerParticipantId === p.id).length;
+    await grant(db, p.userId, "BATTLE", agg.id, battleReward({ won, roundsWon }));
+  }
+}
+
+async function awardedToday(db: Executor, userId: string, reason: LedgerReason, at: Date): Promise<number> {
+  const since = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.ledgerEntry)
+    .where(and(eq(schema.ledgerEntry.userId, userId), eq(schema.ledgerEntry.reason, reason), gte(schema.ledgerEntry.createdAt, since)));
+  return row?.n ?? 0;
+}
+
+/** A little XP for voting, up to a daily cap (UTC days). */
+export async function awardVote(db: Database, userId: string, battleId: string, roundIndex: number, at = new Date()): Promise<void> {
+  if ((await awardedToday(db, userId, "VOTE", at)) >= EARN.votesPerDay) return;
+  await grant(db, userId, "VOTE", `${battleId}:${roundIndex}`, EARN.vote);
+}
+
+export async function awardPost(db: Database, userId: string, postId: string, at = new Date()): Promise<void> {
+  if ((await awardedToday(db, userId, "POST", at)) >= EARN.postsPerDay) return;
+  await grant(db, userId, "POST", postId, EARN.post);
+}
+
+// ── Wallet ─────────────────────────────────────────────────────────────────
+
+const PAGE = 50;
+
+/** Balance plus history, newest first. Cursor: "<ISO time>_<id>". */
+export async function wallet(db: Executor, user: UserRow | null, cursor?: string | null): Promise<WalletResponse> {
+  if (!user) throw new ServiceError(401, "SIGN_IN_REQUIRED");
+  const l = schema.ledgerEntry;
+  const conds = [eq(l.userId, user.id)];
+  if (cursor) {
+    const i = cursor.lastIndexOf("_");
+    const t = new Date(cursor.slice(0, i));
+    const id = cursor.slice(i + 1);
+    if (i < 0 || Number.isNaN(t.getTime())) throw new ServiceError(400, "INVALID_CURSOR");
+    conds.push(or(lt(l.createdAt, t), and(eq(l.createdAt, t), lt(l.id, id)))!);
+  }
+  const [bal, rows] = await Promise.all([balanceOf(db, user.id), db.select().from(l).where(and(...conds)).orderBy(desc(l.createdAt), desc(l.id)).limit(PAGE + 1)]);
+  const page = rows.slice(0, PAGE);
+  const battleIds = [...new Set(page.flatMap((r) => (r.reason === "BATTLE" ? [r.ref] : r.reason === "VOTE" ? [r.ref.split(":")[0]!] : [])))];
+  const titles = battleIds.length
+    ? new Map((await db.select({ id: schema.battle.id, title: schema.battle.title }).from(schema.battle).where(inArray(schema.battle.id, battleIds))).map((b) => [b.id, b.title]))
+    : new Map<string, string>();
+  const label = (r: (typeof page)[number]): { label: string; link: string | null } => {
+    switch (r.reason as LedgerReason) {
+      case "DAILY":
+        return { label: "Daily reward", link: null };
+      case "ACHIEVEMENT": {
+        const d = achievementDef(r.ref);
+        return { label: d ? `${d.icon} ${d.title}` : "Achievement", link: "/achievements" };
+      }
+      case "LEVEL_UP":
+        return { label: `Reached level ${r.ref}`, link: null };
+      case "BATTLE":
+        return { label: `Battle: ${titles.get(r.ref) ?? "a battle"}`, link: `/battle/${r.ref}` };
+      case "VOTE": {
+        const [id, round] = r.ref.split(":");
+        return { label: `Voted in round ${Number(round) + 1} of ${titles.get(id!) ?? "a battle"}`, link: `/battle/${id}` };
+      }
+      case "POST":
+        return { label: "Posted", link: `/post/${r.ref}` };
+      default:
+        return { label: r.reason, link: null };
+    }
+  };
+  const last = page[page.length - 1];
+  return {
+    ...levelProgress(bal.xp),
+    coins: bal.coins,
+    history: page.map((r) => ({ id: r.id, reason: r.reason as LedgerReason, ...label(r), xp: r.xp, coins: r.coins, createdAt: r.createdAt.toISOString() })),
+    nextCursor: rows.length > PAGE && last ? `${last.createdAt.toISOString()}_${last.id}` : null,
+  };
 }

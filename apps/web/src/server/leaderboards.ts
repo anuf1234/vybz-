@@ -26,6 +26,7 @@ export function parseLeaderboardQuery(sp: URLSearchParams): LeaderboardQuery {
   if (!["global", "following", "genre"].includes(scope) || !["week", "month", "all"].includes(period) || !["wins", "rounds", "xp"].includes(metric)) {
     throw new ServiceError(400, "INVALID_QUERY");
   }
+  if (scope === "genre" && metric === "xp") throw new ServiceError(400, "INVALID_QUERY", "XP isn't counted per genre.");
   if (scope === "genre" && (!genre || !(GENRE_KEYS as string[]).includes(genre))) throw new ServiceError(400, "INVALID_QUERY", "Pick a genre.");
   return { scope, genre: scope === "genre" ? genre : null, period, metric };
 }
@@ -59,7 +60,27 @@ async function totals(deps: BattleDeps, viewer: UserRow | null, q: LeaderboardQu
     .innerJoin(schema.user, eq(schema.user.id, p.userId))
     .where(and(...conds))
     .groupBy(p.userId);
-  const out: Row[] = rows.map((r) => ({ ...r, xp: 0 }));
+  let out: Row[] = rows.map((r) => ({ ...r, xp: 0 }));
+  if (q.metric === "xp") {
+    // XP comes from the ledger (battles, votes, posts, rewards), in the same period and scope.
+    const l = schema.ledgerEntry;
+    const xconds: SQL[] = [eq(schema.user.status, "ACTIVE")];
+    if (since) xconds.push(gte(l.createdAt, since));
+    if (q.scope === "following") {
+      const followed = deps.db.select({ id: schema.follow.followeeId }).from(schema.follow).where(eq(schema.follow.followerId, viewer!.id));
+      xconds.push(or(eq(l.userId, viewer!.id), inArray(l.userId, followed))!);
+    }
+    const xp = await deps.db
+      .select({ userId: l.userId, xp: sql<number>`coalesce(sum(${l.xp}), 0)::int` })
+      .from(l)
+      .innerJoin(schema.user, eq(schema.user.id, l.userId))
+      .where(and(...xconds))
+      .groupBy(l.userId);
+    const record = new Map(out.map((r) => [r.userId, r]));
+    out = xp
+      .filter((x) => x.xp > 0)
+      .map((x) => ({ ...(record.get(x.userId) ?? { userId: x.userId, wins: 0, losses: 0, draws: 0, roundsWon: 0, battles: 0 }), xp: x.xp }));
+  }
   const key = (r: Row) => (q.metric === "rounds" ? [r.roundsWon, r.wins, -r.losses] : q.metric === "xp" ? [r.xp, r.wins, r.roundsWon] : [r.wins, r.roundsWon, -r.losses]);
   return out.sort((x, y) => {
     const a = key(x);

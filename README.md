@@ -30,6 +30,8 @@ Sign up (email/password or Google), challenge someone (or post an open challenge
 
 **Social (Step 3).** Follow people (follower and following lists, "people to follow" from who follows you, who you've battled, and top players). Post text with an optional song, public playlist or public battle; like and comment. Two feeds: Following and For you, loading older posts as you scroll. One-to-one messages when either person follows the other, with unread counts. Blocking hides two people from each other everywhere (feeds, comments, follows, messages). Notifications for new followers, likes, comments and messages open the right screen. Posts, comments, messages and users can be reported; moderators hide them from the queue.
 
+**Progression (Step 4).** Leaderboards: global, people you follow, or one genre; this week, 30 days or all time; by battles won, rounds won or XP, with your own row pinned. 22 achievements with progress bars (battles, wins, flawless wins, genres, daily battles, votes, posts, followers, playlists, streaks, levels). A daily reward on Home: claim once a day in your time zone, climbing a 7-day ladder. Streaks for daily claims, wins in a row and days battling. XP and coins for finishing and winning battles, rounds won, votes and posts (votes and posts capped per day), plus achievement, daily and level-up rewards; levels follow 50·L·(L−1) XP. The XP & coins screen shows your balance, how to earn, and the full history. Coins can't be spent yet.
+
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.

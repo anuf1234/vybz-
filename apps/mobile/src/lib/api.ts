@@ -1,4 +1,5 @@
 import type {
+  WalletResponse,
   ProgressView,
   DailyClaimResponse,
   DailyRewardState,
@@ -130,6 +131,7 @@ const MESSAGES: Record<string, string> = {
   ROUND_NOT_ACCEPTING_SUBMISSIONS: "Picks are closed for this round.",
   ALREADY_SUBMITTED: "You already picked for this round.",
   ALREADY_VOTED: "You already voted this round.",
+  INVALID_QUERY: "That leaderboard isn't available.",
   ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
   VOTING_CLOSED: "Voting has closed for this round.",
   HANDLE_TAKEN: "That handle is taken.",
@@ -269,6 +271,7 @@ export const api = {
   unblock: (handle: string) => request<null>("DELETE", `/api/v1/users/${encodeURIComponent(handle)}/block`),
   daily: () => request<DailyRewardState>("GET", `/api/v1/me/daily?tz=${encodeURIComponent(timeZone())}`),
   claimDaily: () => request<DailyClaimResponse>("POST", "/api/v1/me/daily", { timeZone: timeZone() }),
+  wallet: (cursor?: string | null) => request<WalletResponse>("GET", `/api/v1/me/wallet${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
   progress: (handle: string) => request<ProgressView>("GET", `/api/v1/users/${encodeURIComponent(handle)}/progress`),
   achievements: (handle: string) => request<AchievementsResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/achievements`),
   followList: (handle: string, which: "followers" | "following") => request<UserListResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/${which}`),

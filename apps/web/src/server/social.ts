@@ -1,4 +1,5 @@
 import { checkAchievements } from "./achievements";
+import { awardPost } from "./progression";
 import type {
   CommentView,
   ConversationView,
@@ -257,6 +258,11 @@ export async function createPost(deps: BattleDeps, user: UserRow | null, body: u
 
   const id = newId();
   await deps.db.insert(schema.post).values({ id, authorId: me.id, body: text, trackId, playlistId, battleId });
+  try {
+    await awardPost(deps.db, me.id, id);
+  } catch (err) {
+    console.error("post award failed", id, err);
+  }
   await checkAchievements(deps.db, deps.push, [me.id]);
   return { id };
 }

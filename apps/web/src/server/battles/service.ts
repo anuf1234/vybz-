@@ -1,4 +1,5 @@
 import { checkAchievements } from "../achievements";
+import { awardBattle, awardVote } from "../progression";
 import {
   type BattleAggregate,
   type BattleFeed,
@@ -162,14 +163,16 @@ function mapError(err: unknown): unknown {
 /** Progression for everyone who played. Never fails the battle. */
 async function afterBattleCompleted(deps: BattleDeps, agg: BattleAggregate): Promise<void> {
   try {
+    await awardBattle(deps.db, agg);
     await checkAchievements(deps.db, deps.push, agg.participants.map((p) => p.userId));
   } catch (err) {
     console.error("progression failed", agg.id, err);
   }
 }
 
-async function afterVote(deps: BattleDeps, voter: UserRow, _battleId: string, _roundIndex: number): Promise<void> {
+async function afterVote(deps: BattleDeps, voter: UserRow, battleId: string, roundIndex: number): Promise<void> {
   try {
+    await awardVote(deps.db, voter.id, battleId, roundIndex, now(deps));
     await checkAchievements(deps.db, deps.push, [voter.id]);
   } catch (err) {
     console.error("progression failed", voter.id, err);

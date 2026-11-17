@@ -18,10 +18,12 @@ export default function Rankings() {
   const [period, setPeriod] = useState<LeaderboardPeriod>("week");
   const [metric, setMetric] = useState<LeaderboardMetric>("wins");
   const scope = board === "global" || board === "following" ? board : "genre";
-  const lb = useResource(() => api.leaderboard({ scope, genre: scope === "genre" ? board : null, period, metric }), [board, period, metric, signedIn]);
+  // XP isn't counted per genre.
+  const shownMetric: LeaderboardMetric = scope === "genre" && metric === "xp" ? "wins" : metric;
+  const lb = useResource(() => api.leaderboard({ scope, genre: scope === "genre" ? board : null, period, metric: shownMetric }), [board, period, shownMetric, signedIn]);
   const me = lb.data?.me ?? null;
   const meShown = me && lb.data?.items.some((e) => e.user.id === me.user.id);
-  const unit = metric === "wins" ? "wins" : metric === "rounds" ? "rounds" : "XP";
+  const unit = shownMetric === "wins" ? "wins" : shownMetric === "rounds" ? "rounds" : "XP";
 
   return (
     <FlatList
@@ -48,11 +50,12 @@ export default function Rankings() {
             ]}
           />
           <Segmented
-            value={metric}
+            value={shownMetric}
             onChange={setMetric}
             options={[
               { value: "wins", label: "Battles won" },
               { value: "rounds", label: "Rounds won" },
+              ...(scope === "genre" ? [] : [{ value: "xp" as const, label: "XP" }]),
             ]}
           />
           {lb.error ? <ErrorBanner message={lb.error.message} onRetry={() => void lb.reload()} /> : null}
