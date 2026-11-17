@@ -899,7 +899,7 @@ export async function profile(deps: BattleDeps, viewer: UserRow | null, handle: 
   const battleIds = deps.db.select({ id: schema.battleParticipant.battleId }).from(schema.battleParticipant).where(eq(schema.battleParticipant.userId, u.id));
   const rows = await deps.db.select().from(schema.battle).where(inArray(schema.battle.id, battleIds)).orderBy(desc(schema.battle.updatedAt)).limit(20);
   return {
-    user: { id: u.id, handle: u.handle, displayName: u.name, image: u.image },
+    user: (await usersById(deps.db, [u.id])).get(u.id)!,
     record: all,
     recent: await toListItems(deps, viewer, rows),
     social: await socialFor(deps.db, viewer, u.id),
