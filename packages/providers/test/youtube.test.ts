@@ -54,9 +54,9 @@ describe("YouTubeAdapter", () => {
   });
 
   it("surfaces API errors without leaking the key", async () => {
-    const { fetch } = stubFetch({ "/search": { error: "quota" } }, 403);
+    const { fetch } = stubFetch({ "/search": { error: "quotaExceeded for key secret-key" } }, 403);
     const adapter = new YouTubeAdapter({ apiKey: "secret-key", fetch });
-    await expect(adapter.search("x", { storefront: "us" })).rejects.toThrow(/YOUTUBE.*\/search failed$/);
+    await expect(adapter.search("x", { storefront: "us" })).rejects.toThrow(/YOUTUBE.*\/search failed with 403: .*quotaExceeded for key \[key\]/);
     await expect(adapter.search("x", { storefront: "us" })).rejects.not.toThrow(/secret-key/);
   });
 });
