@@ -16,13 +16,15 @@ if (Platform.OS !== "web") {
   });
 }
 
-/** The battle id of the last push the user tapped (always null on web, where push isn't supported). */
-export const useTappedBattleId: () => string | null =
+/** Where the last tapped push should open (always null on web, where push isn't supported). */
+export const useTappedPath: () => string | null =
   Platform.OS === "web"
     ? () => null
     : () => {
         const data = Notifications.useLastNotificationResponse()?.notification.request.content.data;
-        return typeof data?.battleId === "string" ? data.battleId : null;
+        // Only in-app paths, never outside links.
+        if (typeof data?.link === "string" && data.link.startsWith("/")) return data.link;
+        return typeof data?.battleId === "string" ? `/battle/${data.battleId}` : null;
       };
 
 let registered = false;

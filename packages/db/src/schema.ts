@@ -458,6 +458,8 @@ export const notification = pgTable(
     title: text("title").notNull(),
     body: text("body").notNull(),
     battleId: text("battle_id").references(() => battle.id, { onDelete: "cascade" }),
+    /** In-app path to open, e.g. /post/<id>, /messages/<id>, /user/<handle>. */
+    link: text("link"),
     readAt: ts("read_at"),
     createdAt: createdAt(),
   },
@@ -487,7 +489,7 @@ export const report = pgTable(
     reporterId: text("reporter_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    subjectType: text("subject_type", { enum: ["CHAT_MESSAGE", "BATTLE", "USER"] }).notNull(),
+    subjectType: text("subject_type", { enum: ["CHAT_MESSAGE", "BATTLE", "USER", "POST", "COMMENT", "DIRECT_MESSAGE"] }).notNull(),
     subjectId: text("subject_id").notNull(),
     battleId: text("battle_id").references(() => battle.id, { onDelete: "set null" }),
     reason: text("reason").notNull(),
@@ -588,6 +590,124 @@ export const playlistCollaborator = pgTable(
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.playlistId, t.userId] }), index("playlist_collaborator_user_idx").on(t.userId)],
+);
+
+// ── Social ─────────────────────────────────────────────────────────────────
+
+export const follow = pgTable(
+  "follow",
+  {
+    followerId: text("follower_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    followeeId: text("followee_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.followerId, t.followeeId] }), index("follow_followee_idx").on(t.followeeId), check("follow_not_self", sql`${t.followerId} <> ${t.followeeId}`)],
+);
+
+/** Blocking hides both people from each other: feeds, comments, follows and messages. */
+export const block = pgTable(
+  "block",
+  {
+    blockerId: text("blocker_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    blockedId: text("blocked_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.blockerId, t.blockedId] }), index("block_blocked_idx").on(t.blockedId)],
+);
+
+export const post = pgTable(
+  "post",
+  {
+    id: text("id").primaryKey(),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    /** At most one attachment. */
+    trackId: text("track_id").references(() => track.id, { onDelete: "set null" }),
+    playlistId: text("playlist_id").references(() => playlist.id, { onDelete: "set null" }),
+    battleId: text("battle_id").references(() => battle.id, { onDelete: "set null" }),
+    hiddenAt: ts("hidden_at"),
+    hiddenById: text("hidden_by_id").references(() => user.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index("post_author_idx").on(t.authorId, t.createdAt), index("post_created_idx").on(t.createdAt)],
+);
+
+export const postLike = pgTable(
+  "post_like",
+  {
+    postId: text("post_id")
+      .notNull()
+      .references(() => post.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.postId, t.userId] })],
+);
+
+export const postComment = pgTable(
+  "post_comment",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => post.id, { onDelete: "cascade" }),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    hiddenAt: ts("hidden_at"),
+    hiddenById: text("hidden_by_id").references(() => user.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index("post_comment_post_idx").on(t.postId, t.createdAt), index("post_comment_author_idx").on(t.authorId, t.createdAt)],
+);
+
+/** A one-to-one conversation. userA < userB so each pair has one row. */
+export const conversation = pgTable(
+  "conversation",
+  {
+    id: text("id").primaryKey(),
+    userA: text("user_a")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    userB: text("user_b")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    lastMessageAt: ts("last_message_at"),
+    aReadAt: ts("a_read_at"),
+    bReadAt: ts("b_read_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("conversation_pair_uq").on(t.userA, t.userB), index("conversation_b_idx").on(t.userB), check("conversation_order", sql`${t.userA} < ${t.userB}`)],
+);
+
+export const directMessage = pgTable(
+  "direct_message",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    senderId: text("sender_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    hiddenAt: ts("hidden_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("direct_message_conv_idx").on(t.conversationId, t.createdAt), index("direct_message_sender_idx").on(t.senderId, t.createdAt)],
 );
 
 export type User = typeof user.$inferSelect;
