@@ -409,3 +409,60 @@ export interface ModerationReportView {
 }
 
 export type ModerationAction = "DISMISS" | "HIDE_MESSAGE" | "VOID_BATTLE" | "SUSPEND_USER";
+
+// ── Library and playlists ──────────────────────────────────────────────────
+
+/** A stored song in a list (saved songs or a playlist). Usable anywhere a search hit is, e.g. to pick it in a battle. */
+export interface SavedTrack extends CatalogHit {
+  trackId: string;
+}
+
+export interface LibraryResponse {
+  items: (SavedTrack & { savedAt: string })[];
+  /** Track ids in the library, for showing saved state elsewhere. */
+  trackIds: string[];
+}
+
+export type PlaylistVisibility = "PUBLIC" | "PRIVATE";
+
+export interface PlaylistSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  owner: UserSummary;
+  visibility: PlaylistVisibility;
+  trackCount: number;
+  /** Up to four covers for a mosaic. */
+  artworkUrls: string[];
+  genres: string[];
+  eraFrom: number | null;
+  eraTo: number | null;
+  updatedAt: string;
+}
+
+export interface PlaylistTrackView extends SavedTrack {
+  position: number;
+  addedBy: UserSummary | null;
+}
+
+export interface PlaylistView extends PlaylistSummary {
+  tracks: PlaylistTrackView[];
+  collaborators: UserSummary[];
+  /** Only for people who can share it: append `?code=` to the link for private playlists. */
+  shareCode: string | null;
+  viewer: { isOwner: boolean; canEdit: boolean };
+}
+
+export interface PlaylistListResponse {
+  items: PlaylistSummary[];
+}
+
+export interface CreatePlaylistRequest {
+  title: string;
+  description?: string;
+  visibility?: PlaylistVisibility;
+  /** Fill it with suggestions for this theme (VYBZ genre keys, years). */
+  generate?: { genres: string[]; eraFrom?: number; eraTo?: number; size?: number };
+}
+
+export const PLAYLIST_MAX_TRACKS = 200;

@@ -44,6 +44,10 @@ export default function RootLayout() {
         <Stack.Screen name="battle/[id]/counter" options={{ title: "Counter-offer", presentation: "modal" }} />
         <Stack.Screen name="user/[handle]" options={{ title: "Profile" }} />
         <Stack.Screen name="notifications" options={{ title: "Notifications" }} />
+        <Stack.Screen name="rankings" options={{ title: "Rankings" }} />
+        <Stack.Screen name="playlist/[id]/index" options={{ title: "Playlist" }} />
+        <Stack.Screen name="playlist/[id]/add" options={{ title: "Add songs", presentation: "modal" }} />
+        <Stack.Screen name="playlist/new" options={{ title: "New playlist", presentation: "modal" }} />
         <Stack.Screen name="mod/index" options={{ title: "Moderation" }} />
         <Stack.Screen name="sign-in" options={{ title: "Sign in", presentation: "modal" }} />
         <Stack.Screen name="sign-up" options={{ title: "Create account", presentation: "modal" }} />

@@ -40,7 +40,7 @@ import { type Database, type Executor, newId, schema, and, desc, eq, inArray, is
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
 import type { AiJudge, JudgeInput } from "../ai-judge";
 import { z } from "zod";
-import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, guestViewer, refsForTracks, toTrackView, viewerContext } from "../catalog";
+import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, ensureYouTubeMatch, guestViewer, refsForTracks, toTrackView, viewerContext } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
 import { voterFacts } from "./eligibility";
 import { buildBattleView, type ViewData } from "./view";
@@ -316,12 +316,14 @@ export async function submitPick(deps: BattleDeps, actorIn: UserRow | null, id: 
       }
       throw err;
     });
+    // Songs saved from a library or playlist get their YouTube match now.
+    const withVideo = await ensureYouTubeMatch(deps.db, deps.catalog, t);
     // Every battle must work for listeners with no connected accounts.
-    const guestSources = resolvePlayback(t.refs, guestViewer(deps.catalog.storefront), deps.catalog.playback);
+    const guestSources = resolvePlayback(withVideo.refs, guestViewer(deps.catalog.storefront), deps.catalog.playback);
     if (!guestSources.some((s) => s.tier !== "LINK_OUT")) {
       throw new ServiceError(409, "TRACK_NOT_PLAYABLE", `"${t.track.title}" can't be played for everyone. Pick another version.`);
     }
-    stored.push(t);
+    stored.push(withVideo);
   }
 
   try {

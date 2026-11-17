@@ -1,4 +1,8 @@
 import type {
+  CreatePlaylistRequest,
+  LibraryResponse,
+  PlaylistListResponse,
+  PlaylistView,
   ArtistDetailResponse,
   ArtistSearchResponse,
   SuggestionsResponse,
@@ -46,7 +50,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function request<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
+async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   // Lets the server offer full Apple Music tracks to subscribers on this device.
@@ -140,6 +144,12 @@ const MESSAGES: Record<string, string> = {
   BAD_ORIGIN: "Request blocked for security. Update the app and try again.",
   LISTEN_REQUIRED: "Listen to every entry before voting.",
   UNKNOWN_SUBMISSION: "That entry isn't in this round.",
+  NOT_OWNER: "Only the playlist's owner can do that.",
+  ALREADY_IN_PLAYLIST: "That song is already in this playlist.",
+  PLAYLIST_FULL: "This playlist is full.",
+  ORDER_MISMATCH: "The playlist changed. Pull down to refresh.",
+  TOO_MANY_PLAYLISTS: "You have the maximum number of playlists.",
+  TOO_MANY_COLLABORATORS: "This playlist has the maximum number of collaborators.",
 };
 
 export function describeError(code: string, status = 0): string {
@@ -194,6 +204,21 @@ export const api = {
     if (t.eraTo !== undefined) qs.set("eraTo", String(t.eraTo));
     return request<SuggestionsResponse>("GET", `/api/v1/catalog/suggestions?${qs}`);
   },
+  library: () => request<LibraryResponse>("GET", "/api/v1/library"),
+  save: (song: { catalogId: string } | { trackId: string }) => request<{ trackId: string }>("POST", "/api/v1/library", song),
+  unsave: (trackId: string) => request<null>("DELETE", `/api/v1/library/${encodeURIComponent(trackId)}`),
+  playlists: (scope: "mine" | "public" | { handle: string } = "mine") =>
+    request<PlaylistListResponse>("GET", `/api/v1/playlists?${typeof scope === "string" ? `scope=${scope}` : `scope=user&handle=${encodeURIComponent(scope.handle)}`}`),
+  playlist: (id: string, code?: string | null) => request<PlaylistView>("GET", `/api/v1/playlists/${encodeURIComponent(id)}${code ? `?code=${encodeURIComponent(code)}` : ""}`),
+  createPlaylist: (body: CreatePlaylistRequest) => request<{ id: string }>("POST", "/api/v1/playlists", body),
+  updatePlaylist: (id: string, body: { title?: string; description?: string | null; visibility?: "PUBLIC" | "PRIVATE" }) =>
+    request<PlaylistView>("PATCH", `/api/v1/playlists/${encodeURIComponent(id)}`, body),
+  deletePlaylist: (id: string) => request<null>("DELETE", `/api/v1/playlists/${encodeURIComponent(id)}`),
+  addToPlaylist: (id: string, song: { catalogId: string } | { trackId: string }) => request<{ trackId: string }>("POST", `/api/v1/playlists/${encodeURIComponent(id)}/tracks`, song),
+  removeFromPlaylist: (id: string, trackId: string) => request<null>("DELETE", `/api/v1/playlists/${encodeURIComponent(id)}/tracks/${encodeURIComponent(trackId)}`),
+  reorderPlaylist: (id: string, trackIds: string[]) => request<null>("PUT", `/api/v1/playlists/${encodeURIComponent(id)}/order`, { trackIds }),
+  addCollaborator: (id: string, handle: string) => request<null>("POST", `/api/v1/playlists/${encodeURIComponent(id)}/collaborators`, { handle }),
+  removeCollaborator: (id: string, userId: string) => request<null>("DELETE", `/api/v1/playlists/${encodeURIComponent(id)}/collaborators/${encodeURIComponent(userId)}`),
   search: (q: string, source?: ProviderKind) =>
     request<CatalogSearchResponse>("GET", `/api/v1/catalog/search?q=${encodeURIComponent(q)}${source ? `&source=${source}` : ""}`),
   rankings: () => request<RankingsResponse>("GET", "/api/v1/rankings"),

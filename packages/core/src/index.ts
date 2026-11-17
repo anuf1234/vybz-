@@ -6,4 +6,4 @@ export * from "./policy";
 export * from "./handles";
 export * from "./genres";
 export type * from "./api";
-export { REACTIONS } from "./api";
+export { PLAYLIST_MAX_TRACKS, REACTIONS } from "./api";
