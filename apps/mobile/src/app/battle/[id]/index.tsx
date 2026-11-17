@@ -4,6 +4,7 @@ import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { shareStoryCard } from "@/lib/share-card";
+import * as WebBrowser from "expo-web-browser";
 import { EntryPlayer } from "@/components/entry-player";
 import { LiveStrip } from "@/components/live-strip";
 import { SaveButton } from "@/components/save-button";
@@ -89,6 +90,15 @@ export default function BattleScreen() {
       </View>
 
       <Scoreboard battle={b} />
+      {(b.status === "IN_PROGRESS" || b.status === "COMPLETE") && (b.visibility === "PUBLIC" || b.inviteCode) ? (
+        <Pressable
+          onPress={() => void WebBrowser.openBrowserAsync(`${API_URL}/watch/${b.id}${b.visibility === "PRIVATE" && b.inviteCode ? `?code=${b.inviteCode}` : ""}`)}
+          accessibilityRole="link"
+          style={{ alignSelf: "center", paddingVertical: 4 }}
+        >
+          <Text style={[type.small, { color: color.violetSoft, fontWeight: "700" }]}>📺 Watch party: cast it to a TV or show it on your stream</Text>
+        </Pressable>
+      ) : null}
       {error ? <ErrorBanner message={error} /> : null}
 
       {b.format === "MULTI" && b.status === "OPEN_CHALLENGE" ? (
