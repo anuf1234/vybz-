@@ -1,9 +1,10 @@
-import { DAILY_LADDER, type DailyClaimResponse, type DailyRewardState, type Reward, ladderDay } from "@vybz/core";
+import { DAILY_LADDER, type DailyClaimResponse, type DailyRewardState, type ProgressView, type Reward, ladderDay } from "@vybz/core";
 import { type Database, type Executor, desc, eq, newId, schema, sql } from "@vybz/db";
 import { z } from "zod";
 import { checkAchievements } from "./achievements";
 import { ServiceError, type UserRow } from "./battles/service";
 import type { PushSender } from "./notifications";
+import { streaksFor } from "./streaks";
 
 /**
  * The XP and coin ledger, and daily rewards. Every award is a ledger row
@@ -124,4 +125,10 @@ export async function claimDaily(db: Database, push: PushSender | null | undefin
   });
   await checkAchievements(db, push, [user.id]);
   return { reward, state: await dailyState(db, user, tz, at) };
+}
+
+// ── Profile summary ────────────────────────────────────────────────────────
+
+export async function progressFor(db: Executor, userId: string): Promise<ProgressView> {
+  return { streaks: await streaksFor(db, userId) };
 }

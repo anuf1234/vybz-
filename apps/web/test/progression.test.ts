@@ -5,6 +5,7 @@ import type { BattleDeps, UserRow } from "../src/server/battles/service";
 import { leaderboard } from "../src/server/leaderboards";
 import { achievementsFor, checkAchievements } from "../src/server/achievements";
 import { balanceOf, claimDaily, dailyState } from "../src/server/progression";
+import { streaksFor } from "../src/server/streaks";
 import { createPost, followUser } from "../src/server/social";
 import { TEST_DB_URL, freshDb } from "./helpers";
 
@@ -160,6 +161,26 @@ describe.skipIf(!TEST_DB_URL)("progression", () => {
       expect(hop).toMatchObject({ today: "2026-04-01", canClaim: false });
       await expect(claimDaily(h.db, null, d, { timeZone: "Asia/Tokyo" }, at("2026-04-01T09:00:00Z"))).rejects.toMatchObject({ code: "ALREADY_CLAIMED" });
       expect((await claimDaily(h.db, null, d, { timeZone: "Asia/Tokyo" }, at("2026-04-01T13:00:00Z"))).state.streak).toBe(2);
+    });
+  });
+
+  describe("streaks", () => {
+    it("tracks wins in a row and days played", async () => {
+      // bea: lost 40 days ago, won 2 days ago; then two more wins today.
+      await finishedDuel(h, u.bea!, u.dee!, { winner: "a", aRounds: 2, bRounds: 0 });
+      await finishedDuel(h, u.bea!, u.cyd!, { winner: "a", aRounds: 2, bRounds: 1 });
+      const s = await streaksFor(h.db, u.bea!.id);
+      expect(s.wins).toEqual({ current: 3, best: 3 });
+      expect(s.play.current).toBe(1);
+      const got = await checkAchievements(h.db, null, [u.bea!.id]);
+      expect(got.map((d) => d.code)).toContain("win_streak_3");
+      // dee lost them all.
+      expect((await streaksFor(h.db, u.dee!.id)).wins).toEqual({ current: 0, best: 0 });
+    });
+
+    it("tracks daily claims", async () => {
+      const s = await streaksFor(h.db, u.cyd!.id, new Date("2026-03-05T20:00:00Z"));
+      expect(s.daily).toEqual({ current: 1, best: 2 });
     });
   });
 });

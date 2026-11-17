@@ -2,6 +2,7 @@ import { ACHIEVEMENTS, type AchievementDef, type AchievementMetric, type Achieve
 import { type Database, type Executor, eq, inArray, schema, sql } from "@vybz/db";
 import { createNotifications, type PushSender } from "./notifications";
 import { grant } from "./progression";
+import { streaksFor } from "./streaks";
 
 /**
  * Achievements: a fixed catalog (in @vybz/core) checked against each person's
@@ -22,14 +23,10 @@ const ZERO: AchievementStats = {
   posts: 0,
   followers: 0,
   playlists: 0,
+  bestWinStreak: 0,
+  bestDailyStreak: 0,
+  bestPlayStreak: 0,
 };
-
-/** Extra totals contributed by other modules (levels, streaks). */
-type ExtraStats = (db: Executor, userId: string) => Promise<Partial<Record<string, number>>>;
-const extras: ExtraStats[] = [];
-export function addAchievementStats(fn: ExtraStats): void {
-  extras.push(fn);
-}
 
 export async function achievementStats(db: Executor, userId: string): Promise<AchievementStats> {
   const res = await db.execute<Record<string, number>>(sql`
@@ -52,9 +49,8 @@ export async function achievementStats(db: Executor, userId: string): Promise<Ac
       (select count(*)::int from follow where followee_id = ${userId}) as "followers",
       (select count(*)::int from playlist where owner_id = ${userId}) as "playlists"
   `);
-  const stats = { ...ZERO, ...(res.rows[0] ?? {}) } as AchievementStats;
-  for (const fn of extras) Object.assign(stats, await fn(db, userId));
-  return stats;
+  const streaks = await streaksFor(db, userId);
+  return { ...ZERO, ...(res.rows[0] ?? {}), bestWinStreak: streaks.wins.best, bestDailyStreak: streaks.daily.best, bestPlayStreak: streaks.play.best } as AchievementStats;
 }
 
 /**

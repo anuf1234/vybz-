@@ -1,4 +1,5 @@
 import type {
+  ProgressView,
   DailyClaimResponse,
   DailyRewardState,
   AchievementsResponse,
@@ -268,6 +269,7 @@ export const api = {
   unblock: (handle: string) => request<null>("DELETE", `/api/v1/users/${encodeURIComponent(handle)}/block`),
   daily: () => request<DailyRewardState>("GET", `/api/v1/me/daily?tz=${encodeURIComponent(timeZone())}`),
   claimDaily: () => request<DailyClaimResponse>("POST", "/api/v1/me/daily", { timeZone: timeZone() }),
+  progress: (handle: string) => request<ProgressView>("GET", `/api/v1/users/${encodeURIComponent(handle)}/progress`),
   achievements: (handle: string) => request<AchievementsResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/achievements`),
   followList: (handle: string, which: "followers" | "following") => request<UserListResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/${which}`),
   peopleSuggestions: () => request<{ items: PeopleSuggestion[] }>("GET", "/api/v1/people/suggestions"),

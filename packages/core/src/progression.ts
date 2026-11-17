@@ -15,7 +15,10 @@ export type AchievementMetric =
   | "votesCast"
   | "posts"
   | "followers"
-  | "playlists";
+  | "playlists"
+  | "bestWinStreak"
+  | "bestDailyStreak"
+  | "bestPlayStreak";
 
 export interface AchievementDef {
   code: string;
@@ -56,6 +59,10 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   a("first_post", "✍️", "On the record", "Share your first post.", "posts", 1, 20, 5),
   a("followers_10", "📣", "Following", "Get 10 followers.", "followers", 10, 100, 40),
   a("curator", "🗂️", "Curator", "Make 3 playlists.", "playlists", 3, 40, 15),
+  a("win_streak_3", "⚡", "On a roll", "Win 3 battles in a row.", "bestWinStreak", 3, 100, 40),
+  a("win_streak_5", "🌪️", "Unstoppable", "Win 5 battles in a row.", "bestWinStreak", 5, 200, 80),
+  a("daily_7", "🗓️", "Every day", "Claim your daily reward 7 days in a row.", "bestDailyStreak", 7, 100, 50),
+  a("play_7", "🎚️", "In the booth", "Finish a battle 7 days in a row.", "bestPlayStreak", 7, 150, 60),
 ];
 
 export function achievementDef(code: string): AchievementDef | undefined {
@@ -123,4 +130,56 @@ export interface DailyRewardState {
 export interface DailyClaimResponse {
   reward: Reward;
   state: DailyRewardState;
+}
+
+// ── Streaks ────────────────────────────────────────────────────────────────
+
+export interface Streak {
+  current: number;
+  best: number;
+}
+
+export interface Streaks {
+  /** Daily rewards claimed on consecutive days. */
+  daily: Streak;
+  /** Battles won in a row (a loss or a draw ends it). */
+  wins: Streak;
+  /** Consecutive days with at least one finished battle. */
+  play: Streak;
+}
+
+/** Longest and trailing runs of consecutive YYYY-MM-DD days; the trailing run only counts if it reaches yesterday or today. */
+export function dayRuns(days: string[], today: string): Streak {
+  const sorted = [...new Set(days)].sort();
+  let best = 0;
+  let run = 0;
+  let prev: string | null = null;
+  for (const d of sorted) {
+    run = prev && nextDay(prev) === d ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+  const alive = prev !== null && (prev === today || nextDay(prev) === today);
+  return { current: alive ? run : 0, best };
+}
+
+/** Runs of `true` in order; the trailing run is current. */
+export function boolRuns(results: boolean[]): Streak {
+  let best = 0;
+  let run = 0;
+  for (const r of results) {
+    run = r ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  return { current: run, best };
+}
+
+function nextDay(day: string): string {
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/** Someone's progression at a glance (profiles, Home). */
+export interface ProgressView {
+  streaks: Streaks;
 }
