@@ -15,7 +15,7 @@ import { API_URL } from "@/lib/config";
 import { useResource } from "@/lib/use-resource";
 
 export default function PlaylistScreen() {
-  const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
+  const { id, code, imported, skipped } = useLocalSearchParams<{ id: string; code?: string; imported?: string; skipped?: string }>();
   const router = useRouter();
   const session = useSession();
   const me = session.data?.user.id ?? null;
@@ -88,6 +88,11 @@ export default function PlaylistScreen() {
       ListHeaderComponent={
         <View style={{ gap: space.md, marginBottom: space.sm }}>
           <Stack.Screen options={{ title: p.title }} />
+          {imported ? (
+            <Text style={[type.small, { color: color.violetSoft }]}>
+              Imported {imported} song{imported === "1" ? "" : "s"} from YouTube{Number(skipped) ? ` (${skipped} skipped: removed, private or not playable)` : ""}.
+            </Text>
+          ) : null}
           <View style={{ flexDirection: "row", gap: space.md, alignItems: "center" }}>
             <Mosaic urls={p.artworkUrls} size={96} />
             <View style={{ flex: 1, gap: 4 }}>

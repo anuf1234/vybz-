@@ -1,4 +1,5 @@
 import type {
+  ImportPlaylistResponse,
   ShopResponse,
   QuickBattleRequest,
   QuickBattleResponse,
@@ -141,6 +142,9 @@ const MESSAGES: Record<string, string> = {
   OWNED: "You already own this.",
   LEVEL_TOO_LOW: "Level up to unlock this.",
   NOT_OWNED: "Buy this frame first.",
+  INVALID_PLAYLIST_LINK: "That doesn't look like a YouTube playlist link.",
+  PLAYLIST_NOT_FOUND: "We couldn't open that playlist. Is it public or unlisted?",
+  IMPORT_UNAVAILABLE: "Importing isn't available right now.",
   ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
   VOTING_CLOSED: "Voting has closed for this round.",
   HANDLE_TAKEN: "That handle is taken.",
@@ -230,6 +234,7 @@ export const api = {
     request<null>("POST", `/api/v1/mod/reports/${encodeURIComponent(id)}`, { action, ...(note ? { note } : {}) }),
   hideMessage: (id: string) => request<null>("POST", `/api/v1/mod/messages/${encodeURIComponent(id)}/hide`),
   decline: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/decline`),
+  importPlaylist: (url: string) => request<ImportPlaylistResponse>("POST", "/api/v1/playlists/import", { url }),
   quickBattle: (body: QuickBattleRequest) => request<QuickBattleResponse>("POST", "/api/v1/quick-battle", body),
   cancel: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/cancel`),
   rematch: (id: string) => request<{ id: string }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rematch`),

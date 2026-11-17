@@ -57,6 +57,7 @@ export default function RootLayout() {
         <Stack.Screen name="playlist/[id]/index" options={{ title: "Playlist" }} />
         <Stack.Screen name="playlist/[id]/add" options={{ title: "Add songs", presentation: "modal" }} />
         <Stack.Screen name="playlist/new" options={{ title: "New playlist", presentation: "modal" }} />
+        <Stack.Screen name="playlist/import" options={{ title: "Import from YouTube", presentation: "modal" }} />
         <Stack.Screen name="mod/index" options={{ title: "Moderation" }} />
         <Stack.Screen name="sign-in" options={{ title: "Sign in", presentation: "modal" }} />
         <Stack.Screen name="sign-up" options={{ title: "Create account", presentation: "modal" }} />

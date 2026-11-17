@@ -617,3 +617,18 @@ export interface QuickBattleResponse {
   /** player: you took someone's waiting battle; bot: the VYBZ bot took yours; waiting: yours is open for others. */
   matched: "player" | "bot" | "waiting";
 }
+
+// ── Imports ────────────────────────────────────────────────────────────────
+
+export interface ImportPlaylistRequest {
+  /** A YouTube or YouTube Music playlist link (public or unlisted). */
+  url: string;
+}
+
+export interface ImportPlaylistResponse {
+  playlistId: string;
+  title: string;
+  imported: number;
+  /** Videos that couldn't be added (removed, private, not music…). */
+  skipped: number;
+}

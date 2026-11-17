@@ -229,10 +229,12 @@ export async function ensureTrack(db: Executor, deps: CatalogDeps, catalogId: st
   }
   if (!trackId) {
     trackId = newId();
+    // A YouTube-only song: "Artist - Song (Official Video)" → the song and the artist.
+    const named = candidate.provider === "YOUTUBE" ? parseVideoTitle(candidate) : { title: candidate.title, artist: candidate.artistName };
     await db.insert(schema.track).values({
       id: trackId,
-      title: candidate.title,
-      artistName: candidate.artistName,
+      title: named.title || candidate.title,
+      artistName: named.artist || candidate.artistName,
       albumName: candidate.albumName ?? null,
       isrc: candidate.isrc?.toUpperCase() ?? null,
       releaseYear: candidate.releaseYear ?? null,
