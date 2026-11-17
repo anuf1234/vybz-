@@ -1,7 +1,9 @@
 import type { ProfileView } from "@vybz/core";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { AchievementStrip } from "./achievement-strip";
 import { BattleCard } from "./battle-card";
+import { ProgressCard } from "./progress-card";
 import { color, space, type } from "./theme";
 import { Avatar, Card, SectionTitle } from "./ui";
 
@@ -27,6 +29,8 @@ export function ProfileBody({ profile, now, actions }: { profile: ProfileView; n
         <Stat label="Draws" value={record.draws} />
         <Stat label="Rounds" value={record.roundsWon} />
       </Card>
+      <ProgressCard handle={user.handle} />
+      <AchievementStrip handle={user.handle} />
       {profile.recent.length ? <SectionTitle>Recent battles</SectionTitle> : null}
       {profile.recent.map((b) => (
         <BattleCard key={b.id} battle={b} now={now} />

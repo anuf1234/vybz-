@@ -1,3 +1,4 @@
+import { checkAchievements } from "./achievements";
 import {
   type LibraryResponse,
   PLAYLIST_MAX_TRACKS,
@@ -274,6 +275,7 @@ export async function createPlaylist(deps: BattleDeps, user: UserRow | null, bod
       }
     }
   }
+  await checkAchievements(deps.db, deps.push, [me.id]);
   return { id };
 }
 

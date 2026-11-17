@@ -93,6 +93,12 @@ export default function Profile() {
           <Button title="Moderation queue" kind="secondary" />
         </Link>
       ) : null}
+      <Link href="/wallet" asChild>
+        <Button title="XP & coins" kind="secondary" />
+      </Link>
+      <Link href="/achievements" asChild>
+        <Button title="Achievements" kind="secondary" />
+      </Link>
       <Link href="/rankings" asChild>
         <Button title="Rankings" kind="secondary" />
       </Link>

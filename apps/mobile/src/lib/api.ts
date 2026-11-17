@@ -1,4 +1,13 @@
 import type {
+  WalletResponse,
+  ProgressView,
+  DailyClaimResponse,
+  DailyRewardState,
+  AchievementsResponse,
+  LeaderboardMetric,
+  LeaderboardPeriod,
+  LeaderboardResponse,
+  LeaderboardScope,
   CommentView,
   ConversationView,
   CreatePostRequest,
@@ -46,6 +55,15 @@ let guestKey: string | null = null;
 function viewerKey(): string {
   guestKey ??= Array.from({ length: 24 }, () => "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)]).join("");
   return guestKey;
+}
+
+/** The phone's IANA time zone, so "today" is the person's day. */
+export function timeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 export class ApiRequestError extends Error {
@@ -113,6 +131,8 @@ const MESSAGES: Record<string, string> = {
   ROUND_NOT_ACCEPTING_SUBMISSIONS: "Picks are closed for this round.",
   ALREADY_SUBMITTED: "You already picked for this round.",
   ALREADY_VOTED: "You already voted this round.",
+  INVALID_QUERY: "That leaderboard isn't available.",
+  ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
   VOTING_CLOSED: "Voting has closed for this round.",
   HANDLE_TAKEN: "That handle is taken.",
   TRACK_OUTSIDE_GENRE: "That track isn't in this battle's genre.",
@@ -249,6 +269,11 @@ export const api = {
   unfollow: (handle: string) => request<null>("DELETE", `/api/v1/users/${encodeURIComponent(handle)}/follow`),
   block: (handle: string) => request<null>("POST", `/api/v1/users/${encodeURIComponent(handle)}/block`),
   unblock: (handle: string) => request<null>("DELETE", `/api/v1/users/${encodeURIComponent(handle)}/block`),
+  daily: () => request<DailyRewardState>("GET", `/api/v1/me/daily?tz=${encodeURIComponent(timeZone())}`),
+  claimDaily: () => request<DailyClaimResponse>("POST", "/api/v1/me/daily", { timeZone: timeZone() }),
+  wallet: (cursor?: string | null) => request<WalletResponse>("GET", `/api/v1/me/wallet${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
+  progress: (handle: string) => request<ProgressView>("GET", `/api/v1/users/${encodeURIComponent(handle)}/progress`),
+  achievements: (handle: string) => request<AchievementsResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/achievements`),
   followList: (handle: string, which: "followers" | "following") => request<UserListResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/${which}`),
   peopleSuggestions: () => request<{ items: PeopleSuggestion[] }>("GET", "/api/v1/people/suggestions"),
   inbox: () => request<InboxResponse>("GET", "/api/v1/messages"),
@@ -258,5 +283,7 @@ export const api = {
   search: (q: string, source?: ProviderKind) =>
     request<CatalogSearchResponse>("GET", `/api/v1/catalog/search?q=${encodeURIComponent(q)}${source ? `&source=${source}` : ""}`),
   rankings: () => request<RankingsResponse>("GET", "/api/v1/rankings"),
+  leaderboard: (q: { scope: LeaderboardScope; genre?: string | null; period: LeaderboardPeriod; metric: LeaderboardMetric }) =>
+    request<LeaderboardResponse>("GET", `/api/v1/leaderboards?scope=${q.scope}&period=${q.period}&metric=${q.metric}${q.genre ? `&genre=${q.genre}` : ""}`),
   profile: (handle: string) => request<ProfileView>("GET", `/api/v1/users/${encodeURIComponent(handle)}`),
 };

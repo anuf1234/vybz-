@@ -181,6 +181,14 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
     expect(view.winnerParticipantId).toBe(alicePid);
     expect(view.participants.find((p) => p.id === alicePid)!.roundsWon).toBe(2);
     expect(view.viewer.canRematch).toBe(true);
+
+    // Progression: XP and coins for playing, winning and rounds won; Carol's vote; first-battle achievements.
+    const ledger = await deps.db.select().from(schema.ledgerEntry);
+    const of = (u: UserRow, reason: string) => ledger.filter((e) => e.userId === u.id && e.reason === reason);
+    expect(of(users.alice!, "BATTLE")).toEqual([expect.objectContaining({ ref: battleId, xp: 20 + 30 + 2 * 5, coins: 12 })]);
+    expect(of(users.bob!, "BATTLE")).toEqual([expect.objectContaining({ xp: 20, coins: 2 })]);
+    expect(of(users.carol!, "VOTE")).toEqual([expect.objectContaining({ ref: `${battleId}:0`, xp: 2 })]);
+    expect(of(users.alice!, "ACHIEVEMENT").map((e) => e.ref).sort()).toEqual(["first_battle", "first_win", "flawless"]); // Bob took no rounds
   });
 
   it("ranks players and shows records on profiles", async () => {

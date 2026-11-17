@@ -710,6 +710,67 @@ export const directMessage = pgTable(
   (t) => [index("direct_message_conv_idx").on(t.conversationId, t.createdAt), index("direct_message_sender_idx").on(t.senderId, t.createdAt)],
 );
 
+// ── Progression ────────────────────────────────────────────────────────────
+
+/** Achievements someone has unlocked. Codes come from the catalog in @vybz/core. */
+export const userAchievement = pgTable(
+  "user_achievement",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    unlockedAt: ts("unlocked_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.code] })],
+);
+
+/** Running totals; the ledger is the source of truth. */
+export const userProgress = pgTable("user_progress", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  xp: integer("xp").notNull().default(0),
+  coins: integer("coins").notNull().default(0),
+  level: integer("level").notNull().default(1),
+  /** IANA zone from the app's last daily claim; days are counted in it. */
+  timeZone: text("time_zone"),
+  updatedAt: updatedAt(),
+});
+
+/** Every XP and coin change. (user, reason, ref) is unique so each award happens once. */
+export const ledgerEntry = pgTable(
+  "ledger_entry",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    ref: text("ref").notNull(),
+    xp: integer("xp").notNull().default(0),
+    coins: integer("coins").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("ledger_once_uq").on(t.userId, t.reason, t.ref), index("ledger_user_idx").on(t.userId, t.createdAt)],
+);
+
+/** One row per day someone claimed their daily reward. */
+export const dailyClaim = pgTable(
+  "daily_claim",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Local date, YYYY-MM-DD, in the claimer's time zone. */
+    day: text("day").notNull(),
+    /** Consecutive days including this one. */
+    streakDay: integer("streak_day").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
 export type User = typeof user.$inferSelect;
 export type Track = typeof track.$inferSelect;
 export type TrackProviderRefRow = typeof trackProviderRef.$inferSelect;

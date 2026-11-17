@@ -2,6 +2,7 @@ import type { BattleListItem } from "@vybz/core";
 import { Link } from "expo-router";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { BattleCard } from "@/components/battle-card";
+import { DailyReward } from "@/components/daily-reward";
 import { color, space, type } from "@/components/theme";
 import { Button, EmptyState, ErrorBanner, Loading, SectionTitle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -39,6 +40,8 @@ export default function Home() {
           <Button title="Join VYBZ" />
         </Link>
       ) : null}
+
+      {signedIn ? <DailyReward key={session.data?.user.id} /> : null}
 
       {feed.error ? <ErrorBanner message={feed.error.message} onRetry={() => void feed.reload()} /> : null}
       {feed.loading && !feed.data ? <Loading /> : null}

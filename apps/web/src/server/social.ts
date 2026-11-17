@@ -1,3 +1,5 @@
+import { checkAchievements } from "./achievements";
+import { awardPost } from "./progression";
 import type {
   CommentView,
   ConversationView,
@@ -40,7 +42,7 @@ function summary(u: UserRow): UserSummary {
   return { id: u.id, handle: u.handle, displayName: u.name, image: u.image };
 }
 
-async function userByHandle(db: Executor, handle: string): Promise<UserRow> {
+export async function userByHandle(db: Executor, handle: string): Promise<UserRow> {
   const [u] = await db.select().from(schema.user).where(eq(schema.user.handle, handle.replace(/^@/, "").toLowerCase()));
   if (!u) throw new ServiceError(404, "NOT_FOUND", "No such user");
   return u;
@@ -124,6 +126,7 @@ export async function followUser(deps: BattleDeps, user: UserRow | null, handle:
     await createNotifications(deps.db, deps.push, [
       { userId: other.id, type: "NEW_FOLLOWER", title: "New follower", body: `@${me.handle} followed you.`, battleId: null, link: `/user/${me.handle}` },
     ]);
+    await checkAchievements(deps.db, deps.push, [other.id]);
   }
 }
 
@@ -255,6 +258,12 @@ export async function createPost(deps: BattleDeps, user: UserRow | null, body: u
 
   const id = newId();
   await deps.db.insert(schema.post).values({ id, authorId: me.id, body: text, trackId, playlistId, battleId });
+  try {
+    await awardPost(deps.db, me.id, id);
+  } catch (err) {
+    console.error("post award failed", id, err);
+  }
+  await checkAchievements(deps.db, deps.push, [me.id]);
   return { id };
 }
 
