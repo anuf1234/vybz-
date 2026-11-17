@@ -380,7 +380,8 @@ export type NotificationType =
   | "POST_LIKED"
   | "POST_COMMENT"
   | "NEW_MESSAGE"
-  | "ACHIEVEMENT_UNLOCKED";
+  | "ACHIEVEMENT_UNLOCKED"
+  | "LEVEL_UP";
 
 export interface NotificationView {
   id: string;
@@ -584,7 +585,7 @@ export interface LeaderboardEntry {
   draws: number;
   roundsWon: number;
   battles: number;
-  level: number | null;
+  level: number;
 }
 
 export interface LeaderboardResponse {

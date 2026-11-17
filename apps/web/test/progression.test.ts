@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BattleDeps, UserRow } from "../src/server/battles/service";
 import { leaderboard } from "../src/server/leaderboards";
 import { achievementsFor, checkAchievements } from "../src/server/achievements";
-import { balanceOf, claimDaily, dailyState } from "../src/server/progression";
+import { balanceOf, claimDaily, dailyState, grant, progressFor } from "../src/server/progression";
 import { streaksFor } from "../src/server/streaks";
 import { createPost, followUser } from "../src/server/social";
 import { TEST_DB_URL, freshDb } from "./helpers";
@@ -106,8 +106,8 @@ describe.skipIf(!TEST_DB_URL)("progression", () => {
         .where(and(eq(schema.notification.userId, u.ann!.id), eq(schema.notification.type, "ACHIEVEMENT_UNLOCKED")));
       expect(notes).toHaveLength(3);
       expect(notes[0]!.link).toBe("/achievements");
-      // Rewards land in the ledger: 25 + 50 + 75 XP, 10 + 15 + 25 coins.
-      expect(await balanceOf(h.db, u.ann!.id)).toMatchObject({ xp: 150, coins: 50 });
+      // Rewards land in the ledger: 25 + 50 + 75 XP, 10 + 15 + 25 coins, + 20 for reaching level 2.
+      expect(await balanceOf(h.db, u.ann!.id)).toEqual({ xp: 150, coins: 70, level: 2 });
     });
 
     it("reports progress toward the rest", async () => {
@@ -181,6 +181,23 @@ describe.skipIf(!TEST_DB_URL)("progression", () => {
     it("tracks daily claims", async () => {
       const s = await streaksFor(h.db, u.cyd!.id, new Date("2026-03-05T20:00:00Z"));
       expect(s.daily).toEqual({ current: 1, best: 2 });
+    });
+  });
+
+  describe("levels", () => {
+    it("levels up once per level and pays the level-up coins", async () => {
+      const [x] = await h.db.insert(schema.user).values({ id: "u_lev", name: "lev", email: "lev@x.com", handle: "lev" }).returning();
+      expect(await grant(h.db, x!.id, "DAILY", "t1", { xp: 650, coins: 0 })).toEqual({ xp: 650, coins: 20 + 30 + 40, level: 4 });
+      expect(await grant(h.db, x!.id, "DAILY", "t1", { xp: 650, coins: 0 })).toBeNull();
+      const notes = await h.db.select().from(schema.notification).where(and(eq(schema.notification.userId, x!.id), eq(schema.notification.type, "LEVEL_UP")));
+      expect(notes.map((n) => n.title)).toEqual(["⭐ Level 4"]);
+      expect(await progressFor(h.db, x!.id)).toMatchObject({ level: 4, xp: 650, levelXp: 600, nextLevelXp: 1000, coins: 90 });
+
+      // Level 5 unlocks "Rising" (+50 coins) on the next check.
+      await grant(h.db, x!.id, "DAILY", "t2", { xp: 400, coins: 0 });
+      const got = await checkAchievements(h.db, null, [x!.id]);
+      expect(got.map((d) => d.code)).toEqual(["level_5"]);
+      expect(await balanceOf(h.db, x!.id)).toEqual({ xp: 1050, coins: 90 + 50 + 50, level: 5 });
     });
   });
 });

@@ -26,6 +26,7 @@ const ZERO: AchievementStats = {
   bestWinStreak: 0,
   bestDailyStreak: 0,
   bestPlayStreak: 0,
+  level: 1,
 };
 
 export async function achievementStats(db: Executor, userId: string): Promise<AchievementStats> {
@@ -47,7 +48,8 @@ export async function achievementStats(db: Executor, userId: string): Promise<Ac
       (select count(*)::int from vote where voter_id = ${userId}) as "votesCast",
       (select count(*)::int from post where author_id = ${userId} and hidden_at is null) as "posts",
       (select count(*)::int from follow where followee_id = ${userId}) as "followers",
-      (select count(*)::int from playlist where owner_id = ${userId}) as "playlists"
+      (select count(*)::int from playlist where owner_id = ${userId}) as "playlists",
+      (select coalesce(max(level), 1)::int from user_progress where user_id = ${userId}) as "level"
   `);
   const streaks = await streaksFor(db, userId);
   return { ...ZERO, ...(res.rows[0] ?? {}), bestWinStreak: streaks.wins.best, bestDailyStreak: streaks.daily.best, bestPlayStreak: streaks.play.best } as AchievementStats;

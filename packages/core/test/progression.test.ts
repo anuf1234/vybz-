@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACHIEVEMENTS, DAILY_LADDER, boolRuns, dayRuns, ladderDay } from "../src/progression";
+import { ACHIEVEMENTS, DAILY_LADDER, boolRuns, dayRuns, ladderDay, levelForXp, levelProgress, xpForLevel } from "../src/progression";
 
 describe("progression rules", () => {
   it("has unique achievement codes", () => {
@@ -23,5 +23,13 @@ describe("progression rules", () => {
   it("counts runs of wins", () => {
     expect(boolRuns([true, true, false, true])).toEqual({ current: 1, best: 2 });
     expect(boolRuns([])).toEqual({ current: 0, best: 0 });
+  });
+
+  it("maps XP to levels", () => {
+    expect([1, 2, 3, 4, 5, 10].map(xpForLevel)).toEqual([0, 100, 300, 600, 1000, 4500]);
+    expect([0, 99, 100, 299, 300, 4499, 4500, 1e9].map(levelForXp)).toEqual([1, 1, 2, 2, 3, 9, 10, 100]);
+    for (let l = 1; l <= 100; l++) expect(levelForXp(xpForLevel(l))).toBe(l);
+    expect(levelProgress(350)).toEqual({ level: 3, xp: 350, levelXp: 300, nextLevelXp: 600 });
+    expect(levelProgress(1e9).nextLevelXp).toBeNull();
   });
 });

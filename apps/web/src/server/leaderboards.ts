@@ -69,24 +69,16 @@ async function totals(deps: BattleDeps, viewer: UserRow | null, q: LeaderboardQu
   });
 }
 
-/** Extra per-user values (XP, levels) layered on by later features. */
-export type LeaderboardDecorator = (deps: BattleDeps, rows: Row[], q: LeaderboardQuery) => Promise<{ rows: Row[]; levels: Map<string, number> }>;
-let decorate: LeaderboardDecorator | null = null;
-export function setLeaderboardDecorator(fn: LeaderboardDecorator) {
-  decorate = fn;
-}
-
 export async function leaderboard(deps: BattleDeps, viewer: UserRow | null, q: LeaderboardQuery): Promise<LeaderboardResponse> {
-  let rows = await totals(deps, viewer, q);
-  let levels = new Map<string, number>();
-  if (decorate) ({ rows, levels } = await decorate(deps, rows, q));
+  const rows = await totals(deps, viewer, q);
   // Ties share a rank (1, 2, 2, 4).
   const value = (r: Row) => (q.metric === "rounds" ? r.roundsWon : q.metric === "xp" ? r.xp : r.wins);
   const ranks: number[] = [];
   rows.forEach((r, i) => (ranks[i] = i > 0 && value(r) === value(rows[i - 1]!) ? ranks[i - 1]! : i + 1));
   const myIndex = viewer ? rows.findIndex((r) => r.userId === viewer.id) : -1;
   const shown = rows.slice(0, LIMIT);
-  const users = await usersById(deps.db, [...new Set([...shown.map((r) => r.userId), ...(myIndex >= 0 ? [viewer!.id] : [])])]);
+  const ids = [...new Set([...shown.map((r) => r.userId), ...(myIndex >= 0 ? [viewer!.id] : [])])];
+  const [users, levels] = await Promise.all([usersById(deps.db, ids), levelsOf(deps, ids)]);
   const entry = (r: Row, i: number): LeaderboardEntry => ({
     rank: ranks[i]!,
     user: users.get(r.userId) ?? { id: r.userId, handle: "unknown", displayName: "Unknown", image: null },
@@ -96,7 +88,7 @@ export async function leaderboard(deps: BattleDeps, viewer: UserRow | null, q: L
     draws: r.draws,
     roundsWon: r.roundsWon,
     battles: r.battles,
-    level: levels.get(r.userId) ?? null,
+    level: levels.get(r.userId) ?? 1,
   });
   return {
     scope: q.scope,
@@ -106,4 +98,10 @@ export async function leaderboard(deps: BattleDeps, viewer: UserRow | null, q: L
     items: shown.map(entry),
     me: myIndex >= 0 ? entry(rows[myIndex]!, myIndex) : null,
   };
+}
+
+async function levelsOf(deps: BattleDeps, ids: string[]): Promise<Map<string, number>> {
+  if (!ids.length) return new Map();
+  const rows = await deps.db.select({ id: schema.userProgress.userId, level: schema.userProgress.level }).from(schema.userProgress).where(inArray(schema.userProgress.userId, ids));
+  return new Map(rows.map((r) => [r.id, r.level]));
 }

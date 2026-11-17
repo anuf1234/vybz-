@@ -18,7 +18,8 @@ export type AchievementMetric =
   | "playlists"
   | "bestWinStreak"
   | "bestDailyStreak"
-  | "bestPlayStreak";
+  | "bestPlayStreak"
+  | "level";
 
 export interface AchievementDef {
   code: string;
@@ -63,6 +64,9 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   a("win_streak_5", "🌪️", "Unstoppable", "Win 5 battles in a row.", "bestWinStreak", 5, 200, 80),
   a("daily_7", "🗓️", "Every day", "Claim your daily reward 7 days in a row.", "bestDailyStreak", 7, 100, 50),
   a("play_7", "🎚️", "In the booth", "Finish a battle 7 days in a row.", "bestPlayStreak", 7, 150, 60),
+  a("level_5", "⭐", "Rising", "Reach level 5.", "level", 5, 0, 50),
+  a("level_10", "🌟", "Headliner", "Reach level 10.", "level", 10, 0, 100),
+  a("level_25", "💫", "Legend", "Reach level 25.", "level", 25, 0, 250),
 ];
 
 export function achievementDef(code: string): AchievementDef | undefined {
@@ -179,7 +183,45 @@ function nextDay(day: string): string {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
+// ── Levels ─────────────────────────────────────────────────────────────────
+
+export const MAX_LEVEL = 100;
+
+/** Total XP needed to reach `level`: 0, 100, 300, 600, 1000, … (50·L·(L−1)). */
+export function xpForLevel(level: number): number {
+  const l = Math.min(MAX_LEVEL, Math.max(1, Math.floor(level)));
+  return 50 * l * (l - 1);
+}
+
+export function levelForXp(xp: number): number {
+  // Largest L with 50·L·(L−1) ≤ xp.
+  const l = Math.floor((1 + Math.sqrt(1 + (4 * Math.max(0, xp)) / 50)) / 2);
+  let level = Math.min(MAX_LEVEL, Math.max(1, l));
+  while (level < MAX_LEVEL && xpForLevel(level + 1) <= xp) level++;
+  while (level > 1 && xpForLevel(level) > xp) level--;
+  return level;
+}
+
+/** Coins for reaching a level. */
+export function levelUpCoins(level: number): number {
+  return 10 * level;
+}
+
+export interface LevelProgress {
+  level: number;
+  xp: number;
+  /** XP at the start of this level and at the next one (null at the cap). */
+  levelXp: number;
+  nextLevelXp: number | null;
+}
+
+export function levelProgress(xp: number): LevelProgress {
+  const level = levelForXp(xp);
+  return { level, xp, levelXp: xpForLevel(level), nextLevelXp: level >= MAX_LEVEL ? null : xpForLevel(level + 1) };
+}
+
 /** Someone's progression at a glance (profiles, Home). */
-export interface ProgressView {
+export interface ProgressView extends LevelProgress {
+  coins: number;
   streaks: Streaks;
 }

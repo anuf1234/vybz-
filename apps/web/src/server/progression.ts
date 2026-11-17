@@ -1,9 +1,9 @@
-import { DAILY_LADDER, type DailyClaimResponse, type DailyRewardState, type ProgressView, type Reward, ladderDay } from "@vybz/core";
+import { DAILY_LADDER, type DailyClaimResponse, type DailyRewardState, type ProgressView, type Reward, ladderDay, levelForXp, levelProgress, levelUpCoins } from "@vybz/core";
 import { type Database, type Executor, desc, eq, newId, schema, sql } from "@vybz/db";
 import { z } from "zod";
 import { checkAchievements } from "./achievements";
 import { ServiceError, type UserRow } from "./battles/service";
-import type { PushSender } from "./notifications";
+import { type PushSender, createNotifications } from "./notifications";
 import { streaksFor } from "./streaks";
 
 /**
@@ -11,7 +11,7 @@ import { streaksFor } from "./streaks";
  * keyed by (user, reason, ref), so retries and races can't pay twice.
  */
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT";
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP";
 
 export interface Balance {
   xp: number;
@@ -19,7 +19,11 @@ export interface Balance {
   level: number;
 }
 
-/** Records an award once. Returns the new balance, or null if it was already granted. */
+/**
+ * Records an award once. Returns the new balance, or null if it was already
+ * granted. Crossing a level pays its level-up coins (also once per level) and
+ * leaves an in-app notification.
+ */
 export async function grant(db: Executor, userId: string, reason: LedgerReason, ref: string, r: Reward): Promise<Balance | null> {
   return db.transaction(async (tx) => {
     const [row] = await tx
@@ -34,7 +38,26 @@ export async function grant(db: Executor, userId: string, reason: LedgerReason, 
       .values({ userId, xp: r.xp, coins: r.coins })
       .onConflictDoUpdate({ target: p.userId, set: { xp: sql`${p.xp} + ${r.xp}`, coins: sql`${p.coins} + ${r.coins}` } })
       .returning({ xp: p.xp, coins: p.coins, level: p.level });
-    return bal!;
+    const reached = levelForXp(bal!.xp);
+    if (reached <= bal!.level) return bal!;
+    let coins = 0;
+    for (let l = bal!.level + 1; l <= reached; l++) {
+      const [paid] = await tx
+        .insert(schema.ledgerEntry)
+        .values({ id: newId(), userId, reason: "LEVEL_UP", ref: String(l), coins: levelUpCoins(l) })
+        .onConflictDoNothing()
+        .returning({ coins: schema.ledgerEntry.coins });
+      coins += paid?.coins ?? 0;
+    }
+    const [after] = await tx
+      .update(p)
+      .set({ level: reached, coins: sql`${p.coins} + ${coins}` })
+      .where(eq(p.userId, userId))
+      .returning({ xp: p.xp, coins: p.coins, level: p.level });
+    await createNotifications(tx, null, [
+      { userId, type: "LEVEL_UP", title: `⭐ Level ${reached}`, body: `You reached level ${reached}${coins ? ` and earned ${coins} coins` : ""}.`, battleId: null, link: "/wallet" },
+    ]);
+    return after!;
   });
 }
 
@@ -130,5 +153,6 @@ export async function claimDaily(db: Database, push: PushSender | null | undefin
 // ── Profile summary ────────────────────────────────────────────────────────
 
 export async function progressFor(db: Executor, userId: string): Promise<ProgressView> {
-  return { streaks: await streaksFor(db, userId) };
+  const [bal, streaks] = await Promise.all([balanceOf(db, userId), streaksFor(db, userId)]);
+  return { ...levelProgress(bal.xp), coins: bal.coins, streaks };
 }

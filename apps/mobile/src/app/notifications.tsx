@@ -25,6 +25,7 @@ const ICON: Record<NotificationType, string> = {
   POST_COMMENT: "💬",
   NEW_MESSAGE: "✉️",
   ACHIEVEMENT_UNLOCKED: "🏅",
+  LEVEL_UP: "⭐",
 };
 
 export default function NotificationsScreen() {
