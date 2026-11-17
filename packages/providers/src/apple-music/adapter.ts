@@ -265,7 +265,11 @@ export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, Br
       headers: { Authorization: `Bearer ${token}` },
     });
     if (allowNotFound && res.status === 404) return null;
-    if (!res.ok) throw new ProviderError(this.kind, res.status, `GET ${path.split("?")[0]} failed`);
+    if (!res.ok) {
+      // Keep the provider's short error text (never the request, which holds credentials) for the logs.
+      const detail = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+      throw new ProviderError(this.kind, res.status, `GET ${path.split("?")[0]} failed with ${res.status}${detail ? `: ${detail}` : ""}`);
+    }
     return res.json();
   }
 }

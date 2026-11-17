@@ -109,7 +109,11 @@ export class YouTubeAdapter implements MetadataProvider, PlaybackProvider {
   private async get(path: string): Promise<unknown> {
     const sep = path.includes("?") ? "&" : "?";
     const res = await this.fetchFn(`${API_BASE}${path}${sep}key=${encodeURIComponent(this.config.apiKey)}`);
-    if (!res.ok) throw new ProviderError(this.kind, res.status, `GET ${path.split("?")[0]} failed`);
+    if (!res.ok) {
+      // Keep the provider's short error text (never the request, which holds credentials) for the logs.
+      const detail = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+      throw new ProviderError(this.kind, res.status, `GET ${path.split("?")[0]} failed with ${res.status}${detail ? `: ${detail}` : ""}`);
+    }
     return res.json();
   }
 }
