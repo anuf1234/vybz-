@@ -189,6 +189,11 @@ function BattleFooter({ b, signedIn, busy, act }: { b: BattleView; signedIn: boo
           ) : null}
         </View>
       ) : null}
+      {b.visibility === "PUBLIC" ? (
+        <Link href={{ pathname: "/post/new", params: { battleId: b.id, label: b.title } }} asChild>
+          <Button title="Share to feed" kind="secondary" />
+        </Link>
+      ) : null}
       {!b.viewer.participantId ? (
         <Pressable onPress={() => void report()} disabled={reported} accessibilityRole="button">
           <Text style={[type.small, { textAlign: "center" }]}>{reported ? "Thanks, a moderator will take a look." : "Report this battle"}</Text>

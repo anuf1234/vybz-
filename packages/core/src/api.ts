@@ -325,6 +325,13 @@ export interface ProfileView {
   user: UserSummary;
   record: { wins: number; losses: number; draws: number; battles: number; roundsWon: number };
   recent: BattleListItem[];
+  social: {
+    followers: number;
+    following: number;
+    posts: number;
+    /** Null when signed out or it's you. */
+    viewer: { follows: boolean; followedBy: boolean; blocked: boolean; canMessage: boolean } | null;
+  };
 }
 
 export interface ApiError {
@@ -368,7 +375,11 @@ export type NotificationType =
   | "YOUR_PICK"
   | "VOTING_OPEN"
   | "ROUND_RESULT"
-  | "BATTLE_RESULT";
+  | "BATTLE_RESULT"
+  | "NEW_FOLLOWER"
+  | "POST_LIKED"
+  | "POST_COMMENT"
+  | "NEW_MESSAGE";
 
 export interface NotificationView {
   id: string;
@@ -378,6 +389,8 @@ export interface NotificationView {
   battleId: string | null;
   createdAt: string;
   readAt: string | null;
+  /** In-app path to open (/post/<id>, /messages/<id>, /user/<handle>); battle notifications use battleId. */
+  link: string | null;
 }
 
 export interface NotificationsResponse {
@@ -387,7 +400,7 @@ export interface NotificationsResponse {
 
 // ── Moderation ─────────────────────────────────────────────────────────────
 
-export type ReportSubject = "CHAT_MESSAGE" | "BATTLE" | "USER";
+export type ReportSubject = "CHAT_MESSAGE" | "BATTLE" | "USER" | "POST" | "COMMENT" | "DIRECT_MESSAGE";
 
 export interface ReportRequest {
   subjectType: ReportSubject;
@@ -404,7 +417,7 @@ export interface ModerationReportView {
   reporter: UserSummary;
   createdAt: string;
   /** What the report is about, for context in the queue. */
-  context: { battleId: string | null; battleTitle: string | null; text: string | null; user: UserSummary | null };
+  context: { battleId: string | null; battleTitle: string | null; text: string | null; user: UserSummary | null; postId?: string | null };
   reportCount: number;
 }
 
@@ -466,3 +479,90 @@ export interface CreatePlaylistRequest {
 }
 
 export const PLAYLIST_MAX_TRACKS = 200;
+
+// ── Social ─────────────────────────────────────────────────────────────────
+
+export type PostAttachment =
+  | { kind: "track"; track: SavedTrack }
+  | { kind: "playlist"; playlist: PlaylistSummary }
+  | { kind: "battle"; battle: BattleListItem };
+
+export interface PostView {
+  id: string;
+  author: UserSummary;
+  body: string;
+  createdAt: string;
+  attachment: PostAttachment | null;
+  likes: number;
+  comments: number;
+  viewer: { liked: boolean; canDelete: boolean } | null;
+}
+
+export interface FeedResponse {
+  items: PostView[];
+  /** Pass as ?before= to load older posts; null at the end. */
+  nextCursor: string | null;
+}
+
+export interface CommentView {
+  id: string;
+  author: UserSummary;
+  body: string;
+  createdAt: string;
+  canDelete: boolean;
+}
+
+export interface PostDetailResponse {
+  post: PostView;
+  comments: CommentView[];
+}
+
+export interface CreatePostRequest {
+  body: string;
+  /** Optional attachment: one of these. */
+  trackId?: string;
+  catalogId?: string;
+  playlistId?: string;
+  battleId?: string;
+}
+
+export interface FollowUser extends UserSummary {
+  viewerFollows: boolean;
+}
+
+export interface UserListResponse {
+  items: FollowUser[];
+}
+
+export interface PeopleSuggestion extends FollowUser {
+  reason: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  other: UserSummary;
+  lastMessage: { body: string; createdAt: string; fromMe: boolean } | null;
+  unread: boolean;
+}
+
+export interface InboxResponse {
+  items: ConversationSummary[];
+  unread: number;
+}
+
+export interface DirectMessageView {
+  id: string;
+  body: string;
+  createdAt: string;
+  fromMe: boolean;
+}
+
+export interface ConversationView {
+  id: string;
+  other: UserSummary;
+  /** Oldest first. */
+  messages: DirectMessageView[];
+  canSend: boolean;
+  /** Why sending is off, when it is. */
+  blockedReason: "BLOCKED" | "NOT_CONNECTED" | null;
+}

@@ -13,6 +13,18 @@ const ACTIONS: Record<ModerationReportView["subjectType"], { action: ModerationA
   CHAT_MESSAGE: [{ action: "HIDE_MESSAGE", label: "Hide message", kind: "danger" }],
   BATTLE: [{ action: "VOID_BATTLE", label: "Void battle", kind: "danger" }],
   USER: [{ action: "SUSPEND_USER", label: "Suspend user", kind: "danger" }],
+  POST: [
+    { action: "HIDE_MESSAGE", label: "Hide post", kind: "danger" },
+    { action: "SUSPEND_USER", label: "Suspend author", kind: "secondary" },
+  ],
+  COMMENT: [
+    { action: "HIDE_MESSAGE", label: "Hide comment", kind: "danger" },
+    { action: "SUSPEND_USER", label: "Suspend author", kind: "secondary" },
+  ],
+  DIRECT_MESSAGE: [
+    { action: "HIDE_MESSAGE", label: "Hide message", kind: "danger" },
+    { action: "SUSPEND_USER", label: "Suspend sender", kind: "secondary" },
+  ],
 };
 
 /** Staff only: the server returns 403 to everyone else. */
@@ -64,6 +76,11 @@ export default function ModerationQueue() {
           </View>
           {r.context.text ? <Text style={[type.body, { fontStyle: "italic" }]}>"{r.context.text}"</Text> : null}
           {r.context.user ? <Text style={type.small}>User: @{r.context.user.handle}</Text> : null}
+          {r.context.postId ? (
+            <Link href={{ pathname: "/post/[id]", params: { id: r.context.postId } }}>
+              <Text style={[type.small, { color: color.violet }]}>Open the post</Text>
+            </Link>
+          ) : null}
           {r.context.battleId ? (
             <Link href={{ pathname: "/battle/[id]", params: { id: r.context.battleId } }}>
               <Text style={[type.small, { color: color.violet }]}>Battle: {r.context.battleTitle ?? r.context.battleId}</Text>

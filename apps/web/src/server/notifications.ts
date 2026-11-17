@@ -40,6 +40,7 @@ export interface NewNotification {
   title: string;
   body: string;
   battleId: string | null;
+  link?: string | null;
 }
 
 export async function createNotifications(db: Executor, push: PushSender | null | undefined, items: NewNotification[]): Promise<void> {
@@ -49,7 +50,7 @@ export async function createNotifications(db: Executor, push: PushSender | null 
   try {
     const tokens = await db.select().from(schema.pushToken).where(inArray(schema.pushToken.userId, [...new Set(items.map((i) => i.userId))]));
     const messages = items.flatMap((n) =>
-      tokens.filter((t) => t.userId === n.userId).map((t) => ({ to: t.token, title: n.title, body: n.body, data: { type: n.type, ...(n.battleId ? { battleId: n.battleId } : {}) } })),
+      tokens.filter((t) => t.userId === n.userId).map((t) => ({ to: t.token, title: n.title, body: n.body, data: { type: n.type, ...(n.battleId ? { battleId: n.battleId } : {}), ...(n.link ? { link: n.link } : {}) } })),
     );
     if (messages.length) await push(messages);
   } catch (err) {
@@ -129,6 +130,7 @@ export async function listNotifications(db: Executor, userId: string, limit = 50
       title: r.title,
       body: r.body,
       battleId: r.battleId,
+      link: r.link,
       createdAt: r.createdAt.toISOString(),
       readAt: r.readAt?.toISOString() ?? null,
     })),

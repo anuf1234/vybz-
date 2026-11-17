@@ -155,7 +155,7 @@ async function requireOwner(db: Executor, id: string, user: UserRow | null): Pro
   return { row, me };
 }
 
-async function summaries(db: Executor, rows: PlaylistRow[]): Promise<PlaylistSummary[]> {
+export async function summaries(db: Executor, rows: PlaylistRow[]): Promise<PlaylistSummary[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const [owners, counts, covers] = await Promise.all([

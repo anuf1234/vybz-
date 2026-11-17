@@ -25,6 +25,10 @@ Expo (SDK 58) app for iOS and Android, using Expo Router. It talks to the web ap
 | Pick | Suggestions for the battle's theme, your saved songs and playlists, search with artist pages; 30-second previews |
 | Notifications | Challenges, invites, picks due, results; tap to open the battle |
 | Moderation | Staff only: open reports, hide message, void battle, suspend user, dismiss |
+| Feed | Following / For you, composer (attach a song), people to follow, likes, comments; messages button in the header |
+| Post | A post and its comments; delete or report |
+| Messages | Inbox with unread counts, conversations that refresh while open |
+| Profiles | Followers, following and posts; Follow, Message, Block, Report |
 | Library | Your playlists (new, or generated for a genre and era), saved songs, and public playlists to discover |
 | Playlist | Songs with previews; add from search, saved songs or suggestions; reorder, remove, share link, rename, public/private, collaborators |
 | Rankings, Profile | Leaderboard by wins; record, recent battles, edit handle and name |

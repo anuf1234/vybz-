@@ -114,6 +114,11 @@ export default function PlaylistScreen() {
           ) : p.visibility === "PUBLIC" ? (
             <Button title="Share" kind="secondary" onPress={share} />
           ) : null}
+          {p.visibility === "PUBLIC" && me ? (
+            <Link href={{ pathname: "/post/new", params: { playlistId: p.id, label: p.title } }} asChild>
+              <Button title="Share to feed" kind="ghost" />
+            </Link>
+          ) : null}
           {p.viewer.isOwner ? (
             editing ? (
               <EditCard p={p} onDone={() => setEditing(false)} run={run} onDelete={confirmDelete} />

@@ -1,18 +1,26 @@
 import type { ProfileView } from "@vybz/core";
-import { StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BattleCard } from "./battle-card";
 import { color, space, type } from "./theme";
 import { Avatar, Card, SectionTitle } from "./ui";
 
-export function ProfileBody({ profile, now }: { profile: ProfileView; now: number }) {
+export function ProfileBody({ profile, now, actions }: { profile: ProfileView; now: number; actions?: React.ReactNode }) {
   const { user, record } = profile;
+  const router = useRouter();
   return (
     <View style={{ gap: space.md }}>
       <View style={styles.header}>
         <Avatar name={user.displayName} image={user.image} size={72} ring={color.violet} />
         <Text style={type.title}>{user.displayName}</Text>
         <Text style={type.small}>@{user.handle}</Text>
+        <View style={styles.counts}>
+          <Count label="Followers" value={profile.social.followers} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "followers" } })} />
+          <Count label="Following" value={profile.social.following} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "following" } })} />
+          <Count label="Posts" value={profile.social.posts} />
+        </View>
       </View>
+      {actions}
       <Card style={styles.stats}>
         <Stat label="Wins" value={record.wins} highlight />
         <Stat label="Losses" value={record.losses} />
@@ -24,6 +32,15 @@ export function ProfileBody({ profile, now }: { profile: ProfileView; now: numbe
         <BattleCard key={b.id} battle={b} now={now} />
       ))}
     </View>
+  );
+}
+
+function Count({ label, value, onPress }: { label: string; value: number; onPress?: () => void }) {
+  return (
+    <Pressable onPress={onPress} disabled={!onPress} style={{ alignItems: "center", minWidth: 72 }} accessibilityRole={onPress ? "link" : undefined} accessibilityLabel={`${value} ${label}`}>
+      <Text style={[type.heading, { fontWeight: "800" }]}>{value}</Text>
+      <Text style={type.small}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -39,4 +56,5 @@ function Stat({ label, value, highlight }: { label: string; value: number; highl
 const styles = StyleSheet.create({
   header: { alignItems: "center", gap: space.xs, paddingVertical: space.md },
   stats: { flexDirection: "row", justifyContent: "space-between" },
+  counts: { flexDirection: "row", gap: space.lg, marginTop: space.sm },
 });

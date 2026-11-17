@@ -28,6 +28,8 @@ Sign up (email/password or Google), challenge someone (or post an open challenge
 
 **Library and playlists (Step 2).** Save any song from a battle, search or playlist with the bookmark. Make playlists by hand or let VYBZ fill one for a genre and era (25 popular fitting songs to start), then add, remove and reorder songs. Playlists are private (shareable by link) or public, can have collaborators who add and reorder songs, and show up under Discover when public. Saved songs and playlists appear in the battle picker, so you can pick straight from them. Songs stored this way skip the YouTube search until they're picked for a battle, to spare the YouTube quota.
 
+**Social (Step 3).** Follow people (follower and following lists, "people to follow" from who follows you, who you've battled, and top players). Post text with an optional song, public playlist or public battle; like and comment. Two feeds: Following and For you, loading older posts as you scroll. One-to-one messages when either person follows the other, with unread counts. Blocking hides two people from each other everywhere (feeds, comments, follows, messages). Notifications for new followers, likes, comments and messages open the right screen. Posts, comments, messages and users can be reported; moderators hide them from the queue.
+
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.

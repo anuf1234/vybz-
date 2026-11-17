@@ -40,6 +40,7 @@ import { type Database, type Executor, newId, schema, and, desc, eq, inArray, is
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
 import type { AiJudge, JudgeInput } from "../ai-judge";
 import { z } from "zod";
+import { socialFor } from "../social";
 import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, ensureYouTubeMatch, guestViewer, refsForTracks, toTrackView, viewerContext } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
 import { voterFacts } from "./eligibility";
@@ -767,7 +768,7 @@ export async function listBattles(deps: BattleDeps, viewer: UserRow | null, feed
   return items;
 }
 
-async function toListItems(deps: BattleDeps, viewer: UserRow | null, rows: (typeof schema.battle.$inferSelect)[]): Promise<BattleListItem[]> {
+export async function toListItems(deps: BattleDeps, viewer: UserRow | null, rows: (typeof schema.battle.$inferSelect)[]): Promise<BattleListItem[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const [parts, rounds, mySubs, myVotes] = await Promise.all([
@@ -866,6 +867,7 @@ export async function profile(deps: BattleDeps, viewer: UserRow | null, handle: 
     user: { id: u.id, handle: u.handle, displayName: u.name, image: u.image },
     record: all,
     recent: await toListItems(deps, viewer, rows),
+    social: await socialFor(deps.db, viewer, u.id),
   };
 }
 

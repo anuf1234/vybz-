@@ -20,6 +20,10 @@ const ICON: Record<NotificationType, string> = {
   VOTING_OPEN: "🗳️",
   ROUND_RESULT: "🏁",
   BATTLE_RESULT: "🏆",
+  NEW_FOLLOWER: "👤",
+  POST_LIKED: "❤️",
+  POST_COMMENT: "💬",
+  NEW_MESSAGE: "✉️",
 };
 
 export default function NotificationsScreen() {
@@ -37,7 +41,8 @@ export default function NotificationsScreen() {
 
   const open = async (n: NotificationView) => {
     if (!n.readAt) void api.markRead([n.id]).then(() => list.reload()).catch(() => undefined);
-    if (n.battleId) router.push({ pathname: "/battle/[id]", params: { id: n.battleId } });
+    if (n.link?.startsWith("/")) router.push(n.link as never);
+    else if (n.battleId) router.push({ pathname: "/battle/[id]", params: { id: n.battleId } });
   };
 
   return (

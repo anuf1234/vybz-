@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { InboxButton } from "@/components/inbox-button";
 import { NotificationBell } from "@/components/notification-bell";
 import { RankingsButton } from "@/components/rankings-button";
 import type { ColorValue } from "react-native";
@@ -24,6 +25,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: "Home", headerTitle: "VYBZ", tabBarIcon: icon("flame"), headerRight: () => <NotificationBell />, headerLeft: () => <RankingsButton /> }} />
       <Tabs.Screen name="battles" options={{ title: "Battles", tabBarIcon: icon("flash") }} />
       <Tabs.Screen name="create" options={{ title: "Create", tabBarIcon: icon("add-circle") }} />
+      <Tabs.Screen name="feed" options={{ title: "Feed", tabBarIcon: icon("people"), headerRight: () => <InboxButton /> }} />
       <Tabs.Screen name="library" options={{ title: "Library", tabBarIcon: icon("library") }} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: icon("person-circle") }} />
     </Tabs>
