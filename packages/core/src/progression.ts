@@ -129,6 +129,8 @@ export interface DailyRewardState {
   reward: Reward;
   ladder: Reward[];
   balance: Reward;
+  /** Streak freezes held; one is used for each missed day when you next claim. */
+  streakFreezes: number;
 }
 
 export interface DailyClaimResponse {
@@ -251,7 +253,7 @@ export function battleReward(o: { won: boolean; roundsWon: number }): Reward {
   };
 }
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST";
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE";
 
 export interface WalletEntry {
   id: string;
@@ -268,4 +270,59 @@ export interface WalletResponse extends LevelProgress {
   coins: number;
   history: WalletEntry[];
   nextCursor: string | null;
+}
+
+// ── Shop ───────────────────────────────────────────────────────────────────
+
+export type ShopItemKind = "STREAK_FREEZE" | "FRAME";
+
+export interface ShopItemDef {
+  key: string;
+  kind: ShopItemKind;
+  title: string;
+  description: string;
+  icon: string;
+  price: number;
+  /** Frames: the ring color. */
+  color?: string;
+  /** Frames: the level needed to buy it. */
+  minLevel?: number;
+}
+
+/** How many streak freezes you can hold at once. */
+export const MAX_STREAK_FREEZES = 2;
+
+export const SHOP: readonly ShopItemDef[] = [
+  { key: "streak_freeze", kind: "STREAK_FREEZE", title: "Streak freeze", description: "Covers a day you miss, so your daily streak survives. Used automatically.", icon: "🧊", price: 100 },
+  { key: "frame_gold", kind: "FRAME", title: "Gold frame", description: "A gold ring around your avatar everywhere.", icon: "🟡", price: 250, color: "#FBBF24" },
+  { key: "frame_neon", kind: "FRAME", title: "Neon frame", description: "An electric cyan ring.", icon: "🔵", price: 250, color: "#22D3EE" },
+  { key: "frame_rose", kind: "FRAME", title: "Rose frame", description: "A hot pink ring.", icon: "🩷", price: 250, color: "#F472B6" },
+  { key: "frame_emerald", kind: "FRAME", title: "Emerald frame", description: "A bright green ring.", icon: "🟢", price: 400, color: "#34D399", minLevel: 5 },
+  { key: "frame_legend", kind: "FRAME", title: "Legend frame", description: "A white-hot ring for level 10 and up.", icon: "⚪", price: 750, color: "#F5F3FF", minLevel: 10 },
+];
+
+export function shopItem(key: string | null | undefined): ShopItemDef | undefined {
+  return key ? SHOP.find((i) => i.key === key) : undefined;
+}
+
+/** The ring color for a frame key, if it's a real frame. */
+export function frameColor(key: string | null | undefined): string | undefined {
+  const i = shopItem(key);
+  return i?.kind === "FRAME" ? i.color : undefined;
+}
+
+export interface ShopItemView extends ShopItemDef {
+  owned: boolean;
+  equipped: boolean;
+  /** Why you can't buy it right now, if you can't. */
+  blockedReason: "NOT_ENOUGH_COINS" | "OWNED" | "MAX_HELD" | "LEVEL_TOO_LOW" | null;
+}
+
+export interface ShopResponse {
+  coins: number;
+  level: number;
+  streakFreezes: number;
+  maxStreakFreezes: number;
+  frame: string | null;
+  items: ShopItemView[];
 }

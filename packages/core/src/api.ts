@@ -13,6 +13,8 @@ export interface UserSummary {
   handle: string;
   displayName: string;
   image: string | null;
+  /** Profile frame from the shop (a SHOP item key), where known. */
+  frame?: string | null;
 }
 
 export interface MeView extends UserSummary {
@@ -381,7 +383,8 @@ export type NotificationType =
   | "POST_COMMENT"
   | "NEW_MESSAGE"
   | "ACHIEVEMENT_UNLOCKED"
-  | "LEVEL_UP";
+  | "LEVEL_UP"
+  | "STREAK_REMINDER";
 
 export interface NotificationView {
   id: string;

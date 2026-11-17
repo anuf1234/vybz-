@@ -7,6 +7,10 @@ import { BOT_HANDLE, botJoinDaily, botUser } from "../src/server/bot";
 import { ensureDailyBattle } from "../src/server/daily";
 import { leaderboard } from "../src/server/leaderboards";
 import { BOT_AFTER_MS, botTakeStaleQuick, quickBattle } from "../src/server/quick";
+import { claimDaily, dailyState, grant, wallet } from "../src/server/progression";
+import { sendStreakReminders } from "../src/server/reminders";
+import { buy, equipFrame, shop } from "../src/server/shop";
+import { usersById } from "../src/server/battles/service";
 import { TEST_DB_URL, freshDb } from "./helpers";
 
 const MIN = 60_000;
@@ -128,6 +132,68 @@ describe.skipIf(!TEST_DB_URL)("step 5", () => {
       expect(await botJoinDaily(deps, id)).toBe(false);
       const v = await getBattleView(deps, null, id);
       expect(v.participants.map((p) => p.user.handle)).toEqual([BOT_HANDLE]);
+    });
+  });
+
+  describe("coin shop", () => {
+    it("sells streak freezes up to the cap and frames once", async () => {
+      const a = u.ann!;
+      const start = (await shop(h.db, a)).coins;
+      await grant(h.db, a.id, "DAILY", "seed", { xp: 0, coins: 450 - start });
+      let s = await shop(h.db, a);
+      expect(s.coins).toBe(450);
+      expect(s.items.find((i) => i.key === "frame_legend")?.blockedReason).toBe("LEVEL_TOO_LOW");
+      await buy(h.db, a, "streak_freeze");
+      s = await buy(h.db, a, "streak_freeze");
+      expect(s).toMatchObject({ coins: 250, streakFreezes: 2 });
+      await expect(buy(h.db, a, "streak_freeze")).rejects.toMatchObject({ code: "MAX_HELD" });
+      s = await buy(h.db, a, "frame_gold");
+      expect(s).toMatchObject({ coins: 0, frame: "frame_gold" });
+      await expect(buy(h.db, a, "frame_gold")).rejects.toMatchObject({ code: "OWNED" });
+      await expect(buy(h.db, a, "frame_neon")).rejects.toMatchObject({ code: "NOT_ENOUGH_COINS" });
+      expect((await shop(h.db, a)).items.find((i) => i.key === "frame_neon")).toMatchObject({ owned: false, blockedReason: "NOT_ENOUGH_COINS" });
+      // The frame shows on the person everywhere summaries are used.
+      expect((await usersById(h.db, [a.id])).get(a.id)?.frame).toBe("frame_gold");
+      await expect(equipFrame(h.db, a, "frame_neon")).rejects.toMatchObject({ code: "NOT_OWNED" });
+      expect((await equipFrame(h.db, a, null)).frame).toBeNull();
+      const w = await wallet(h.db, a);
+      expect(w.history.filter((e) => e.reason === "PURCHASE").map((e) => e.coins)).toEqual([-250, -100, -100]);
+      expect(w.history[0]!.label).toContain("Gold frame");
+    });
+
+    it("streak freezes cover missed days when you next claim", async () => {
+      const a = u.ann!;
+      const ny = { timeZone: "America/New_York" };
+      await claimDaily(h.db, null, a, ny, new Date("2026-06-01T15:00:00Z"));
+      await claimDaily(h.db, null, a, ny, new Date("2026-06-02T15:00:00Z"));
+      // Miss the 3rd and 4th; two freezes cover them.
+      const open = await dailyState(h.db, a, "America/New_York", new Date("2026-06-05T15:00:00Z"));
+      expect(open).toMatchObject({ streak: 2, streakFreezes: 2, ladderDay: 5 });
+      const r = await claimDaily(h.db, null, a, ny, new Date("2026-06-05T15:00:00Z"));
+      expect(r.state).toMatchObject({ streak: 5, streakFreezes: 0 });
+      const frozen = await h.db.select().from(schema.dailyClaim).where(and(eq(schema.dailyClaim.userId, a.id), eq(schema.dailyClaim.frozen, true)));
+      expect(frozen.map((f) => f.day).sort()).toEqual(["2026-06-03", "2026-06-04"]);
+      // No freezes left: missing the 6th breaks it.
+      expect((await claimDaily(h.db, null, a, ny, new Date("2026-06-07T15:00:00Z"))).state.streak).toBe(1);
+    });
+  });
+
+  describe("streak reminders", () => {
+    it("nudges once in the evening, only if today isn't claimed", async () => {
+      const b = u.bea!;
+      const ny = { timeZone: "America/New_York" };
+      await claimDaily(h.db, null, b, ny, new Date("2026-07-01T15:00:00Z"));
+      await claimDaily(h.db, null, b, ny, new Date("2026-07-02T15:00:00Z"));
+      // July 3, 3pm New York: too early.
+      expect(await sendStreakReminders(h.db, null, new Date("2026-07-03T19:00:00Z"))).toBe(0);
+      // 8pm New York: one reminder, and not again.
+      expect(await sendStreakReminders(h.db, null, new Date("2026-07-04T00:00:00Z"))).toBe(1);
+      expect(await sendStreakReminders(h.db, null, new Date("2026-07-04T00:30:00Z"))).toBe(0);
+      const notes = await h.db.select().from(schema.notification).where(and(eq(schema.notification.userId, b.id), eq(schema.notification.type, "STREAK_REMINDER")));
+      expect(notes.map((n) => n.title)).toEqual(["🔥 Your 2-day streak ends tonight"]);
+      // Claimed on the 4th: no reminder that evening.
+      await claimDaily(h.db, null, b, ny, new Date("2026-07-04T15:00:00Z"));
+      expect(await sendStreakReminders(h.db, null, new Date("2026-07-05T00:00:00Z"))).toBe(0);
     });
   });
 });

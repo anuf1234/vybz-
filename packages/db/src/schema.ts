@@ -739,6 +739,10 @@ export const userProgress = pgTable("user_progress", {
   level: integer("level").notNull().default(1),
   /** IANA zone from the app's last daily claim; days are counted in it. */
   timeZone: text("time_zone"),
+  /** Streak freezes held (bought in the shop, used up automatically). */
+  streakFreezes: integer("streak_freezes").notNull().default(0),
+  /** Profile frame shown around the avatar (a shop item key). */
+  frame: text("frame"),
   updatedAt: updatedAt(),
 });
 
@@ -770,9 +774,39 @@ export const dailyClaim = pgTable(
     day: text("day").notNull(),
     /** Consecutive days including this one. */
     streakDay: integer("streak_day").notNull(),
+    /** A missed day covered by a streak freeze rather than a claim (no reward). */
+    frozen: boolean("frozen").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+/** Cosmetics someone owns. Consumables (streak freezes) are a count on user_progress. */
+export const userItem = pgTable(
+  "user_item",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    item: text("item").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.item] })],
+);
+
+/** Reminders already sent, so each goes out at most once a day. */
+export const reminderSent = pgTable(
+  "reminder_sent",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    /** The person's local date, YYYY-MM-DD. */
+    day: text("day").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind, t.day] })],
 );
 
 export type User = typeof user.$inferSelect;

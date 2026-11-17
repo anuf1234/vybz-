@@ -64,6 +64,13 @@
       "when": 1794925620678,
       "tag": "0008_system_accounts_quick_match",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794926046898,
+      "tag": "0009_shop_reminders",
+      "breakpoints": true
     }
   ]
 }

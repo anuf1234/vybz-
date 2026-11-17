@@ -748,8 +748,9 @@ export async function voidBattleAsModerator(deps: BattleDeps, actor: UserRow | n
 export async function usersById(db: Executor, ids: string[]): Promise<Map<string, UserSummary>> {
   if (!ids.length) return new Map();
   const rows = await db
-    .select({ id: schema.user.id, handle: schema.user.handle, displayName: schema.user.name, image: schema.user.image })
+    .select({ id: schema.user.id, handle: schema.user.handle, displayName: schema.user.name, image: schema.user.image, frame: schema.userProgress.frame })
     .from(schema.user)
+    .leftJoin(schema.userProgress, eq(schema.userProgress.userId, schema.user.id))
     .where(inArray(schema.user.id, ids));
   return new Map(rows.map((r) => [r.id, r]));
 }

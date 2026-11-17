@@ -24,6 +24,7 @@ const WAYS: [string, string][] = [
 export default function Wallet() {
   const session = useSession();
   const signedIn = Boolean(session.data);
+  const router = useRouter();
   const first = useResource(signedIn ? () => api.wallet() : null, [signedIn]);
   const [more, setMore] = useState<{ items: WalletEntry[]; cursor: string | null } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -64,6 +65,7 @@ export default function Wallet() {
         <View style={{ gap: space.md, marginBottom: space.sm }}>
           {first.error ? <ErrorBanner message={first.error.message} onRetry={() => void first.reload()} /> : null}
           {w ? <Balance w={w} /> : first.loading ? <Loading /> : null}
+          <Button title="🛍️ Spend coins in the shop" kind="secondary" onPress={() => router.push("/shop")} />
           <Card style={{ gap: space.sm }}>
             <Text style={type.heading}>How to earn</Text>
             {WAYS.map(([what, pays]) => (

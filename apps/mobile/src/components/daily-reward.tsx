@@ -38,7 +38,8 @@ export function DailyReward({ onClaimed }: { onClaimed?: () => void }) {
         <Text style={type.heading}>Daily reward</Text>
         <Pressable onPress={() => router.push("/wallet")} accessibilityRole="link" accessibilityLabel={`${s.balance.coins} coins. Open XP and coins`}>
           <Text style={type.small}>
-            {s.streak ? `🔥 ${s.streak}-day streak` : "Start a streak"} · 🪙 {s.balance.coins} ›
+            {s.streak ? `🔥 ${s.streak}-day streak` : "Start a streak"}
+            {s.streakFreezes ? ` · 🧊 ${s.streakFreezes}` : ""} · 🪙 {s.balance.coins} ›
           </Text>
         </Pressable>
       </View>

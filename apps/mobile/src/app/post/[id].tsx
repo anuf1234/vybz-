@@ -1,3 +1,4 @@
+import { frameColor } from "@vybz/core";
 import type { CommentView } from "@vybz/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -83,7 +84,7 @@ export default function PostScreen() {
         renderItem={({ item }) => (
           <Pressable onLongPress={() => commentActions(item)} style={styles.comment} accessibilityHint="Long press for options">
             <Pressable onPress={() => router.push({ pathname: "/user/[handle]", params: { handle: item.author.handle } })} accessibilityRole="link" accessibilityLabel={`@${item.author.handle}`}>
-              <Avatar name={item.author.displayName} image={item.author.image} size={30} />
+              <Avatar name={item.author.displayName} image={item.author.image} size={30} ring={frameColor(item.author.frame)} />
             </Pressable>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={type.small}>
