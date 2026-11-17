@@ -41,7 +41,10 @@ let cached: ServerEnv | null = null;
 
 export function serverEnv(): ServerEnv {
   if (cached) return cached;
-  const env = ServerEnvSchema.parse(Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== "")));
+  const raw = Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== ""));
+  // On Render, default the public URL to the service's own address.
+  if (!raw.BETTER_AUTH_URL && raw.RENDER_EXTERNAL_URL) raw.BETTER_AUTH_URL = raw.RENDER_EXTERNAL_URL;
+  const env = ServerEnvSchema.parse(raw);
   if (env.VYBZ_DEMO_CATALOG && isProductionDeployment(env)) throw new Error("VYBZ_DEMO_CATALOG must not be enabled in production");
   cached = env;
   return env;
