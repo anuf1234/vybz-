@@ -1,16 +1,26 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { ServiceWorker } from "@/components/service-worker";
+import { serverEnv } from "@/server/env";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: { default: "VYBZ", template: "%s · VYBZ" },
-  description: "Battle your music taste. The crowd decides.",
-  metadataBase: new URL("https://urexp.com"),
-  applicationName: "VYBZ",
-  appleWebApp: { capable: true, title: "VYBZ", statusBarStyle: "black-translucent" },
-  icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
-};
+/** Link previews need absolute image URLs, so they use this deployment's own address. */
+export function generateMetadata(): Metadata {
+  let base = "https://urexp.com";
+  try {
+    base = serverEnv().BETTER_AUTH_URL ?? base;
+  } catch {
+    // Build without env: keep the production domain.
+  }
+  return {
+    title: { default: "VYBZ", template: "%s · VYBZ" },
+    description: "Battle your music taste. The crowd decides.",
+    metadataBase: new URL(base),
+    applicationName: "VYBZ",
+    appleWebApp: { capable: true, title: "VYBZ", statusBarStyle: "black-translucent" },
+    icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#0b0614",
