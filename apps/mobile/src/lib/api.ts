@@ -1,4 +1,5 @@
 import type {
+  AchievementsResponse,
   LeaderboardMetric,
   LeaderboardPeriod,
   LeaderboardResponse,
@@ -253,6 +254,7 @@ export const api = {
   unfollow: (handle: string) => request<null>("DELETE", `/api/v1/users/${encodeURIComponent(handle)}/follow`),
   block: (handle: string) => request<null>("POST", `/api/v1/users/${encodeURIComponent(handle)}/block`),
   unblock: (handle: string) => request<null>("DELETE", `/api/v1/users/${encodeURIComponent(handle)}/block`),
+  achievements: (handle: string) => request<AchievementsResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/achievements`),
   followList: (handle: string, which: "followers" | "following") => request<UserListResponse>("GET", `/api/v1/users/${encodeURIComponent(handle)}/${which}`),
   peopleSuggestions: () => request<{ items: PeopleSuggestion[] }>("GET", "/api/v1/people/suggestions"),
   inbox: () => request<InboxResponse>("GET", "/api/v1/messages"),

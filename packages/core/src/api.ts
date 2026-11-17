@@ -379,7 +379,8 @@ export type NotificationType =
   | "NEW_FOLLOWER"
   | "POST_LIKED"
   | "POST_COMMENT"
-  | "NEW_MESSAGE";
+  | "NEW_MESSAGE"
+  | "ACHIEVEMENT_UNLOCKED";
 
 export interface NotificationView {
   id: string;

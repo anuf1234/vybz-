@@ -1,9 +1,10 @@
-import { type DbHandle, newId, schema } from "@vybz/db";
+import { type DbHandle, and, eq, newId, schema } from "@vybz/db";
 import { DemoCatalog } from "@vybz/providers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BattleDeps, UserRow } from "../src/server/battles/service";
 import { leaderboard } from "../src/server/leaderboards";
-import { followUser } from "../src/server/social";
+import { achievementsFor, checkAchievements } from "../src/server/achievements";
+import { createPost, followUser } from "../src/server/social";
 import { TEST_DB_URL, freshDb } from "./helpers";
 
 /** A finished duel, written straight to the tables. */
@@ -89,6 +90,34 @@ describe.skipIf(!TEST_DB_URL)("progression", () => {
       await followUser(deps, u.dee!, "cyd");
       const lb = await leaderboard(deps, u.dee!, { scope: "following", period: "all", metric: "wins" });
       expect(lb.items.map((e) => e.user.handle)).toEqual(["cyd", "dee"]);
+    });
+  });
+
+  describe("achievements", () => {
+    it("unlocks what has been earned, once, and says so", async () => {
+      const got = await checkAchievements(h.db, null, [u.ann!.id]);
+      expect(got.map((d) => d.code).sort()).toEqual(["first_battle", "first_win", "flawless"]);
+      expect(await checkAchievements(h.db, null, [u.ann!.id])).toEqual([]);
+      const notes = await h.db
+        .select()
+        .from(schema.notification)
+        .where(and(eq(schema.notification.userId, u.ann!.id), eq(schema.notification.type, "ACHIEVEMENT_UNLOCKED")));
+      expect(notes).toHaveLength(3);
+      expect(notes[0]!.link).toBe("/achievements");
+    });
+
+    it("reports progress toward the rest", async () => {
+      const res = await achievementsFor(h.db, u.ann!.id);
+      expect(res).toMatchObject({ unlocked: 3, total: res.items.length });
+      expect(res.items.slice(0, 3).every((i) => i.unlockedAt)).toBe(true);
+      expect(res.items.find((i) => i.code === "battles_10")).toMatchObject({ progress: 2, target: 10, unlockedAt: null });
+      expect(res.items.find((i) => i.code === "first_win")).toMatchObject({ progress: 1 });
+    });
+
+    it("checks after a post", async () => {
+      await createPost(deps, u.bea!, { body: "first!" });
+      const res = await achievementsFor(h.db, u.bea!.id);
+      expect(res.items.find((i) => i.code === "first_post")?.unlockedAt).toBeTruthy();
     });
   });
 });

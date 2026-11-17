@@ -43,6 +43,13 @@
       "when": 1794920990996,
       "tag": "0005_social",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794923379818,
+      "tag": "0006_achievements",
+      "breakpoints": true
     }
   ]
 }

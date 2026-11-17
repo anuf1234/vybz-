@@ -1,3 +1,4 @@
+import { checkAchievements } from "../achievements";
 import {
   type BattleAggregate,
   type BattleFeed,
@@ -138,6 +139,7 @@ async function transition(
     } catch (err) {
       console.error("notify failed", id, err);
     }
+    if (result.events.some((e) => e.type === "battle.completed")) await afterBattleCompleted(deps, result.battle);
     return result;
   }
 }
@@ -155,6 +157,23 @@ function mapError(err: unknown): unknown {
     return new ServiceError(status, err.code, err.message);
   }
   return err;
+}
+
+/** Progression for everyone who played. Never fails the battle. */
+async function afterBattleCompleted(deps: BattleDeps, agg: BattleAggregate): Promise<void> {
+  try {
+    await checkAchievements(deps.db, deps.push, agg.participants.map((p) => p.userId));
+  } catch (err) {
+    console.error("progression failed", agg.id, err);
+  }
+}
+
+async function afterVote(deps: BattleDeps, voter: UserRow, _battleId: string, _roundIndex: number): Promise<void> {
+  try {
+    await checkAchievements(deps.db, deps.push, [voter.id]);
+  } catch (err) {
+    console.error("progression failed", voter.id, err);
+  }
 }
 
 /** Applies due transitions if the battle has a deadline in the past. Cheap when nothing is due. */
@@ -527,6 +546,7 @@ export async function castVote(deps: BattleDeps, actor: UserRow | null, id: stri
     if (isUniqueViolation(err)) throw new ServiceError(409, "ALREADY_VOTED");
     throw err;
   }
+  await afterVote(deps, actor!, id, roundIndex);
 }
 
 export async function rematch(deps: BattleDeps, actorIn: UserRow | null, id: string): Promise<{ id: string }> {

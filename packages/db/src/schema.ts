@@ -710,6 +710,21 @@ export const directMessage = pgTable(
   (t) => [index("direct_message_conv_idx").on(t.conversationId, t.createdAt), index("direct_message_sender_idx").on(t.senderId, t.createdAt)],
 );
 
+// ── Progression ────────────────────────────────────────────────────────────
+
+/** Achievements someone has unlocked. Codes come from the catalog in @vybz/core. */
+export const userAchievement = pgTable(
+  "user_achievement",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    unlockedAt: ts("unlocked_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.code] })],
+);
+
 export type User = typeof user.$inferSelect;
 export type Track = typeof track.$inferSelect;
 export type TrackProviderRefRow = typeof trackProviderRef.$inferSelect;

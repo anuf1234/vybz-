@@ -5,5 +5,6 @@ export * from "./voting";
 export * from "./policy";
 export * from "./handles";
 export * from "./genres";
+export * from "./progression";
 export type * from "./api";
 export { PLAYLIST_MAX_TRACKS, REACTIONS } from "./api";
