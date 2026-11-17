@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BattleDeps, UserRow } from "../src/server/battles/service";
 import { leaderboard } from "../src/server/leaderboards";
 import { achievementsFor, checkAchievements } from "../src/server/achievements";
+import { balanceOf, claimDaily, dailyState } from "../src/server/progression";
 import { createPost, followUser } from "../src/server/social";
 import { TEST_DB_URL, freshDb } from "./helpers";
 
@@ -104,6 +105,8 @@ describe.skipIf(!TEST_DB_URL)("progression", () => {
         .where(and(eq(schema.notification.userId, u.ann!.id), eq(schema.notification.type, "ACHIEVEMENT_UNLOCKED")));
       expect(notes).toHaveLength(3);
       expect(notes[0]!.link).toBe("/achievements");
+      // Rewards land in the ledger: 25 + 50 + 75 XP, 10 + 15 + 25 coins.
+      expect(await balanceOf(h.db, u.ann!.id)).toMatchObject({ xp: 150, coins: 50 });
     });
 
     it("reports progress toward the rest", async () => {
@@ -118,6 +121,45 @@ describe.skipIf(!TEST_DB_URL)("progression", () => {
       await createPost(deps, u.bea!, { body: "first!" });
       const res = await achievementsFor(h.db, u.bea!.id);
       expect(res.items.find((i) => i.code === "first_post")?.unlockedAt).toBeTruthy();
+    });
+  });
+
+  describe("daily rewards", () => {
+    const at = (iso: string) => new Date(iso);
+    const ny = { timeZone: "America/New_York" };
+
+    it("climbs the ladder on consecutive days and resets after a gap", async () => {
+      const c = u.cyd!;
+      const before = await balanceOf(h.db, c.id);
+      const d1 = await claimDaily(h.db, null, c, ny, at("2026-03-02T15:00:00Z"));
+      expect(d1.reward).toEqual({ xp: 10, coins: 5 });
+      expect(d1.state).toMatchObject({ today: "2026-03-02", claimedToday: true, canClaim: false, streak: 1, ladderDay: 1 });
+      await expect(claimDaily(h.db, null, c, ny, at("2026-03-02T20:00:00Z"))).rejects.toMatchObject({ code: "ALREADY_CLAIMED" });
+
+      const open = await dailyState(h.db, c, "America/New_York", at("2026-03-03T14:00:00Z"));
+      expect(open).toMatchObject({ claimedToday: false, canClaim: true, streak: 1, ladderDay: 2, reward: { xp: 15, coins: 5 } });
+      expect((await claimDaily(h.db, null, c, ny, at("2026-03-03T14:00:00Z"))).state).toMatchObject({ streak: 2, ladderDay: 2 });
+
+      // Skip the 4th: the 5th starts over.
+      const after = await claimDaily(h.db, null, c, ny, at("2026-03-05T14:00:00Z"));
+      expect(after.state).toMatchObject({ streak: 1, ladderDay: 1 });
+      expect(after.state.balance.xp - before.xp).toBe(10 + 15 + 10);
+    });
+
+    it("counts days in your time zone", async () => {
+      // 03:00 UTC on the 10th is still the 9th in New York (EDT).
+      const s = await dailyState(h.db, u.dee!, "America/New_York", at("2026-03-10T03:00:00Z"));
+      expect(s.today).toBe("2026-03-09");
+      expect((await dailyState(h.db, u.dee!, "Not/AZone", at("2026-03-10T03:00:00Z"))).today).toBe("2026-03-10");
+    });
+
+    it("doesn't let a time-zone hop pay twice in a few hours", async () => {
+      const d = u.dee!;
+      await claimDaily(h.db, null, d, { timeZone: "Pacific/Honolulu" }, at("2026-04-01T08:00:00Z")); // Mar 31 there
+      const hop = await dailyState(h.db, d, "Asia/Tokyo", at("2026-04-01T09:00:00Z")); // Apr 1 there
+      expect(hop).toMatchObject({ today: "2026-04-01", canClaim: false });
+      await expect(claimDaily(h.db, null, d, { timeZone: "Asia/Tokyo" }, at("2026-04-01T09:00:00Z"))).rejects.toMatchObject({ code: "ALREADY_CLAIMED" });
+      expect((await claimDaily(h.db, null, d, { timeZone: "Asia/Tokyo" }, at("2026-04-01T13:00:00Z"))).state.streak).toBe(2);
     });
   });
 });

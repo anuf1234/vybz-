@@ -50,6 +50,13 @@
       "when": 1794923379818,
       "tag": "0006_achievements",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794923571865,
+      "tag": "0007_ledger_daily",
+      "breakpoints": true
     }
   ]
 }

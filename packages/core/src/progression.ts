@@ -80,3 +80,47 @@ export interface AchievementsResponse {
   unlocked: number;
   total: number;
 }
+
+// ── Daily rewards ──────────────────────────────────────────────────────────
+
+export interface Reward {
+  xp: number;
+  coins: number;
+}
+
+/** Claim on consecutive days to climb; day 7 is the big one, then it starts over. */
+export const DAILY_LADDER: readonly Reward[] = [
+  { xp: 10, coins: 5 },
+  { xp: 15, coins: 5 },
+  { xp: 20, coins: 10 },
+  { xp: 25, coins: 10 },
+  { xp: 30, coins: 15 },
+  { xp: 40, coins: 20 },
+  { xp: 75, coins: 50 },
+];
+
+/** 1–7: where a claim on consecutive day `streakDay` lands on the ladder. */
+export function ladderDay(streakDay: number): number {
+  return ((Math.max(1, streakDay) - 1) % DAILY_LADDER.length) + 1;
+}
+
+export interface DailyRewardState {
+  /** Today in your time zone, YYYY-MM-DD. */
+  today: string;
+  claimedToday: boolean;
+  /** False once today is claimed (or, after a time-zone change, until a few hours have passed). */
+  canClaim: boolean;
+  /** Consecutive days claimed, counting today if claimed (or yesterday if today is still open). */
+  streak: number;
+  /** 1–7: the ladder step today's claim is (or was). */
+  ladderDay: number;
+  /** Today's reward: what you'll get, or what you got. */
+  reward: Reward;
+  ladder: Reward[];
+  balance: Reward;
+}
+
+export interface DailyClaimResponse {
+  reward: Reward;
+  state: DailyRewardState;
+}

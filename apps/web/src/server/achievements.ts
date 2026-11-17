@@ -1,6 +1,7 @@
 import { ACHIEVEMENTS, type AchievementDef, type AchievementMetric, type AchievementsResponse } from "@vybz/core";
 import { type Database, type Executor, eq, inArray, schema, sql } from "@vybz/db";
 import { createNotifications, type PushSender } from "./notifications";
+import { grant } from "./progression";
 
 /**
  * Achievements: a fixed catalog (in @vybz/core) checked against each person's
@@ -28,13 +29,6 @@ type ExtraStats = (db: Executor, userId: string) => Promise<Partial<Record<strin
 const extras: ExtraStats[] = [];
 export function addAchievementStats(fn: ExtraStats): void {
   extras.push(fn);
-}
-
-/** Called for each new unlock, inside no transaction; used to grant rewards. */
-type UnlockHook = (db: Database, userId: string, def: AchievementDef) => Promise<void>;
-let onUnlock: UnlockHook | null = null;
-export function setAchievementUnlockHook(fn: UnlockHook | null): void {
-  onUnlock = fn;
 }
 
 export async function achievementStats(db: Executor, userId: string): Promise<AchievementStats> {
@@ -81,8 +75,7 @@ export async function checkAchievements(db: Database, push: PushSender | null | 
           push,
           fresh.map((d) => ({ userId, type: "ACHIEVEMENT_UNLOCKED" as const, title: `${d.icon} Achievement unlocked`, body: `${d.title}: ${d.description}`, battleId: null, link: "/achievements" })),
         );
-        if (!onUnlock) break;
-        for (const d of fresh) await onUnlock(db, userId, d);
+        for (const d of fresh) await grant(db, userId, "ACHIEVEMENT", d.code, d);
       }
     } catch (err) {
       console.error("achievement check failed", userId, err);
