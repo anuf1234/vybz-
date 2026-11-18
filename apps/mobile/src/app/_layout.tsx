@@ -63,6 +63,10 @@ export default function RootLayout() {
         <Stack.Screen name="trivia/index" options={{ title: "Trivia" }} />
         <Stack.Screen name="trivia/[id]" options={{ title: "Trivia", gestureEnabled: false }} />
         <Stack.Screen name="trivia/leaderboard" options={{ title: "Trivia leaderboard" }} />
+        <Stack.Screen name="wars/index" options={{ title: "Album Wars" }} />
+        <Stack.Screen name="wars/new" options={{ title: "Start a war", presentation: "modal" }} />
+        <Stack.Screen name="wars/[id]" options={{ title: "War" }} />
+        <Stack.Screen name="wars/rankings" options={{ title: "Best of" }} />
         <Stack.Screen name="party/index" options={{ title: "Party Mode" }} />
         <Stack.Screen name="party/play" options={{ title: "Party" }} />
         <Stack.Screen name="dj/index" options={{ title: "DJ Vybz" }} />

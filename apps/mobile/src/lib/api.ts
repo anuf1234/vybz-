@@ -1,4 +1,10 @@
 import type {
+  AlbumHit,
+  WarKind,
+  WarListItem,
+  WarPeriod,
+  WarRankingsResponse,
+  WarView,
   DjBattleView,
   DjLessonStepResult,
   DjSetView,
@@ -164,6 +170,8 @@ const MESSAGES: Record<string, string> = {
   NOT_CURRENT_QUESTION: "That question was already answered.",
   ALREADY_FINISHED: "You've finished this game.",
   LYRICS_NOT_ALLOWED: "Questions can't quote lyrics.",
+  IS_SINGLE: "That's a single. Start a Single War for songs.",
+  WAR_CLOSED: "Voting has closed on this war.",
   BATTLE_SET_RULES: "Battle sets run 30 seconds to 3 minutes and use VYBZ pack tracks only.",
   ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
   VOTING_CLOSED: "Voting has closed for this round.",
@@ -349,6 +357,13 @@ export const api = {
     request<DjLessonStepResult>("POST", `/api/v1/dj/lessons/${encodeURIComponent(id)}`, body),
   djSets: () => request<{ items: DjSetView[] }>("GET", "/api/v1/dj/sets"),
   djBattles: (status: "OPEN" | "VOTING" | "COMPLETE") => request<{ items: DjBattleView[] }>("GET", `/api/v1/dj/battles?status=${status}`),
+  wars: (status: "OPEN" | "CLOSED", kind?: WarKind | null) => request<{ items: WarListItem[] }>("GET", `/api/v1/wars?status=${status}${kind ? `&kind=${kind}` : ""}`),
+  war: (id: string) => request<WarView>("GET", `/api/v1/wars/${encodeURIComponent(id)}`),
+  createWar: (kind: WarKind, a: string, b: string) => request<WarView>("POST", "/api/v1/wars", { kind, a, b }),
+  voteWar: (id: string, category: string, side: "A" | "B") => request<WarView>("POST", `/api/v1/wars/${encodeURIComponent(id)}/vote`, { category, side }),
+  warRankings: (kind: WarKind, period: WarPeriod) => request<WarRankingsResponse>("GET", `/api/v1/wars/rankings?kind=${kind}&period=${period}`),
+  searchAlbums: (q: string) => request<{ items: AlbumHit[] }>("GET", `/api/v1/albums/search?q=${encodeURIComponent(q)}`),
+  trendingAlbums: () => request<{ items: AlbumHit[] }>("GET", "/api/v1/albums/trending"),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>
     request<{ added: number; skipped: number }>("POST", "/api/v1/mod/trivia/draft", { category, genre, count }),
 };

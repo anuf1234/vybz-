@@ -168,6 +168,34 @@ export interface BrowseProvider {
   suggestions(theme: ThemeQuery, opts: SearchOptions): Promise<TrackCandidate[]>;
 }
 
+/** A provider's album or single, optionally with its tracks in order. */
+export interface AlbumCandidate {
+  provider: ProviderKind;
+  externalId: string;
+  title: string;
+  artistName: string;
+  releaseYear?: number;
+  releaseDate?: string;
+  genres?: string[];
+  artwork?: Artwork;
+  externalUrl?: string;
+  trackCount?: number;
+  isSingle?: boolean;
+  tracks?: TrackCandidate[];
+}
+
+/** Albums: search, one album with its tracks, and what's charting now. */
+export interface AlbumProvider {
+  readonly kind: ProviderKind;
+  searchAlbums(query: string, opts: SearchOptions): Promise<AlbumCandidate[]>;
+  getAlbum(externalId: string, opts: SearchOptions): Promise<AlbumCandidate | null>;
+  topAlbums(opts: SearchOptions): Promise<AlbumCandidate[]>;
+}
+
+export function isAlbumProvider(p: unknown): p is AlbumProvider {
+  return typeof p === "object" && p !== null && "searchAlbums" in p && "getAlbum" in p;
+}
+
 export function isBrowseProvider(p: unknown): p is BrowseProvider {
   return typeof p === "object" && p !== null && "artistTopSongs" in p && "suggestions" in p && "searchArtists" in p;
 }

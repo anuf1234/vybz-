@@ -405,7 +405,8 @@ export type NotificationType =
   | "LEVEL_UP"
   | "STREAK_REMINDER"
   | "COMMENT_LIKED"
-  | "DJ_BATTLE";
+  | "DJ_BATTLE"
+  | "WAR_RESULT";
 
 export interface NotificationView {
   id: string;

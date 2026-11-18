@@ -1095,3 +1095,52 @@ export const partyAnswer = pgTable(
   },
   (t) => [primaryKey({ columns: [t.partyId, t.step, t.playerId] })],
 );
+
+// ── Album and Single Wars ──────────────────────────────────────────────────
+
+/** Two albums (or two singles) head to head. Sides are provider snapshots; artwork stays provider-hosted. */
+export const war = pgTable(
+  "war",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", { enum: ["ALBUM", "SINGLE"] }).notNull(),
+    status: text("status", { enum: ["OPEN", "CLOSED"] }).notNull().default("OPEN"),
+    title: text("title").notNull(),
+    /** Sorted pair of side refs, so the same matchup isn't opened twice at once. */
+    pairKey: text("pair_key").notNull(),
+    a: jsonb("a").notNull(),
+    b: jsonb("b").notNull(),
+    aRef: text("a_ref").notNull(),
+    bRef: text("b_ref").notNull(),
+    creatorId: text("creator_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    closesAt: ts("closes_at").notNull(),
+    winner: text("winner", { enum: ["A", "B", "DRAW"] }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("war_open_pair_uq").on(t.pairKey).where(sql`${t.status} = 'OPEN'`),
+    index("war_status_idx").on(t.status, t.createdAt),
+    index("war_refs_idx").on(t.aRef, t.bRef),
+  ],
+);
+
+/** One vote per person per category ("overall", "production", …, or "t1".."t20" for track battles). */
+export const warVote = pgTable(
+  "war_vote",
+  {
+    warId: text("war_id")
+      .notNull()
+      .references(() => war.id, { onDelete: "cascade" }),
+    voterId: text("voter_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    side: text("side", { enum: ["A", "B"] }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.warId, t.voterId, t.category] }), index("war_vote_created_idx").on(t.category, t.createdAt)],
+);
