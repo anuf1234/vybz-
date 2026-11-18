@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  type AlbumCandidate,
+  type AlbumProvider,
   type ArtistCandidate,
   type BrowseProvider,
   type FetchLike,
@@ -88,7 +90,26 @@ export interface AppleMusicAdapterConfig {
   fetch?: FetchLike;
 }
 
-export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, BrowseProvider {
+const AlbumSchema = z.object({
+  id: z.string(),
+  attributes: z.object({
+    name: z.string(),
+    artistName: z.string(),
+    releaseDate: z.string().optional(),
+    genreNames: z.array(z.string()).optional(),
+    trackCount: z.number().optional(),
+    isSingle: z.boolean().optional(),
+    url: z.string().optional(),
+    artwork: z.object({ url: z.string(), width: z.number().optional(), height: z.number().optional() }).optional(),
+  }),
+  relationships: z.object({ tracks: z.object({ data: z.array(z.object({ type: z.string() }).passthrough()) }).optional() }).optional(),
+});
+type Album = z.infer<typeof AlbumSchema>;
+const AlbumSearchSchema = z.object({ results: z.object({ albums: z.object({ data: z.array(AlbumSchema) }).optional() }) });
+const AlbumsResponseSchema = z.object({ data: z.array(AlbumSchema) });
+const AlbumChartsSchema = z.object({ results: z.object({ albums: z.array(z.object({ data: z.array(AlbumSchema) })).optional() }) });
+
+export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, BrowseProvider, AlbumProvider {
   readonly kind = "APPLE_MUSIC" as const;
   private readonly fetchFn: FetchLike;
   private readonly genreIds = new Map<string, { at: number; byName: Promise<Map<string, string>> }>();
@@ -219,6 +240,30 @@ export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, Br
     return null;
   }
 
+  async searchAlbums(query: string, opts: SearchOptions): Promise<AlbumCandidate[]> {
+    const term = query.trim();
+    if (!term) return [];
+    const params = new URLSearchParams({ term, types: "albums", limit: String(clamp(opts.limit ?? 15, 1, 25)) });
+    const json = await this.get(`/catalog/${storefront(opts)}/search?${params}`);
+    return (AlbumSearchSchema.parse(json).results.albums?.data ?? []).map(toAlbum);
+  }
+
+  /** One album with its songs in track order. */
+  async getAlbum(externalId: string, opts: SearchOptions): Promise<AlbumCandidate | null> {
+    const json = await this.get(`/catalog/${storefront(opts)}/albums/${encodeURIComponent(externalId)}?include=tracks`, true);
+    if (json === null) return null;
+    const album = AlbumsResponseSchema.parse(json).data[0];
+    return album ? toAlbum(album) : null;
+  }
+
+  /** Albums charting now (Apple's most-played chart for the storefront). */
+  async topAlbums(opts: SearchOptions): Promise<AlbumCandidate[]> {
+    const params = new URLSearchParams({ types: "albums", chart: "most-played", limit: String(clamp(opts.limit ?? 20, 1, 50)) });
+    const json = await this.get(`/catalog/${storefront(opts)}/charts?${params}`, true);
+    if (json === null) return [];
+    return (AlbumChartsSchema.parse(json).results.albums ?? []).flatMap((c) => c.data.map(toAlbum));
+  }
+
   sources(ref: TrackProviderRef, viewer: ViewerContext): PlaybackSource[] {
     const attribution = {
       provider: this.kind,
@@ -298,6 +343,26 @@ function toCandidate(song: Song): TrackCandidate {
     ...(a.artwork ? { artwork: { url: a.artwork.url, width: a.artwork.width, height: a.artwork.height } } : {}),
     ...(a.url ? { externalUrl: a.url } : {}),
     ...(previewUrl ? { previewUrl } : {}),
+  };
+}
+
+function toAlbum(al: Album): AlbumCandidate {
+  const a = al.attributes;
+  const year = a.releaseDate ? Number.parseInt(a.releaseDate.slice(0, 4), 10) : undefined;
+  const tracks = al.relationships?.tracks?.data ? parseSongs(al.relationships.tracks.data) : undefined;
+  return {
+    provider: "APPLE_MUSIC",
+    externalId: al.id,
+    title: a.name.replace(/\s+-\s+(Single|EP)$/i, ""),
+    artistName: a.artistName,
+    ...(year && Number.isFinite(year) ? { releaseYear: year } : {}),
+    ...(a.releaseDate ? { releaseDate: a.releaseDate } : {}),
+    genres: (a.genreNames ?? []).filter((g) => g !== "Music"),
+    ...(a.artwork ? { artwork: { url: appleArtworkUrl(a.artwork.url, 600), width: 600, height: 600 } } : {}),
+    ...(a.url ? { externalUrl: a.url } : {}),
+    ...(a.trackCount !== undefined ? { trackCount: a.trackCount } : {}),
+    isSingle: a.isSingle ?? false,
+    ...(tracks ? { tracks } : {}),
   };
 }
 

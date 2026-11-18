@@ -29,6 +29,7 @@ const ICON: Record<NotificationType, string> = {
   STREAK_REMINDER: "🔥",
   COMMENT_LIKED: "♥",
   DJ_BATTLE: "🎚️",
+  WAR_RESULT: "💿",
 };
 
 export default function NotificationsScreen() {

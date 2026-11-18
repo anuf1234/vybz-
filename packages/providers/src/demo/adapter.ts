@@ -1,4 +1,6 @@
 import type {
+  AlbumCandidate,
+  AlbumProvider,
   ArtistCandidate,
   BrowseProvider,
   MetadataProvider,
@@ -43,7 +45,15 @@ export interface DemoCatalogConfig {
   assetBaseUrl: string;
 }
 
-export class DemoCatalog implements MetadataProvider, PlaybackProvider, BrowseProvider {
+/** Demo albums: two-track records built from the demo tracks, for developing album wars. */
+const DEMO_ALBUMS: readonly { id: string; title: string; artistName: string; releaseYear: number; tracks: string[] }[] = [
+  { id: "after-hours-tapes", title: "After Hours Tapes", artistName: "The Midnight Arcade", releaseYear: 2004, tracks: ["neon-hallway", "midnight-static"] },
+  { id: "velvet-and-glass", title: "Velvet & Glass", artistName: "Kaia Stone", releaseYear: 2008, tracks: ["velvet-circuit", "glass-parade"] },
+  { id: "harbor-nights", title: "Harbor Nights", artistName: "Harbor Lights Club", releaseYear: 2012, tracks: ["low-tide-signal", "pulse-garden"] },
+  { id: "satellite-drive", title: "Satellite Drive", artistName: "Dune Theory", releaseYear: 2019, tracks: ["paper-satellites", "afterglow-drive"] },
+];
+
+export class DemoCatalog implements MetadataProvider, PlaybackProvider, BrowseProvider, AlbumProvider {
   readonly kind = "VYBZ_DEMO" as const;
 
   constructor(private readonly config: DemoCatalogConfig) {}
@@ -84,6 +94,37 @@ export class DemoCatalog implements MetadataProvider, PlaybackProvider, BrowsePr
 
   async suggestions(_theme: ThemeQuery, opts: SearchOptions): Promise<TrackCandidate[]> {
     return DEMO_TRACKS.slice(0, opts.limit ?? 60).map((t) => this.toCandidate(t));
+  }
+
+  async searchAlbums(query: string, opts: SearchOptions): Promise<AlbumCandidate[]> {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return DEMO_ALBUMS.filter((al) => q === "demo" || `${al.title} ${al.artistName}`.toLowerCase().includes(q))
+      .slice(0, opts.limit ?? 15)
+      .map((al) => this.toAlbum(al, false));
+  }
+
+  async getAlbum(externalId: string): Promise<AlbumCandidate | null> {
+    const al = DEMO_ALBUMS.find((x) => x.id === externalId);
+    return al ? this.toAlbum(al, true) : null;
+  }
+
+  async topAlbums(): Promise<AlbumCandidate[]> {
+    return DEMO_ALBUMS.map((al) => this.toAlbum(al, false));
+  }
+
+  private toAlbum(al: (typeof DEMO_ALBUMS)[number], withTracks: boolean): AlbumCandidate {
+    return {
+      provider: "VYBZ_DEMO",
+      externalId: al.id,
+      title: al.title,
+      artistName: al.artistName,
+      releaseYear: al.releaseYear,
+      artwork: { url: this.asset(al.tracks[0]!, "jpg"), width: 300, height: 300 },
+      trackCount: al.tracks.length,
+      isSingle: false,
+      ...(withTracks ? { tracks: al.tracks.map((id) => this.toCandidate(DEMO_TRACKS.find((t) => t.id === id)!)) } : {}),
+    };
   }
 
   private toArtist(name: string): ArtistCandidate {

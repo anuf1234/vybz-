@@ -59,6 +59,9 @@ export default function Home() {
           <Button title="🎉 Party Mode" kind="secondary" style={{ flex: 1 }} />
         </Link>
       </View>
+      <Link href="/wars" asChild>
+        <Button title="💿 Album & Single Wars" kind="secondary" />
+      </Link>
       {signedIn ? <DailyReward key={session.data?.user.id} /> : null}
 
       {feed.error ? <ErrorBanner message={feed.error.message} onRetry={() => void feed.reload()} /> : null}
