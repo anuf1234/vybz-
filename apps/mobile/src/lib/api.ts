@@ -92,20 +92,6 @@ export function timeZone(): string {
   }
 }
 
-/** Staff view of the trivia bank (see the server's trivia pipeline). */
-export interface TriviaBankHealthView {
-  fresh: number;
-  approved: number;
-  drafts: number;
-  daysLeft: number;
-  low: boolean;
-  byCategory: { category: TriviaCategory; approved: number; drafts: number }[];
-  thinGenres: { genre: string; label: string; approved: number }[];
-  lastRun: { at: string; note: string | null } | null;
-  nextRun: string | null;
-  aiReady: boolean;
-}
-
 export class ApiRequestError extends Error {
   constructor(
     readonly status: number,
@@ -382,8 +368,6 @@ export const api = {
   trendingAlbums: () => request<{ items: AlbumHit[] }>("GET", "/api/v1/albums/trending"),
   onboarding: () => request<OnboardingState>("GET", "/api/v1/me/onboarding"),
   updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
-  triviaHealth: () => request<TriviaBankHealthView>("GET", "/api/v1/mod/trivia/health"),
-  runTriviaPipeline: () => request<{ ran: boolean; aiDrafts: number; catalog: number; note: string; health: TriviaBankHealthView }>("POST", "/api/v1/mod/trivia/pipeline", {}),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>
     request<{ added: number; skipped: number }>("POST", "/api/v1/mod/trivia/draft", { category, genre, count }),
 };

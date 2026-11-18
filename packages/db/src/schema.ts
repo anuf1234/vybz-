@@ -1149,11 +1149,3 @@ export const warVote = pgTable(
   },
   (t) => [primaryKey({ columns: [t.warId, t.voterId, t.category] }), index("war_vote_created_idx").on(t.category, t.createdAt)],
 );
-
-/** When recurring background jobs last ran (weekly trivia drafts, …). */
-export const jobRun = pgTable("job_run", {
-  key: text("key").primaryKey(),
-  lastRunAt: ts("last_run_at").notNull(),
-  /** What the run did, for the staff screens. */
-  note: text("note"),
-});

@@ -7,21 +7,9 @@ import { DemoJudge } from "../src/server/ai-judge";
 import { onboardingState, updateOnboarding } from "../src/server/onboarding";
 import { quickBattle } from "../src/server/quick";
 import { answerTrivia, startTrivia } from "../src/server/trivia";
-import type { TriviaDrafter } from "../src/server/trivia";
-import { adminBankHealth, planBatches, runTriviaPipeline, triviaBankHealth } from "../src/server/trivia-pipeline";
 import { TEST_DB_URL, freshDb } from "./helpers";
 
-describe("pipeline planning", () => {
-  it("spreads drafts over categories and thin genres first", () => {
-    const plan = planBatches([{ genre: "gospel", approved: 2 }, { genre: "jazz", approved: 5 }, { genre: "rnb", approved: 20 }], 60);
-    expect(plan.reduce((a, b) => a + b.count, 0)).toBe(60);
-    expect(plan).toHaveLength(6);
-    expect(plan[0]).toEqual({ category: "ARTIST", genre: "gospel", count: 10 });
-    expect(new Set(plan.map((p) => p.category))).toEqual(new Set(["ARTIST", "GENRE", "HISTORY"]));
-  });
-});
-
-describe.skipIf(!TEST_DB_URL)("onboarding and the trivia pipeline", () => {
+describe.skipIf(!TEST_DB_URL)("onboarding", () => {
   let h: DbHandle;
   let deps: BattleDeps;
   let newbie: UserRow;
@@ -74,37 +62,4 @@ describe.skipIf(!TEST_DB_URL)("onboarding and the trivia pipeline", () => {
     expect(s).toMatchObject({ active: false, next: null, done: false });
   });
 
-  it("reports bank health and runs weekly, aimed at thin genres", async () => {
-    const health = await triviaBankHealth(h.db, OPTS, null);
-    expect(health.approved).toBeGreaterThan(100);
-    expect(health.daysLeft).toBe(Math.floor(health.fresh / 10));
-    expect(health.thinGenres[0]!.approved).toBeLessThanOrEqual(health.thinGenres.at(-1)!.approved);
-    await expect(adminBankHealth(deps, OPTS, null, newbie)).rejects.toMatchObject({ code: "FORBIDDEN" });
-
-    const asked: { category: string; genre: string | null }[] = [];
-    let n = 0;
-    const drafter: TriviaDrafter = {
-      draft: async (input) => {
-        asked.push({ category: input.category, genre: input.genre });
-        return Array.from({ length: input.count }, () => {
-          n++;
-          return { category: input.category, prompt: `Draft question number ${n}?`, choices: ["A", "B", "C", "D"], answerIndex: 1, explanation: "Because." };
-        });
-      },
-    };
-    const first = await runTriviaPipeline(deps, OPTS, drafter, { total: 20 });
-    expect(first).toMatchObject({ ran: true, aiDrafts: 20 });
-    expect(asked[0]!.genre).toBe(health.thinGenres[0]!.genre);
-    // Not due again for a week (the bank isn't low).
-    expect((await runTriviaPipeline(deps, OPTS, drafter, { total: 20 })).ran).toBe(false);
-    expect((await runTriviaPipeline(deps, OPTS, drafter, { total: 20, now: new Date(Date.now() + 8 * 86_400_000) })).ran).toBe(true);
-    const drafts = await h.db.select().from(schema.triviaQuestion).where(eq(schema.triviaQuestion.source, "AI"));
-    expect(drafts).toHaveLength(40);
-    expect(drafts.every((d) => d.status === "DRAFT")).toBe(true);
-    const notes = await h.db.select().from(schema.notification).where(eq(schema.notification.userId, mod.id));
-    expect(notes.some((x) => x.type === "TRIVIA_REVIEW" && x.link === "/mod/trivia-review")).toBe(true);
-    // Without an AI key it still adds catalog questions and says what's missing.
-    const r = await runTriviaPipeline(deps, OPTS, null, { force: true });
-    expect(r.note).toContain("ANTHROPIC_API_KEY");
-  });
 });

@@ -1,5 +1,5 @@
 {
-  "id": "1f165c5c-de27-4969-9b11-5646e8250b41",
+  "id": "2a05ae33-f19b-4d09-b590-44729f1b3213",
   "prevId": "a0ac7b57-a841-454a-84c2-9153e81bc9fd",
   "version": "7",
   "dialect": "postgresql",
@@ -2246,37 +2246,6 @@
           "value": "\"follow\".\"follower_id\" <> \"follow\".\"followee_id\""
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.job_run": {
-      "name": "job_run",
-      "schema": "",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "last_run_at": {
-          "name": "last_run_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.ledger_entry": {

@@ -1,14 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { advanceAllDue, ensureAllAiVerdicts } from "@/server/battles/service";
-import { getBattleDeps, getTriviaDrafter, getTriviaOptions } from "@/server/context";
+import { getBattleDeps } from "@/server/context";
 import { botJoinDaily, botPlayAll } from "@/server/bot";
 import { ensureDailyBattle } from "@/server/daily";
 import { botTakeStaleQuick } from "@/server/quick";
 import { closeDueDjBattles } from "@/server/dj";
 import { sweepParties } from "@/server/party";
 import { closeDueWars } from "@/server/wars";
-import { runTriviaPipeline } from "@/server/trivia-pipeline";
 import { sendStreakReminders } from "@/server/reminders";
 import { serverEnv } from "@/server/env";
 
@@ -36,9 +35,7 @@ async function handle(req: Request) {
   const djBattles = await closeDueDjBattles(deps).catch((err) => (console.error("dj battles failed", err), 0));
   const parties = await sweepParties(deps).catch((err) => (console.error("party sweep failed", err), 0));
   const wars = await closeDueWars(deps).catch((err) => (console.error("wars failed", err), 0));
-  // Weekly (or daily while the bank is low); a no-op otherwise.
-  const trivia = await runTriviaPipeline(deps, getTriviaOptions(), getTriviaDrafter()).catch((err) => (console.error("trivia pipeline failed", err), null));
-  return NextResponse.json({ advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, trivia: trivia?.ran ? trivia.note : null });
+  return NextResponse.json({ advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars });
 }
 
 export { handle as GET, handle as POST };
