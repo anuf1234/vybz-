@@ -1,4 +1,14 @@
 import type {
+  TriviaAdminList,
+  TriviaAdminQuestion,
+  TriviaAnswerResult,
+  TriviaCategory,
+  TriviaHubResponse,
+  TriviaLeaderboardPeriod,
+  TriviaLeaderboardResponse,
+  TriviaPlayView,
+  TriviaQuestionInput,
+  TriviaQuestionStatus,
   GifView,
   ImportPlaylistResponse,
   ShopResponse,
@@ -147,6 +157,9 @@ const MESSAGES: Record<string, string> = {
   PLAYLIST_NOT_FOUND: "We couldn't open that playlist. Is it public or unlisted?",
   IMPORT_UNAVAILABLE: "Importing isn't available right now.",
   INVALID_GIF: "That GIF couldn't be used.",
+  NOT_CURRENT_QUESTION: "That question was already answered.",
+  ALREADY_FINISHED: "You've finished this game.",
+  LYRICS_NOT_ALLOWED: "Questions can't quote lyrics.",
   ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
   VOTING_CLOSED: "Voting has closed for this round.",
   HANDLE_TAKEN: "That handle is taken.",
@@ -310,4 +323,22 @@ export const api = {
   leaderboard: (q: { scope: LeaderboardScope; genre?: string | null; period: LeaderboardPeriod; metric: LeaderboardMetric }) =>
     request<LeaderboardResponse>("GET", `/api/v1/leaderboards?scope=${q.scope}&period=${q.period}&metric=${q.metric}${q.genre ? `&genre=${q.genre}` : ""}`),
   profile: (handle: string) => request<ProfileView>("GET", `/api/v1/users/${encodeURIComponent(handle)}`),
+  triviaHub: () => request<TriviaHubResponse>("GET", `/api/v1/trivia?tz=${encodeURIComponent(timeZone())}`),
+  triviaStart: (body: { mode: "DAILY" } | { mode: "PRACTICE"; category: TriviaCategory; genre?: string | null }) =>
+    request<TriviaPlayView>("POST", "/api/v1/trivia/plays", { ...body, tz: timeZone() }),
+  triviaPlay: (id: string) => request<TriviaPlayView>("GET", `/api/v1/trivia/plays/${encodeURIComponent(id)}`),
+  triviaAnswer: (id: string, questionId: string, choice: number | null) =>
+    request<TriviaAnswerResult>("POST", `/api/v1/trivia/plays/${encodeURIComponent(id)}/answer`, { questionId, choice }),
+  triviaLeaderboard: (period: TriviaLeaderboardPeriod, scope: "global" | "following") =>
+    request<TriviaLeaderboardResponse>("GET", `/api/v1/trivia/leaderboard?period=${period}&scope=${scope}&tz=${encodeURIComponent(timeZone())}`),
+  triviaFlag: (questionId: string, reason: string) => request<{ ok: true }>("POST", `/api/v1/trivia/questions/${encodeURIComponent(questionId)}/flag`, { reason }),
+  modTrivia: (status: TriviaQuestionStatus | "FLAGGED", category?: TriviaCategory | null, q?: string) =>
+    request<TriviaAdminList>("GET", `/api/v1/mod/trivia/questions?status=${status}${category ? `&category=${category}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+  modTriviaCreate: (body: TriviaQuestionInput & { approve?: boolean }) => request<TriviaAdminQuestion>("POST", "/api/v1/mod/trivia/questions", body),
+  modTriviaUpdate: (id: string, body: Partial<TriviaQuestionInput> & { status?: TriviaQuestionStatus }) =>
+    request<TriviaAdminQuestion>("PATCH", `/api/v1/mod/trivia/questions/${encodeURIComponent(id)}`, body),
+  modTriviaBulk: (ids: string[], status: "APPROVED" | "REJECTED" | "RETIRED") => request<{ updated: number }>("POST", "/api/v1/mod/trivia/bulk", { ids, status }),
+  modTriviaGenerate: () => request<{ added: number }>("POST", "/api/v1/mod/trivia/generate", {}),
+  modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>
+    request<{ added: number; skipped: number }>("POST", "/api/v1/mod/trivia/draft", { category, genre, count }),
 };

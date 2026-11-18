@@ -28,7 +28,8 @@ export function ProgressCard({ handle }: { handle: string }) {
       <View style={styles.row}>
         <StreakStat icon="🔥" label="Daily" s={streaks.daily} />
         <StreakStat icon="⚡" label="Win streak" s={streaks.wins} />
-        <StreakStat icon="🎚️" label="Days battling" s={streaks.play} />
+        <StreakStat icon="🎚️" label="Battling" s={streaks.play} />
+        {streaks.trivia ? <StreakStat icon="🧠" label="Trivia" s={streaks.trivia} /> : null}
       </View>
     </Card>
   );

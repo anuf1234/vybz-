@@ -10,6 +10,8 @@ import { getDb } from "./db";
 import { requireEnv, serverEnv } from "./env";
 import { createMailer } from "./mailer";
 import { expoPushSender } from "./notifications";
+import type { TriviaDrafter, TriviaOptions } from "./trivia";
+import { AnthropicTriviaDrafter } from "./trivia-ai";
 
 /** Wires the services to this deployment's configuration. Built once per process. */
 
@@ -38,6 +40,16 @@ export function getAiJudge(): AiJudge | null {
   const env = serverEnv();
   if (env.ANTHROPIC_API_KEY) return new AnthropicJudge({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_JUDGE_MODEL });
   return env.VYBZ_DEMO_CATALOG ? new DemoJudge() : null;
+}
+
+export function getTriviaOptions(): TriviaOptions {
+  const env = serverEnv();
+  return { audioPreviews: env.TRIVIA_AUDIO_PREVIEWS || env.VYBZ_DEMO_CATALOG };
+}
+
+export function getTriviaDrafter(): TriviaDrafter | null {
+  const env = serverEnv();
+  return env.ANTHROPIC_API_KEY ? new AnthropicTriviaDrafter({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_JUDGE_MODEL }) : null;
 }
 
 export function getBattleDeps(): BattleDeps {

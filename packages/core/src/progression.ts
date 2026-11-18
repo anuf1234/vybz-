@@ -19,7 +19,11 @@ export type AchievementMetric =
   | "bestWinStreak"
   | "bestDailyStreak"
   | "bestPlayStreak"
-  | "level";
+  | "level"
+  | "triviaDaily"
+  | "triviaPerfect"
+  | "triviaCorrect"
+  | "bestTriviaStreak";
 
 export interface AchievementDef {
   code: string;
@@ -64,6 +68,11 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   a("win_streak_5", "🌪️", "Unstoppable", "Win 5 battles in a row.", "bestWinStreak", 5, 200, 80),
   a("daily_7", "🗓️", "Every day", "Claim your daily reward 7 days in a row.", "bestDailyStreak", 7, 100, 50),
   a("play_7", "🎚️", "In the booth", "Finish a battle 7 days in a row.", "bestPlayStreak", 7, 150, 60),
+  a("trivia_first", "🧠", "Quiz night", "Finish your first daily trivia.", "triviaDaily", 1, 20, 5),
+  a("trivia_perfect", "💯", "Perfect 10", "Get all 10 right in a daily trivia.", "triviaPerfect", 1, 100, 40),
+  a("trivia_streak_7", "📚", "Daily scholar", "Play daily trivia 7 days in a row.", "bestTriviaStreak", 7, 120, 50),
+  a("trivia_30", "🎓", "Music professor", "Finish 30 daily trivia games.", "triviaDaily", 30, 250, 100),
+  a("trivia_correct_250", "🗃️", "Encyclopedia", "Answer 250 trivia questions correctly.", "triviaCorrect", 250, 200, 75),
   a("level_5", "⭐", "Rising", "Reach level 5.", "level", 5, 0, 50),
   a("level_10", "🌟", "Headliner", "Reach level 10.", "level", 10, 0, 100),
   a("level_25", "💫", "Legend", "Reach level 25.", "level", 25, 0, 250),
@@ -152,6 +161,8 @@ export interface Streaks {
   wins: Streak;
   /** Consecutive days with at least one finished battle. */
   play: Streak;
+  /** Consecutive days with a finished daily trivia. */
+  trivia: Streak;
 }
 
 /** Longest and trailing runs of consecutive YYYY-MM-DD days; the trailing run only counts if it reaches yesterday or today. */
@@ -253,7 +264,7 @@ export function battleReward(o: { won: boolean; roundsWon: number }): Reward {
   };
 }
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE";
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA";
 
 export interface WalletEntry {
   id: string;

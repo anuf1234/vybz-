@@ -31,6 +31,8 @@ const ServerEnvSchema = z.object({
   AUTH_REQUIRE_EMAIL_VERIFICATION: bool(isProd),
   /** Built-in synthesized demo catalog. Refused in production. */
   VYBZ_DEMO_CATALOG: bool(false),
+  /** Guess the song plays official provider previews. Off until you've confirmed your provider terms allow it in a game. */
+  TRIVIA_AUDIO_PREVIEWS: bool(false),
   /** Enables the AI judge (Claude). */
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   AI_JUDGE_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
