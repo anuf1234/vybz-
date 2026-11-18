@@ -44,7 +44,8 @@
         }
       ],
       "expo-image",
-      "expo-notifications"
+      "expo-notifications",
+      "./plugins/apple-sign-in-gate"
     ],
     "experiments": {
       "typedRoutes": true
