@@ -42,9 +42,14 @@ export default function Home() {
       ) : null}
 
       {signedIn ? (
-        <Link href="/quick" asChild>
-          <Button title="⚡ Quick battle" />
-        </Link>
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <Link href="/quick" asChild>
+            <Button title="⚡ Quick battle" style={{ flex: 1 }} />
+          </Link>
+          <Link href="/trivia" asChild>
+            <Button title="🧠 Daily trivia" kind="secondary" style={{ flex: 1 }} />
+          </Link>
+        </View>
       ) : null}
       {signedIn ? <DailyReward key={session.data?.user.id} /> : null}
 

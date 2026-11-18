@@ -1,5 +1,5 @@
 import { DECADES, GENRES, decadeLabel } from "@vybz/core";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
@@ -14,7 +14,8 @@ export default function Quick() {
   const session = useSession();
   const config = useServerConfig();
   const botAvailable = Boolean(config?.aiJudge.available);
-  const [genre, setGenre] = useState<string | null>(null);
+  const params = useLocalSearchParams<{ genre?: string }>();
+  const [genre, setGenre] = useState<string | null>(params.genre && GENRES.some((g) => g.key === params.genre) ? params.genre : null);
   const [decade, setDecade] = useState<number | null>(null);
   const [busy, setBusy] = useState<"find" | "bot" | null>(null);
   const [waitingId, setWaitingId] = useState<string | null>(null);

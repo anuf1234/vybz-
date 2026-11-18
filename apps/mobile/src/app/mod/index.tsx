@@ -52,6 +52,9 @@ export default function ModerationQueue() {
       contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}
       refreshControl={<RefreshControl tintColor={color.violet} refreshing={reports.refreshing} onRefresh={() => void reports.reload()} />}
     >
+      <Link href="/mod/trivia" asChild>
+        <Button title="🧠 Trivia questions" kind="secondary" />
+      </Link>
       <Segmented
         value={status}
         onChange={(v) => setStatus(v as Status)}

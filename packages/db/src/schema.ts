@@ -852,3 +852,96 @@ export type Track = typeof track.$inferSelect;
 export type TrackProviderRefRow = typeof trackProviderRef.$inferSelect;
 export type BattleRow = typeof battle.$inferSelect;
 export type RoundRow = typeof battleRound.$inferSelect;
+
+// ── Trivia ─────────────────────────────────────────────────────────────────
+
+/** A trivia question. Only APPROVED questions are served; staff review the rest. */
+export const triviaQuestion = pgTable(
+  "trivia_question",
+  {
+    id: text("id").primaryKey(),
+    category: text("category", { enum: ["GENRE", "ARTIST", "ALBUM_ART", "HISTORY", "GUESS_SONG"] }).notNull(),
+    /** Canonical genre key, when the question is about one. */
+    genre: text("genre"),
+    /** 1 easy, 2 medium, 3 hard. */
+    difficulty: integer("difficulty").notNull().default(2),
+    prompt: text("prompt").notNull(),
+    choices: text("choices").array().notNull(),
+    answerIndex: integer("answer_index").notNull(),
+    explanation: text("explanation"),
+    /** Album art and Guess the song questions point at a catalog track (artwork and preview stay provider-hosted). */
+    trackId: text("track_id").references(() => track.id, { onDelete: "cascade" }),
+    source: text("source", { enum: ["SEED", "CATALOG", "AI", "ADMIN"] }).notNull(),
+    status: text("status", { enum: ["DRAFT", "APPROVED", "REJECTED", "RETIRED"] }).notNull().default("DRAFT"),
+    /** Stops the same generated or seeded question being added twice. */
+    dedupeKey: text("dedupe_key").unique(),
+    timesAsked: integer("times_asked").notNull().default(0),
+    timesCorrect: integer("times_correct").notNull().default(0),
+    createdById: text("created_by_id").references(() => user.id, { onDelete: "set null" }),
+    reviewedById: text("reviewed_by_id").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: ts("reviewed_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("trivia_question_pick_idx").on(t.status, t.category, t.genre),
+    check("trivia_question_answer_ck", sql`${t.answerIndex} >= 0 and ${t.answerIndex} < cardinality(${t.choices})`),
+  ],
+);
+
+/** A game's questions: one shared DAILY set per day, or a PRACTICE set per game. */
+export const triviaSet = pgTable(
+  "trivia_set",
+  {
+    id: text("id").primaryKey(),
+    mode: text("mode", { enum: ["DAILY", "PRACTICE"] }).notNull(),
+    /** YYYY-MM-DD for daily sets. */
+    day: text("day"),
+    category: text("category"),
+    genre: text("genre"),
+    questionIds: text("question_ids").array().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("trivia_set_daily_uq").on(t.day).where(sql`${t.mode} = 'DAILY'`)],
+);
+
+/** One person's game. Answers are checked one at a time on the server, against a clock. */
+export const triviaPlay = pgTable(
+  "trivia_play",
+  {
+    id: text("id").primaryKey(),
+    setId: text("set_id")
+      .notNull()
+      .references(() => triviaSet.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** [{ questionId, choice (null on timeout), correct, points, ms }] */
+    answers: jsonb("answers").notNull().default(sql`'[]'::jsonb`),
+    /** When the current (next unanswered) question was shown. */
+    servedAt: ts("served_at"),
+    score: integer("score").notNull().default(0),
+    correct: integer("correct").notNull().default(0),
+    total: integer("total").notNull(),
+    startedAt: ts("started_at").notNull().defaultNow(),
+    finishedAt: ts("finished_at"),
+  },
+  (t) => [uniqueIndex("trivia_play_once_uq").on(t.setId, t.userId), index("trivia_play_user_idx").on(t.userId, t.startedAt)],
+);
+
+/** "Something's wrong with this question" from a player, for the review queue. */
+export const triviaFlag = pgTable(
+  "trivia_flag",
+  {
+    questionId: text("question_id")
+      .notNull()
+      .references(() => triviaQuestion.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    resolvedAt: ts("resolved_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.questionId, t.userId] })],
+);

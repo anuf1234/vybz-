@@ -27,6 +27,10 @@ const ZERO: AchievementStats = {
   bestDailyStreak: 0,
   bestPlayStreak: 0,
   level: 1,
+  triviaDaily: 0,
+  triviaPerfect: 0,
+  triviaCorrect: 0,
+  bestTriviaStreak: 0,
 };
 
 export async function achievementStats(db: Executor, userId: string): Promise<AchievementStats> {
@@ -49,10 +53,15 @@ export async function achievementStats(db: Executor, userId: string): Promise<Ac
       (select count(*)::int from post where author_id = ${userId} and hidden_at is null) as "posts",
       (select count(*)::int from follow where followee_id = ${userId}) as "followers",
       (select count(*)::int from playlist where owner_id = ${userId}) as "playlists",
-      (select coalesce(max(level), 1)::int from user_progress where user_id = ${userId}) as "level"
+      (select coalesce(max(level), 1)::int from user_progress where user_id = ${userId}) as "level",
+      (select count(*)::int from trivia_play tp join trivia_set ts on ts.id = tp.set_id
+        where tp.user_id = ${userId} and ts.mode = 'DAILY' and tp.finished_at is not null) as "triviaDaily",
+      (select count(*)::int from trivia_play tp join trivia_set ts on ts.id = tp.set_id
+        where tp.user_id = ${userId} and ts.mode = 'DAILY' and tp.finished_at is not null and tp.correct = tp.total and tp.total > 0) as "triviaPerfect",
+      (select coalesce(sum(correct), 0)::int from trivia_play where user_id = ${userId} and finished_at is not null) as "triviaCorrect"
   `);
   const streaks = await streaksFor(db, userId);
-  return { ...ZERO, ...(res.rows[0] ?? {}), bestWinStreak: streaks.wins.best, bestDailyStreak: streaks.daily.best, bestPlayStreak: streaks.play.best } as AchievementStats;
+  return { ...ZERO, ...(res.rows[0] ?? {}), bestWinStreak: streaks.wins.best, bestDailyStreak: streaks.daily.best, bestPlayStreak: streaks.play.best, bestTriviaStreak: streaks.trivia.best } as AchievementStats;
 }
 
 /**
