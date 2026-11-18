@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal";
 import { serverEnv } from "@/server/env";
 
+/** Read SUPPORT_EMAIL when the page is served, not at build time. */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = { title: "Delete your data" };
 
 export default function DataDeletion() {

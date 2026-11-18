@@ -1,4 +1,5 @@
 import * as AppleAuthentication from "expo-apple-authentication";
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Platform, Text, View } from "react-native";
@@ -23,7 +24,8 @@ export function SocialSignIn() {
   const enabled = config?.signIn;
 
   useEffect(() => {
-    if (Platform.OS !== "ios" || !enabled?.apple) return;
+    // Needs the Sign in with Apple entitlement (ios.usesAppleSignIn in app.json).
+    if (Platform.OS !== "ios" || !enabled?.apple || !Constants.expoConfig?.ios?.usesAppleSignIn) return;
     void AppleAuthentication.isAvailableAsync().then(setAppleReady, () => setAppleReady(false));
   }, [enabled?.apple]);
 
