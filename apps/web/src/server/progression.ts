@@ -260,6 +260,8 @@ export async function wallet(db: Executor, user: UserRow | null, cursor?: string
         const item = shopItem(r.ref.split(":")[0]);
         return { label: `Bought ${item ? `${item.icon} ${item.title}` : "an item"}`, link: "/shop" };
       }
+      case "ONBOARDING":
+        return { label: "👋 Welcome bonus", link: null };
       case "WAR_VOTE":
         return { label: "Voted in an album war", link: `/wars/${r.ref}` };
       case "PARTY":

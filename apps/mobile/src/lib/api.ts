@@ -1,4 +1,5 @@
 import type {
+  OnboardingState,
   AlbumHit,
   WarKind,
   WarListItem,
@@ -171,6 +172,7 @@ const MESSAGES: Record<string, string> = {
   ALREADY_FINISHED: "You've finished this game.",
   LYRICS_NOT_ALLOWED: "Questions can't quote lyrics.",
   IS_SINGLE: "That's a single. Start a Single War for songs.",
+  INVALID_GENRES: "Pick one to three genres.",
   WAR_CLOSED: "Voting has closed on this war.",
   BATTLE_SET_RULES: "Battle sets run 30 seconds to 3 minutes and use VYBZ pack tracks only.",
   ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
@@ -364,6 +366,8 @@ export const api = {
   warRankings: (kind: WarKind, period: WarPeriod) => request<WarRankingsResponse>("GET", `/api/v1/wars/rankings?kind=${kind}&period=${period}`),
   searchAlbums: (q: string) => request<{ items: AlbumHit[] }>("GET", `/api/v1/albums/search?q=${encodeURIComponent(q)}`),
   trendingAlbums: () => request<{ items: AlbumHit[] }>("GET", "/api/v1/albums/trending"),
+  onboarding: () => request<OnboardingState>("GET", "/api/v1/me/onboarding"),
+  updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>
     request<{ added: number; skipped: number }>("POST", "/api/v1/mod/trivia/draft", { category, genre, count }),
 };

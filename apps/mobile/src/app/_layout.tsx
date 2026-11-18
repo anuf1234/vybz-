@@ -60,6 +60,8 @@ export default function RootLayout() {
         <Stack.Screen name="playlist/import" options={{ title: "Import from YouTube", presentation: "modal" }} />
         <Stack.Screen name="mod/index" options={{ title: "Moderation" }} />
         <Stack.Screen name="mod/trivia" options={{ title: "Trivia questions" }} />
+        <Stack.Screen name="mod/trivia-review" options={{ title: "Review drafts" }} />
+        <Stack.Screen name="welcome" options={{ title: "Welcome", presentation: "modal", gestureEnabled: false }} />
         <Stack.Screen name="trivia/index" options={{ title: "Trivia" }} />
         <Stack.Screen name="trivia/[id]" options={{ title: "Trivia", gestureEnabled: false }} />
         <Stack.Screen name="trivia/leaderboard" options={{ title: "Trivia leaderboard" }} />

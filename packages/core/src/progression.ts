@@ -269,7 +269,7 @@ export function battleReward(o: { won: boolean; roundsWon: number }): Reward {
   };
 }
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA" | "DJ_LESSON" | "DJ_BATTLE" | "PARTY" | "WAR_VOTE";
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA" | "DJ_LESSON" | "DJ_BATTLE" | "PARTY" | "WAR_VOTE" | "ONBOARDING";
 
 export interface WalletEntry {
   id: string;
@@ -341,4 +341,23 @@ export interface ShopResponse {
   maxStreakFreezes: number;
   frame: string | null;
   items: ShopItemView[];
+}
+
+// ── Onboarding ─────────────────────────────────────────────────────────────
+
+/** A one-time welcome bonus for finishing the first-run path. */
+export const ONBOARDING_BONUS: Reward = { xp: 50, coins: 25 };
+
+export interface OnboardingState {
+  /** Show the welcome flow / "Start here" card. */
+  active: boolean;
+  genres: string[];
+  steps: { battle: boolean; trivia: boolean };
+  /** What to do next, or null when done. */
+  next: "genres" | "battle" | "trivia" | null;
+  done: boolean;
+  /** Paid when this request finished onboarding. */
+  bonus: Reward | null;
+  /** Whether the VYBZ bot can play right away (otherwise the first battle waits for a person). */
+  botAvailable: boolean;
 }

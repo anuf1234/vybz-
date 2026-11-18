@@ -751,6 +751,11 @@ export const userProgress = pgTable("user_progress", {
   streakFreezes: integer("streak_freezes").notNull().default(0),
   /** Profile frame shown around the avatar (a shop item key). */
   frame: text("frame"),
+  /** Genres picked during onboarding (VYBZ genre keys). */
+  favoriteGenres: text("favorite_genres").array().notNull().default(sql`'{}'::text[]`),
+  /** Finished the first-run path (first battle, then today's trivia), or skipped it. */
+  onboardedAt: ts("onboarded_at"),
+  onboardingSkipped: boolean("onboarding_skipped").notNull().default(false),
   updatedAt: updatedAt(),
 });
 
