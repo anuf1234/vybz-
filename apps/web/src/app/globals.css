@@ -42,3 +42,9 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* DJ Studio inside the app: the app has its own navigation. */
+body:has([data-embed="app"]) > header,
+body:has([data-embed="app"]) > footer {
+  display: none;
+}

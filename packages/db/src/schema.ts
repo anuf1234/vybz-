@@ -945,3 +945,85 @@ export const triviaFlag = pgTable(
   },
   (t) => [primaryKey({ columns: [t.questionId, t.userId] })],
 );
+
+// ── DJ Studio, DJ University, DJ battles ───────────────────────────────────
+
+/**
+ * A recorded mix: which tracks (VYBZ pack, or files on the DJ's own device,
+ * identified by hash) and every move made. No audio is stored; the set is
+ * replayed in the studio from the event log.
+ */
+export const djSet = pgTable(
+  "dj_set",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    kind: text("kind", { enum: ["SET", "BATTLE"] }).notNull(),
+    tracks: jsonb("tracks").notNull(),
+    events: jsonb("events").notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    stats: jsonb("stats").notNull(),
+    vybzOnly: boolean("vybz_only").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("dj_set_owner_idx").on(t.ownerId, t.createdAt)],
+);
+
+export const djLessonProgress = pgTable(
+  "dj_lesson_progress",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    lessonId: text("lesson_id").notNull(),
+    learnedAt: ts("learned_at"),
+    watchedAt: ts("watched_at"),
+    practicedAt: ts("practiced_at"),
+    quizScore: integer("quiz_score"),
+    completedAt: ts("completed_at"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.lessonId] })],
+);
+
+/** Two DJs, one battle set each; listeners vote after hearing both. */
+export const djBattle = pgTable(
+  "dj_battle",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    status: text("status", { enum: ["OPEN", "VOTING", "COMPLETE", "CANCELLED"] }).notNull().default("OPEN"),
+    creatorId: text("creator_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    creatorSetId: text("creator_set_id")
+      .notNull()
+      .references(() => djSet.id, { onDelete: "cascade" }),
+    opponentId: text("opponent_id").references(() => user.id, { onDelete: "cascade" }),
+    opponentSetId: text("opponent_set_id").references(() => djSet.id, { onDelete: "cascade" }),
+    votingEndsAt: ts("voting_ends_at"),
+    winnerId: text("winner_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("dj_battle_status_idx").on(t.status, t.createdAt)],
+);
+
+export const djBattleVote = pgTable(
+  "dj_battle_vote",
+  {
+    battleId: text("battle_id")
+      .notNull()
+      .references(() => djBattle.id, { onDelete: "cascade" }),
+    voterId: text("voter_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    side: text("side", { enum: ["A", "B"] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.battleId, t.voterId] })],
+);

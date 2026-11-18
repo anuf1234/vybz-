@@ -31,6 +31,8 @@ const ZERO: AchievementStats = {
   triviaPerfect: 0,
   triviaCorrect: 0,
   bestTriviaStreak: 0,
+  djLessons: 0,
+  djBattleWins: 0,
 };
 
 export async function achievementStats(db: Executor, userId: string): Promise<AchievementStats> {
@@ -58,7 +60,9 @@ export async function achievementStats(db: Executor, userId: string): Promise<Ac
         where tp.user_id = ${userId} and ts.mode = 'DAILY' and tp.finished_at is not null) as "triviaDaily",
       (select count(*)::int from trivia_play tp join trivia_set ts on ts.id = tp.set_id
         where tp.user_id = ${userId} and ts.mode = 'DAILY' and tp.finished_at is not null and tp.correct = tp.total and tp.total > 0) as "triviaPerfect",
-      (select coalesce(sum(correct), 0)::int from trivia_play where user_id = ${userId} and finished_at is not null) as "triviaCorrect"
+      (select coalesce(sum(correct), 0)::int from trivia_play where user_id = ${userId} and finished_at is not null) as "triviaCorrect",
+      (select count(*)::int from dj_lesson_progress where user_id = ${userId} and completed_at is not null) as "djLessons",
+      (select count(*)::int from dj_battle where status = 'COMPLETE' and winner_id = ${userId}) as "djBattleWins"
   `);
   const streaks = await streaksFor(db, userId);
   return { ...ZERO, ...(res.rows[0] ?? {}), bestWinStreak: streaks.wins.best, bestDailyStreak: streaks.daily.best, bestPlayStreak: streaks.play.best, bestTriviaStreak: streaks.trivia.best } as AchievementStats;

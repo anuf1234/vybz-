@@ -20,3 +20,13 @@ export const authClient = createAuthClient({
 });
 
 export const { useSession, signIn, signUp, signOut } = authClient;
+
+/** A single-use token (valid a minute) that signs DJ Studio in when the app opens it in its browser view. */
+export async function studioHandoffToken(): Promise<string | null> {
+  try {
+    const res = await authClient.$fetch<{ token: string }>("/one-time-token/generate", { method: "GET" });
+    return res.data?.token ?? null;
+  } catch {
+    return null;
+  }
+}

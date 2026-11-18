@@ -1,4 +1,8 @@
 import type {
+  DjBattleView,
+  DjLessonStepResult,
+  DjSetView,
+  DjUniversityResponse,
   TriviaAdminList,
   TriviaAdminQuestion,
   TriviaAnswerResult,
@@ -160,6 +164,7 @@ const MESSAGES: Record<string, string> = {
   NOT_CURRENT_QUESTION: "That question was already answered.",
   ALREADY_FINISHED: "You've finished this game.",
   LYRICS_NOT_ALLOWED: "Questions can't quote lyrics.",
+  BATTLE_SET_RULES: "Battle sets run 30 seconds to 3 minutes and use VYBZ pack tracks only.",
   ALREADY_CLAIMED: "You've claimed today's reward. Come back tomorrow.",
   VOTING_CLOSED: "Voting has closed for this round.",
   HANDLE_TAKEN: "That handle is taken.",
@@ -339,6 +344,11 @@ export const api = {
     request<TriviaAdminQuestion>("PATCH", `/api/v1/mod/trivia/questions/${encodeURIComponent(id)}`, body),
   modTriviaBulk: (ids: string[], status: "APPROVED" | "REJECTED" | "RETIRED") => request<{ updated: number }>("POST", "/api/v1/mod/trivia/bulk", { ids, status }),
   modTriviaGenerate: () => request<{ added: number }>("POST", "/api/v1/mod/trivia/generate", {}),
+  djUniversity: () => request<DjUniversityResponse>("GET", "/api/v1/dj/university"),
+  djLessonStep: (id: string, body: { step: "learn" | "demo" } | { step: "quiz"; answers: number[] }) =>
+    request<DjLessonStepResult>("POST", `/api/v1/dj/lessons/${encodeURIComponent(id)}`, body),
+  djSets: () => request<{ items: DjSetView[] }>("GET", "/api/v1/dj/sets"),
+  djBattles: (status: "OPEN" | "VOTING" | "COMPLETE") => request<{ items: DjBattleView[] }>("GET", `/api/v1/dj/battles?status=${status}`),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>
     request<{ added: number; skipped: number }>("POST", "/api/v1/mod/trivia/draft", { category, genre, count }),
 };

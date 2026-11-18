@@ -2,6 +2,7 @@ import { expo } from "@better-auth/expo";
 import { HandleSchema, suggestHandle } from "@vybz/core";
 import { type Database, newId, schema, eq } from "@vybz/db";
 import { betterAuth } from "better-auth";
+import { oneTimeToken } from "better-auth/plugins/one-time-token";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import type { Mailer } from "./mailer";
 
@@ -116,7 +117,8 @@ export function createAuth(cfg: AuthConfig) {
       // headers clients can't forge; elsewhere, don't trust forwarding headers.
       ...(process.env.RENDER ? { ipAddress: { ipAddressHeaders: ["cf-connecting-ip", "true-client-ip", "x-forwarded-for"] } } : {}),
     },
-    plugins: [expo()],
+    // One-time tokens hand the app's session to DJ Studio in the in-app browser (single use, 1 minute, stored hashed).
+    plugins: [expo(), oneTimeToken({ expiresIn: 1, storeToken: "hashed" })],
   });
 }
 
