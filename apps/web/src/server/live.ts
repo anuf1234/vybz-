@@ -1,5 +1,6 @@
+import { parseGif, storedGif } from "./gifs";
 import { type ChatMessageView, type LiveView, REACTIONS, type Reaction } from "@vybz/core";
-import { and, eq, gt, gte, isNull, newId, schema, sql } from "@vybz/db";
+import { and, eq, gt, gte, inArray, isNull, newId, schema, sql } from "@vybz/db";
 import { canViewBattle, isStaff } from "./battles/access";
 import { type BattleDeps, ServiceError, type UserRow, usersById } from "./battles/service";
 
@@ -45,14 +46,15 @@ export function blocklistFromEnv(raw = process.env.CHAT_BLOCKLIST ?? ""): string
     .filter(Boolean);
 }
 
-export async function postChat(deps: BattleDeps, user: UserRow | null, id: string, body: unknown, blocklist = blocklistFromEnv()): Promise<ChatMessageView> {
+export async function postChat(deps: BattleDeps, user: UserRow | null, id: string, body: unknown, blocklist = blocklistFromEnv(), gifIn?: unknown): Promise<ChatMessageView> {
   if (!user) throw new ServiceError(401, "SIGN_IN_REQUIRED");
   if (user.status !== "ACTIVE") throw new ServiceError(403, "ACCOUNT_RESTRICTED");
+  const gif = parseGif(gifIn);
   const text = typeof body === "string" ? body.replace(/\s+/g, " ").trim() : "";
-  if (!text || text.length > CHAT_MAX) throw new ServiceError(400, "INVALID_MESSAGE", `Messages are 1–${CHAT_MAX} characters.`);
+  if ((!text && !gif) || text.length > CHAT_MAX) throw new ServiceError(400, "INVALID_MESSAGE", `Messages are 1–${CHAT_MAX} characters.`);
   const row = await battleFor(deps, id, user);
   if (row.status === "CANCELLED" || row.status === "EXPIRED" || row.status === "VOIDED") throw new ServiceError(409, "CHAT_CLOSED");
-  const problem = chatProblem(text, blocklist);
+  const problem = text ? chatProblem(text, blocklist) : null;
   if (problem) throw new ServiceError(400, "MESSAGE_BLOCKED", problem);
 
   const t = now(deps);
@@ -65,9 +67,22 @@ export async function postChat(deps: BattleDeps, user: UserRow | null, id: strin
     throw new ServiceError(429, "SLOW_DOWN", "You're sending messages too fast.");
   }
 
-  const msg = { id: newId(), battleId: id, userId: user.id, body: text, createdAt: t };
+  const msg = { id: newId(), battleId: id, userId: user.id, body: text, gif, createdAt: t };
   await deps.db.insert(schema.chatMessage).values(msg);
-  return { id: msg.id, user: { id: user.id, handle: user.handle, displayName: user.name, image: user.image }, body: text, createdAt: t.toISOString(), hidden: false };
+  return { id: msg.id, user: { id: user.id, handle: user.handle, displayName: user.name, image: user.image }, body: text, gif, likes: 0, liked: false, createdAt: t.toISOString(), hidden: false };
+}
+
+/** Like or unlike someone's chat message. */
+export async function setChatLike(deps: BattleDeps, user: UserRow | null, battleId: string, messageId: string, liked: boolean): Promise<{ likes: number; liked: boolean }> {
+  if (!user) throw new ServiceError(401, "SIGN_IN_REQUIRED");
+  if (user.status !== "ACTIVE") throw new ServiceError(403, "ACCOUNT_RESTRICTED");
+  await battleFor(deps, battleId, user);
+  const [m] = await deps.db.select().from(schema.chatMessage).where(and(eq(schema.chatMessage.id, messageId), eq(schema.chatMessage.battleId, battleId)));
+  if (!m || m.hiddenAt) throw new ServiceError(404, "NOT_FOUND");
+  if (liked) await deps.db.insert(schema.chatLike).values({ messageId, userId: user.id }).onConflictDoNothing();
+  else await deps.db.delete(schema.chatLike).where(and(eq(schema.chatLike.messageId, messageId), eq(schema.chatLike.userId, user.id)));
+  const [{ n } = { n: 0 }] = await deps.db.select({ n: sql<number>`count(*)::int` }).from(schema.chatLike).where(eq(schema.chatLike.messageId, messageId));
+  return { likes: n, liked };
 }
 
 export async function react(deps: BattleDeps, user: UserRow | null, id: string, emoji: unknown, guestKey: string | null): Promise<void> {
@@ -118,12 +133,32 @@ export async function liveView(deps: BattleDeps, user: UserRow | null, id: strin
       .groupBy(schema.reaction.emoji),
     deps.db.select({ emoji: schema.reaction.emoji, n: sql<number>`count(*)::int` }).from(schema.reaction).where(eq(schema.reaction.battleId, id)).groupBy(schema.reaction.emoji),
   ]);
-  const users = await usersById(deps.db, [...new Set(messages.map((m) => m.userId))]);
+  const mids = messages.map((m) => m.id);
+  const [users, likeRows, mine] = await Promise.all([
+    usersById(deps.db, [...new Set(messages.map((m) => m.userId))]),
+    mids.length
+      ? deps.db.select({ id: schema.chatLike.messageId, n: sql<number>`count(*)::int` }).from(schema.chatLike).where(inArray(schema.chatLike.messageId, mids)).groupBy(schema.chatLike.messageId)
+      : Promise.resolve([] as { id: string; n: number }[]),
+    user && mids.length
+      ? deps.db.select({ id: schema.chatLike.messageId }).from(schema.chatLike).where(and(inArray(schema.chatLike.messageId, mids), eq(schema.chatLike.userId, user.id)))
+      : Promise.resolve([] as { id: string }[]),
+  ]);
+  const likeN = new Map(likeRows.map((l) => [l.id, l.n]));
+  const likedSet = new Set(mine.map((x) => x.id));
   return {
     viewers: viewers[0]?.n ?? 0,
     messages: messages
       .reverse()
-      .map((m) => ({ id: m.id, user: users.get(m.userId)!, body: m.body, createdAt: m.createdAt.toISOString(), hidden: m.hiddenAt !== null })),
+      .map((m) => ({
+        id: m.id,
+        user: users.get(m.userId)!,
+        body: m.body,
+        gif: storedGif(m.gif),
+        likes: likeN.get(m.id) ?? 0,
+        liked: likedSet.has(m.id),
+        createdAt: m.createdAt.toISOString(),
+        hidden: m.hiddenAt !== null,
+      })),
     recentReactions: Object.fromEntries(recent.map((r) => [r.emoji as Reaction, r.n])),
     reactionTotals: Object.fromEntries(totals.map((r) => [r.emoji as Reaction, r.n])),
   };

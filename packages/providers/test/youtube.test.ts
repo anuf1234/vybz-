@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { YouTubeAdapter, cleanChannelName, parseIsoDuration } from "../src";
+import { YouTubeAdapter, cleanChannelName, parseIsoDuration, playlistIdFromUrl } from "../src";
 import type { ViewerContext } from "../src";
 import { stubFetch, youtubeVideo } from "./fixtures";
 
@@ -58,5 +58,34 @@ describe("YouTubeAdapter", () => {
     const adapter = new YouTubeAdapter({ apiKey: "secret-key", fetch });
     await expect(adapter.search("x", { storefront: "us" })).rejects.toThrow(/YOUTUBE.*\/search failed with 403: .*quotaExceeded for key \[key\]/);
     await expect(adapter.search("x", { storefront: "us" })).rejects.not.toThrow(/secret-key/);
+  });
+});
+
+describe("YouTube playlists", () => {
+  it("reads a playlist link", () => {
+    expect(playlistIdFromUrl("https://www.youtube.com/playlist?list=PLabcdefghij123")).toBe("PLabcdefghij123");
+    expect(playlistIdFromUrl("https://music.youtube.com/playlist?list=OLAK5uy_abcdefghijk&si=x")).toBe("OLAK5uy_abcdefghijk");
+    expect(playlistIdFromUrl("https://youtu.be/abc?list=PLabcdefghij123")).toBe("PLabcdefghij123");
+    expect(playlistIdFromUrl("PLabcdefghij123")).toBe("PLabcdefghij123");
+    expect(playlistIdFromUrl("https://example.com/?list=PLabcdefghij123")).toBeNull();
+    expect(playlistIdFromUrl("https://www.youtube.com/watch?v=abc")).toBeNull();
+  });
+
+  it("pages through items, dropping duplicates and deleted videos", async () => {
+    const { fetch, calls } = stubFetch({
+      "/playlists": { items: [{ snippet: { title: "Slow jams" } }] },
+      "/playlistItems": (url: URL) =>
+        url.searchParams.get("pageToken")
+          ? { items: [{ contentDetails: { videoId: "c" } }, { contentDetails: { videoId: "a" } }] }
+          : { items: [{ contentDetails: { videoId: "a" } }, { contentDetails: {} }, { contentDetails: { videoId: "b" } }], nextPageToken: "p2" },
+    });
+    const adapter = new YouTubeAdapter({ apiKey: "k", fetch });
+    expect(await adapter.playlist("PLx")).toEqual({ title: "Slow jams", videoIds: ["a", "b", "c"] });
+    expect(calls.filter((c) => c.url.pathname.endsWith("/playlistItems"))).toHaveLength(2);
+  });
+
+  it("returns null for a playlist that doesn't exist", async () => {
+    const { fetch } = stubFetch({ "/playlists": { items: [] } });
+    expect(await new YouTubeAdapter({ apiKey: "k", fetch }).playlist("PLnope")).toBeNull();
   });
 });

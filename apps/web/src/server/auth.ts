@@ -13,6 +13,10 @@ export interface AuthConfig {
   mailer: Mailer;
   mobileScheme: string;
   google?: { clientId: string; clientSecret: string };
+  facebook?: { clientId: string; clientSecret: string };
+  tiktok?: { clientKey: string; clientSecret: string };
+  /** Native Sign in with Apple: ID tokens from the app, checked against this bundle ID. */
+  apple?: { bundleId: string };
   /** Extra trusted origins (e.g. Expo dev servers). */
   trustedOrigins?: string[];
   /** Turn off Better Auth's limiter (tests hammer the endpoints). */
@@ -20,7 +24,7 @@ export interface AuthConfig {
 }
 
 /**
- * Better Auth: email/password and Google, database sessions in our Postgres.
+ * Better Auth: email/password plus Google, Facebook, TikTok and Apple, database sessions in our Postgres.
  * The Expo plugin lets the mobile app sign in with the same sessions: it stores
  * the session cookie in SecureStore and sends it on each request.
  */
@@ -59,8 +63,16 @@ export function createAuth(cfg: AuthConfig) {
         });
       },
     },
-    socialProviders: cfg.google ? { google: { clientId: cfg.google.clientId, clientSecret: cfg.google.clientSecret } } : {},
-    account: { accountLinking: { enabled: true, trustedProviders: ["google"] } },
+    socialProviders: {
+      ...(cfg.google ? { google: { clientId: cfg.google.clientId, clientSecret: cfg.google.clientSecret } } : {}),
+      ...(cfg.facebook ? { facebook: { clientId: cfg.facebook.clientId, clientSecret: cfg.facebook.clientSecret } } : {}),
+      ...(cfg.tiktok ? { tiktok: { clientKey: cfg.tiktok.clientKey, clientSecret: cfg.tiktok.clientSecret } } : {}),
+      // Only the app's native sheet is used, which sends an ID token; the web redirect flow
+      // (which would need an Apple client secret) isn't offered.
+      ...(cfg.apple ? { apple: { clientId: cfg.apple.bundleId, appBundleIdentifier: cfg.apple.bundleId, clientSecret: "native-id-token-only" } } : {}),
+    },
+    // Emails Google and Apple have verified can join an existing VYBZ account with the same email.
+    account: { accountLinking: { enabled: true, trustedProviders: ["google", "apple"] } },
     session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: true, maxAge: 5 * 60 } },
     user: {
       additionalFields: {

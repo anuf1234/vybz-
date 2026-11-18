@@ -42,7 +42,7 @@ export const user = pgTable(
     role: text("role", { enum: ["USER", "CREATOR", "MODERATOR", "ADMIN"] })
       .notNull()
       .default("USER"),
-    status: text("status", { enum: ["ACTIVE", "SUSPENDED", "BANNED"] })
+    status: text("status", { enum: ["ACTIVE", "SUSPENDED", "BANNED", "DELETED"] })
       .notNull()
       .default("ACTIVE"),
     /** VYBZ's own accounts (the daily host, the bot): kept off leaderboards and out of rewards. */
@@ -413,6 +413,8 @@ export const chatMessage = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    /** A GIF from GIPHY (id, url, size, title); validated on write. */
+    gif: jsonb("gif"),
     hiddenAt: ts("hidden_at"),
     hiddenById: text("hidden_by_id").references(() => user.id),
     createdAt: createdAt(),
@@ -635,6 +637,8 @@ export const post = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    /** A GIF from GIPHY (id, url, size, title); validated on write. */
+    gif: jsonb("gif"),
     /** At most one attachment. */
     trackId: text("track_id").references(() => track.id, { onDelete: "set null" }),
     playlistId: text("playlist_id").references(() => playlist.id, { onDelete: "set null" }),
@@ -671,6 +675,8 @@ export const postComment = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    /** A GIF from GIPHY (id, url, size, title); validated on write. */
+    gif: jsonb("gif"),
     hiddenAt: ts("hidden_at"),
     hiddenById: text("hidden_by_id").references(() => user.id),
     createdAt: createdAt(),
@@ -708,6 +714,8 @@ export const directMessage = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    /** A GIF from GIPHY (id, url, size, title); validated on write. */
+    gif: jsonb("gif"),
     hiddenAt: ts("hidden_at"),
     createdAt: createdAt(),
   },
@@ -807,6 +815,36 @@ export const reminderSent = pgTable(
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.kind, t.day] })],
+);
+
+/** Likes on post comments. */
+export const commentLike = pgTable(
+  "comment_like",
+  {
+    commentId: text("comment_id")
+      .notNull()
+      .references(() => postComment.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.commentId, t.userId] })],
+);
+
+/** Likes on battle chat messages. */
+export const chatLike = pgTable(
+  "chat_like",
+  {
+    messageId: text("message_id")
+      .notNull()
+      .references(() => chatMessage.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.userId] })],
 );
 
 export type User = typeof user.$inferSelect;

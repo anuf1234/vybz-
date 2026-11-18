@@ -1,4 +1,5 @@
 import { checkAchievements } from "./achievements";
+import { parseGif, storedGif } from "./gifs";
 import { awardPost } from "./progression";
 import type {
   CommentView,
@@ -49,9 +50,10 @@ export async function userByHandle(db: Executor, handle: string): Promise<UserRo
 }
 
 /** Text checks shared by posts, comments and messages. */
-function cleanText(raw: unknown, max: number, what: string): string {
+function cleanText(raw: unknown, max: number, what: string, allowEmpty = false): string {
   const text = typeof raw === "string" ? raw.replace(/\r\n/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim() : "";
-  if (!text || text.length > max) throw new ServiceError(400, "INVALID_TEXT", `${what} must be 1–${max} characters.`);
+  if ((!text && !allowEmpty) || text.length > max) throw new ServiceError(400, "INVALID_TEXT", `${what} must be 1–${max} characters.`);
+  if (!text) return text;
   const lower = text.toLowerCase();
   if (blocklistFromEnv().some((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(lower))) {
     throw new ServiceError(400, "MESSAGE_BLOCKED", "That breaks the community rules.");
@@ -220,6 +222,7 @@ type PostRow = typeof schema.post.$inferSelect;
 const CreatePostSchema = z
   .object({
     body: z.string(),
+    gif: z.unknown().optional(),
     trackId: z.string().min(1).max(40).optional(),
     catalogId: z.string().min(3).max(80).optional(),
     playlistId: z.string().min(1).max(40).optional(),
@@ -232,7 +235,8 @@ export async function createPost(deps: BattleDeps, user: UserRow | null, body: u
   const me = requireUser(user);
   const parsed = CreatePostSchema.safeParse(body);
   if (!parsed.success) throw new ServiceError(400, "INVALID_REQUEST", z.prettifyError(parsed.error));
-  const text = cleanText(parsed.data.body, POST_MAX, "Posts");
+  const gif = parseGif(parsed.data.gif);
+  const text = cleanText(parsed.data.body, POST_MAX, "Posts", Boolean(gif));
   await rateLimit(deps.db, schema.post, "authorId", me.id, 1, 10_000);
   await rateLimit(deps.db, schema.post, "authorId", me.id, 20, 3600_000);
 
@@ -261,7 +265,7 @@ export async function createPost(deps: BattleDeps, user: UserRow | null, body: u
   }
 
   const id = newId();
-  await deps.db.insert(schema.post).values({ id, authorId: me.id, body: text, trackId, playlistId, battleId });
+  await deps.db.insert(schema.post).values({ id, authorId: me.id, body: text, gif, trackId, playlistId, battleId });
   try {
     await awardPost(deps.db, me.id, id);
   } catch (err) {
@@ -307,6 +311,7 @@ async function postViews(deps: BattleDeps, viewer: UserRow | null, rows: PostRow
       id: r.id,
       author: authors.get(r.authorId) ?? { id: r.authorId, handle: "unknown", displayName: "Unknown", image: null },
       body: r.body,
+      gif: storedGif(r.gif),
       createdAt: r.createdAt.toISOString(),
       attachment,
       likes: likeN.get(r.id) ?? 0,
@@ -372,14 +377,32 @@ export async function getPost(deps: BattleDeps, viewer: UserRow | null, id: stri
     .where(and(eq(c.postId, id), isNull(c.hiddenAt), ...(hidden.length ? [notInArray(c.authorId, hidden)] : [])))
     .orderBy(c.createdAt)
     .limit(200);
-  const authors = await usersById(deps.db, [...new Set(rows.map((r) => r.authorId))]);
+  const ids = rows.map((r) => r.id);
+  const [authors, likeRows, mine] = await Promise.all([
+    usersById(deps.db, [...new Set(rows.map((r) => r.authorId))]),
+    ids.length
+      ? deps.db
+          .select({ id: schema.commentLike.commentId, n: sql<number>`count(*)::int` })
+          .from(schema.commentLike)
+          .where(inArray(schema.commentLike.commentId, ids))
+          .groupBy(schema.commentLike.commentId)
+      : Promise.resolve([] as { id: string; n: number }[]),
+    viewer && ids.length
+      ? deps.db.select({ id: schema.commentLike.commentId }).from(schema.commentLike).where(and(inArray(schema.commentLike.commentId, ids), eq(schema.commentLike.userId, viewer.id)))
+      : Promise.resolve([] as { id: string }[]),
+  ]);
+  const likeN = new Map(likeRows.map((l) => [l.id, l.n]));
+  const liked = new Set(mine.map((m) => m.id));
   const staff = isStaff(viewer);
   const comments: CommentView[] = rows.map((r) => ({
     id: r.id,
     author: authors.get(r.authorId) ?? { id: r.authorId, handle: "unknown", displayName: "Unknown", image: null },
     body: r.body,
+    gif: storedGif(r.gif),
     createdAt: r.createdAt.toISOString(),
     canDelete: Boolean(viewer && (viewer.id === r.authorId || viewer.id === row.authorId || staff)),
+    likes: likeN.get(r.id) ?? 0,
+    liked: liked.has(r.id),
   }));
   const [post] = await postViews(deps, viewer, [row], ctx);
   return { post: post!, comments };
@@ -415,17 +438,43 @@ export async function setLike(deps: BattleDeps, user: UserRow | null, id: string
 export async function addComment(deps: BattleDeps, user: UserRow | null, id: string, body: unknown): Promise<CommentView> {
   const me = requireUser(user);
   const row = await visiblePost(deps, me, id);
-  const text = cleanText((body as { body?: unknown } | null)?.body, COMMENT_MAX, "Comments");
+  const gif = parseGif((body as { gif?: unknown } | null)?.gif);
+  const text = cleanText((body as { body?: unknown } | null)?.body, COMMENT_MAX, "Comments", Boolean(gif));
   await rateLimit(deps.db, schema.postComment, "authorId", me.id, 1, 3000);
   await rateLimit(deps.db, schema.postComment, "authorId", me.id, 30, 600_000);
   const cid = newId();
-  const [c] = await deps.db.insert(schema.postComment).values({ id: cid, postId: id, authorId: me.id, body: text }).returning();
+  const [c] = await deps.db.insert(schema.postComment).values({ id: cid, postId: id, authorId: me.id, body: text, gif }).returning();
   if (row.authorId !== me.id) {
     await createNotifications(deps.db, deps.push, [
-      { userId: row.authorId, type: "POST_COMMENT", title: "New comment", body: `@${me.handle}: ${text.slice(0, 80)}`, battleId: null, link: `/post/${id}` },
+      { userId: row.authorId, type: "POST_COMMENT", title: "New comment", body: `@${me.handle}: ${text ? text.slice(0, 80) : "sent a GIF"}`, battleId: null, link: `/post/${id}` },
     ]);
   }
-  return { id: cid, author: summary(me), body: text, createdAt: c!.createdAt.toISOString(), canDelete: true };
+  return { id: cid, author: summary(me), body: text, gif, createdAt: c!.createdAt.toISOString(), canDelete: true, likes: 0, liked: false };
+}
+
+/** Like or unlike a comment. The author hears about it once per person. */
+export async function setCommentLike(deps: BattleDeps, user: UserRow | null, commentId: string, liked: boolean): Promise<{ likes: number; liked: boolean }> {
+  const me = requireUser(user);
+  const [c] = await deps.db.select().from(schema.postComment).where(eq(schema.postComment.id, commentId));
+  if (!c || c.hiddenAt) throw new ServiceError(404, "NOT_FOUND");
+  await visiblePost(deps, me, c.postId);
+  if (await isBlockedBetween(deps.db, me.id, c.authorId)) throw new ServiceError(404, "NOT_FOUND");
+  if (!liked) {
+    await deps.db.delete(schema.commentLike).where(and(eq(schema.commentLike.commentId, commentId), eq(schema.commentLike.userId, me.id)));
+  } else {
+    const inserted = await deps.db.insert(schema.commentLike).values({ commentId, userId: me.id }).onConflictDoNothing().returning();
+    if (inserted.length && c.authorId !== me.id) {
+      const link = `/post/${c.postId}`;
+      const nbody = `@${me.handle} liked your comment.`;
+      const [already] = await deps.db
+        .select({ id: schema.notification.id })
+        .from(schema.notification)
+        .where(and(eq(schema.notification.userId, c.authorId), eq(schema.notification.type, "COMMENT_LIKED"), eq(schema.notification.link, link), eq(schema.notification.body, nbody)));
+      if (!already) await createNotifications(deps.db, deps.push, [{ userId: c.authorId, type: "COMMENT_LIKED", title: "New like", body: nbody, battleId: null, link }]);
+    }
+  }
+  const [{ n }] = (await deps.db.select({ n: sql<number>`count(*)::int` }).from(schema.commentLike).where(eq(schema.commentLike.commentId, commentId))) as [{ n: number }];
+  return { likes: n, liked };
 }
 
 export async function deleteComment(deps: BattleDeps, user: UserRow | null, commentId: string): Promise<void> {
@@ -500,7 +549,7 @@ export async function inbox(deps: BattleDeps, user: UserRow | null): Promise<Inb
     if (!other) return [];
     const last = lasts.find((m) => m.conversationId === r.id);
     const unread = Boolean(last && last.senderId !== me.id && (!s.myRead || last.createdAt > s.myRead));
-    return [{ id: r.id, other, lastMessage: last ? { body: last.body, createdAt: last.createdAt.toISOString(), fromMe: last.senderId === me.id } : null, unread }];
+    return [{ id: r.id, other, lastMessage: last ? { body: last.body || (last.gif ? "GIF" : ""), createdAt: last.createdAt.toISOString(), fromMe: last.senderId === me.id } : null, unread }];
   });
   return { items, unread: items.filter((i) => i.unread).length };
 }
@@ -527,7 +576,7 @@ export async function getConversation(deps: BattleDeps, user: UserRow | null, id
   return {
     id,
     other: people.get(s.other) ?? { id: s.other, handle: "unknown", displayName: "Unknown", image: null },
-    messages: rows.reverse().map((m) => ({ id: m.id, body: m.body, createdAt: m.createdAt.toISOString(), fromMe: m.senderId === me.id })),
+    messages: rows.reverse().map((m) => ({ id: m.id, body: m.body, gif: storedGif(m.gif), createdAt: m.createdAt.toISOString(), fromMe: m.senderId === me.id })),
     canSend: state === "OK",
     blockedReason: state === "OK" ? null : state,
   };
@@ -539,12 +588,13 @@ export async function sendMessage(deps: BattleDeps, user: UserRow | null, id: st
   const s = sides(c, me.id);
   const state = await messagingState(deps.db, me.id, s.other);
   if (state !== "OK") throw new ServiceError(403, state, state === "BLOCKED" ? "You can't message this person." : "You can message people once one of you follows the other.");
-  const text = cleanText((body as { body?: unknown } | null)?.body, MESSAGE_MAX, "Messages");
+  const gif = parseGif((body as { gif?: unknown } | null)?.gif);
+  const text = cleanText((body as { body?: unknown } | null)?.body, MESSAGE_MAX, "Messages", Boolean(gif));
   await rateLimit(deps.db, schema.directMessage, "senderId", me.id, 1, 700);
   await rateLimit(deps.db, schema.directMessage, "senderId", me.id, 40, 60_000);
   const now = new Date();
   const mid = newId();
-  await deps.db.insert(schema.directMessage).values({ id: mid, conversationId: id, senderId: me.id, body: text, createdAt: now });
+  await deps.db.insert(schema.directMessage).values({ id: mid, conversationId: id, senderId: me.id, body: text, gif, createdAt: now });
   await deps.db
     .update(schema.conversation)
     .set({ lastMessageAt: now, ...(s.mineIsA ? { aReadAt: now } : { bReadAt: now }) })
@@ -553,8 +603,8 @@ export async function sendMessage(deps: BattleDeps, user: UserRow | null, id: st
   const caughtUp = !c.lastMessageAt || (s.otherRead !== null && s.otherRead >= c.lastMessageAt);
   if (caughtUp) {
     await createNotifications(deps.db, deps.push, [
-      { userId: s.other, type: "NEW_MESSAGE", title: `@${me.handle}`, body: text.slice(0, 100), battleId: null, link: `/messages/${id}` },
+      { userId: s.other, type: "NEW_MESSAGE", title: `@${me.handle}`, body: text ? text.slice(0, 100) : "Sent a GIF", battleId: null, link: `/messages/${id}` },
     ]);
   }
-  return { id: mid, body: text, createdAt: now.toISOString(), fromMe: true };
+  return { id: mid, body: text, gif, createdAt: now.toISOString(), fromMe: true };
 }

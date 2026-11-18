@@ -1,7 +1,8 @@
-import { type ChatMessageView, type LiveView, REACTIONS, type Reaction } from "@vybz/core";
+import { type ChatMessageView, type GifView, type LiveView, REACTIONS, type Reaction } from "@vybz/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { ApiRequestError, api } from "@/lib/api";
+import { Gif, GifButton } from "./gif";
 import { color, radius, space, type } from "./theme";
 
 const POLL_MS = 3_000;
@@ -45,13 +46,14 @@ export function LiveStrip({ battleId, canChat, isModerator, signedIn }: { battle
     };
   }, [battleId, poll]);
 
-  async function send() {
+  async function send(gif?: GifView) {
     const body = draft.trim();
-    if (!body) return;
+    if (!body && !gif) return;
     setError(null);
     try {
-      const m = await api.chat(battleId, body);
-      setDraft("");
+      const m = await api.chat(battleId, gif ? "" : body, gif);
+      if (!gif) setDraft("");
+      setOpen(true);
       lastId.current = m.id;
       setMessages((prev) => [...prev, m]);
     } catch (err) {
@@ -70,6 +72,18 @@ export function LiveStrip({ battleId, canChat, isModerator, signedIn }: { battle
     }
   }
 
+  async function toggleLike(m: ChatMessageView) {
+    const next = !m.liked;
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, liked: next, likes: x.likes + (next ? 1 : -1) } : x)));
+    try {
+      const r = await api.likeChat(battleId, m.id, next);
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...r } : x)));
+    } catch (err) {
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, liked: m.liked, likes: m.likes } : x)));
+      setError(err instanceof ApiRequestError ? err.message : "That didn't work.");
+    }
+  }
+
   async function act(m: ChatMessageView, what: "report" | "hide") {
     setSelected(null);
     try {
@@ -77,7 +91,11 @@ export function LiveStrip({ battleId, canChat, isModerator, signedIn }: { battle
         await api.hideMessage(m.id);
         setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, hidden: true } : x)));
       } else {
-        await api.report({ subjectType: "CHAT_MESSAGE", subjectId: m.id, reason: "Reported from battle chat" });
+        await api.report({
+          subjectType: "CHAT_MESSAGE",
+          subjectId: m.id,
+          reason: "Reported from battle chat",
+        });
         setError("Thanks. A moderator will take a look.");
       }
     } catch (err) {
@@ -111,6 +129,7 @@ export function LiveStrip({ battleId, canChat, isModerator, signedIn }: { battle
             {live?.reactionTotals[r] ? <Text style={styles.reactionCount}>{live.reactionTotals[r]}</Text> : null}
           </Pressable>
         ))}
+        {canChat ? <GifButton compact onPick={(g) => void send(g)} /> : null}
       </View>
 
       <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" style={styles.chatToggle}>
@@ -123,13 +142,37 @@ export function LiveStrip({ battleId, canChat, isModerator, signedIn }: { battle
           {visible.length === 0 ? <Text style={type.small}>No messages yet. Say something.</Text> : null}
           {visible.slice(-30).map((m) => (
             <View key={m.id}>
-              <Pressable onPress={() => setSelected(selected === m.id ? null : m.id)} accessibilityHint="Shows message actions">
-                <Text style={[type.body, m.hidden && { opacity: 0.4 }]}>
-                  <Text style={{ fontWeight: "700", color: color.violetSoft }}>@{m.user.handle} </Text>
-                  {m.body}
-                  {m.hidden ? " (hidden)" : ""}
-                </Text>
-              </Pressable>
+              <View style={styles.msgRow}>
+                <Pressable style={{ flex: 1, gap: 4 }} onPress={() => setSelected(selected === m.id ? null : m.id)} accessibilityHint="Shows message actions">
+                  <Text style={[type.body, m.hidden && { opacity: 0.4 }]}>
+                    <Text style={{ fontWeight: "700", color: color.violetSoft }}>@{m.user.handle} </Text>
+                    {m.body}
+                    {m.hidden ? " (hidden)" : ""}
+                  </Text>
+                  {m.gif && !m.hidden ? <Gif gif={m.gif} maxWidth={200} /> : null}
+                </Pressable>
+                {signedIn ? (
+                  <Pressable
+                    onPress={() => void toggleLike(m)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${m.liked ? "Unlike" : "Like"}, ${m.likes} likes`}
+                    style={styles.like}
+                  >
+                    <Text
+                      style={{
+                        color: m.liked ? color.danger : color.muted,
+                        fontSize: 14,
+                      }}
+                    >
+                      {m.liked ? "♥" : "♡"}
+                    </Text>
+                    {m.likes ? <Text style={styles.reactionCount}>{m.likes}</Text> : null}
+                  </Pressable>
+                ) : m.likes ? (
+                  <Text style={[styles.reactionCount, { paddingTop: 2 }]}>♥ {m.likes}</Text>
+                ) : null}
+              </View>
               {selected === m.id && signedIn ? (
                 <View style={styles.msgActions}>
                   <Pressable onPress={() => void act(m, "report")} accessibilityRole="button">
@@ -157,6 +200,7 @@ export function LiveStrip({ battleId, canChat, isModerator, signedIn }: { battle
                 returnKeyType="send"
                 accessibilityLabel="Chat message"
               />
+              <GifButton onPick={(g) => void send(g)} />
               <Pressable onPress={() => void send()} accessibilityRole="button" style={styles.send}>
                 <Text style={{ color: "#fff", fontWeight: "700" }}>Send</Text>
               </Pressable>
@@ -172,18 +216,62 @@ export function LiveStrip({ battleId, canChat, isModerator, signedIn }: { battle
 }
 
 const styles = StyleSheet.create({
-  wrap: { backgroundColor: color.surface1, borderRadius: radius.lg, borderWidth: 1, borderColor: color.line, padding: space.md, gap: space.sm },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  wrap: {
+    backgroundColor: color.surface1,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.line,
+    padding: space.md,
+    gap: space.sm,
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   viewers: { flexDirection: "row", alignItems: "center", gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.live },
   reactions: { flexDirection: "row", justifyContent: "space-between" },
-  reaction: { alignItems: "center", paddingVertical: 4, paddingHorizontal: 6, borderRadius: radius.md },
+  reaction: {
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: radius.md,
+  },
   reactionOn: { backgroundColor: color.surface3, transform: [{ scale: 1.15 }] },
   reactionCount: { color: color.muted, fontSize: 11, fontWeight: "700" },
-  chatToggle: { flexDirection: "row", justifyContent: "space-between", paddingTop: space.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line },
-  msgActions: { flexDirection: "row", gap: space.lg, paddingVertical: 4, paddingLeft: space.sm },
+  chatToggle: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: space.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: color.line,
+  },
+  msgRow: { flexDirection: "row", gap: space.sm, alignItems: "flex-start" },
+  like: { alignItems: "center", minWidth: 24 },
+  msgActions: {
+    flexDirection: "row",
+    gap: space.lg,
+    paddingVertical: 4,
+    paddingLeft: space.sm,
+  },
   msgAction: { color: color.violetSoft, fontWeight: "700", fontSize: 13 },
   inputRow: { flexDirection: "row", gap: space.sm, alignItems: "center" },
-  input: { flex: 1, minHeight: 42, borderRadius: radius.md, borderWidth: 1, borderColor: color.line, backgroundColor: color.surface2, color: color.text, paddingHorizontal: space.md },
-  send: { backgroundColor: color.violet, borderRadius: radius.md, paddingHorizontal: space.md, minHeight: 42, justifyContent: "center" },
+  input: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: color.line,
+    backgroundColor: color.surface2,
+    color: color.text,
+    paddingHorizontal: space.md,
+  },
+  send: {
+    backgroundColor: color.violet,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    minHeight: 42,
+    justifyContent: "center",
+  },
 });

@@ -95,6 +95,9 @@ export default function Library() {
                   <Link href={{ pathname: "/playlist/new", params: { generate: "1" } }} asChild>
                     <Button title="Generate one for a genre and era" kind="secondary" />
                   </Link>
+                  <Link href="/playlist/import" asChild>
+                    <Button title="Import a YouTube playlist" kind="secondary" />
+                  </Link>
                   {mine.data?.items.length ? <SectionTitle>Your playlists</SectionTitle> : null}
                 </>
               ) : (

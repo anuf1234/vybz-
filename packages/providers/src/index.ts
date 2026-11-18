@@ -13,6 +13,7 @@ export {
   YouTubeAdapter,
   cleanChannelName,
   parseIsoDuration,
+  playlistIdFromUrl,
   releaseYearFromDescription,
   watchUrl,
   type YouTubeAdapterConfig,

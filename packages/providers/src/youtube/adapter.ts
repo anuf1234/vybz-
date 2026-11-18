@@ -39,6 +39,26 @@ const VideoSchema = z.object({
 type Video = z.infer<typeof VideoSchema>;
 const VideosResponseSchema = z.object({ items: z.array(VideoSchema) });
 
+const PlaylistsResponseSchema = z.object({ items: z.array(z.object({ snippet: z.object({ title: z.string() }) })) });
+const PlaylistItemsResponseSchema = z.object({
+  items: z.array(z.object({ contentDetails: z.object({ videoId: z.string().optional() }) })),
+  nextPageToken: z.string().optional(),
+});
+
+/** The playlist id in a YouTube or YouTube Music link (…?list=PL…), or a bare id. */
+export function playlistIdFromUrl(input: string): string | null {
+  const s = input.trim();
+  if (/^[A-Za-z0-9_-]{10,64}$/.test(s)) return s;
+  try {
+    const u = new URL(s);
+    if (!/(^|\.)youtube\.com$|(^|\.)youtu\.be$/.test(u.hostname)) return null;
+    const id = u.searchParams.get("list");
+    return id && /^[A-Za-z0-9_-]{10,64}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface YouTubeAdapterConfig {
   apiKey: string;
   fetch?: FetchLike;
@@ -87,6 +107,22 @@ export class YouTubeAdapter implements MetadataProvider, PlaybackProvider {
     const byId = new Map(VideosResponseSchema.parse(json).items.map((v) => [v.id, toCandidate(v)]));
     // Preserve search ranking order.
     return ids.map((id) => byId.get(id)).filter((c): c is TrackCandidate => Boolean(c));
+  }
+
+  /** A public or unlisted playlist's title and video ids, in order (1 unit per 50 videos). */
+  async playlist(playlistId: string, max = 100): Promise<{ title: string; videoIds: string[] } | null> {
+    const meta = PlaylistsResponseSchema.parse(await this.get(`/playlists?${new URLSearchParams({ part: "snippet", id: playlistId })}`));
+    const title = meta.items[0]?.snippet.title;
+    if (title === undefined) return null;
+    const videoIds: string[] = [];
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({ part: "contentDetails", playlistId, maxResults: "50", ...(pageToken ? { pageToken } : {}) });
+      const page = PlaylistItemsResponseSchema.parse(await this.get(`/playlistItems?${params}`));
+      for (const item of page.items) if (item.contentDetails.videoId && !videoIds.includes(item.contentDetails.videoId)) videoIds.push(item.contentDetails.videoId);
+      pageToken = page.nextPageToken;
+    } while (pageToken && videoIds.length < max);
+    return { title, videoIds: videoIds.slice(0, max) };
   }
 
   sources(ref: TrackProviderRef, _viewer: ViewerContext): PlaybackSource[] {

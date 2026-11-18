@@ -1,3 +1,4 @@
+import { Gif } from "./gif";
 import { frameColor } from "@vybz/core";
 import { Ionicons } from "@expo/vector-icons";
 import type { PostView } from "@vybz/core";
@@ -113,7 +114,8 @@ export function PostCard({
       </View>
 
       <Pressable onPress={openDetail} disabled={!linkToDetail} accessibilityRole={linkToDetail ? "link" : undefined}>
-        <Text style={[type.body, { lineHeight: 22 }]}>{p.body}</Text>
+        {p.body ? <Text style={[type.body, { lineHeight: 22 }]}>{p.body}</Text> : null}
+        {p.gif ? <Gif gif={p.gif} maxWidth={320} /> : null}
       </Pressable>
 
       {a?.kind === "track" ? (

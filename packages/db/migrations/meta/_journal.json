@@ -71,6 +71,13 @@
       "when": 1794926046898,
       "tag": "0009_shop_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794965143842,
+      "tag": "0010_gifs_comment_likes",
+      "breakpoints": true
     }
   ]
 }

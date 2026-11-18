@@ -1,7 +1,8 @@
-import type { DirectMessageView } from "@vybz/core";
+import type { DirectMessageView, GifView } from "@vybz/core";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Gif, GifButton } from "@/components/gif";
 import { color, radius, space, type } from "@/components/theme";
 import { ErrorBanner, Loading } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
@@ -34,13 +35,13 @@ export default function Conversation() {
     );
   }
 
-  const send = async () => {
+  const send = async (gif?: GifView) => {
     const body = text.trim();
-    if (!body) return;
+    if (!body && !gif) return;
     setSending(true);
     setError(null);
     try {
-      const m = await api.sendMessage(id, body);
+      const m = await api.sendMessage(id, body, gif);
       setText("");
       setPending((p) => [...p, m]);
     } catch (err) {
@@ -75,7 +76,8 @@ export default function Conversation() {
         ListEmptyComponent={<Text style={[type.small, { textAlign: "center", marginTop: space.xl }]}>Say hi to @{c.other.handle}.</Text>}
         renderItem={({ item }) => (
           <Pressable onLongPress={() => report(item)} style={[styles.bubble, item.fromMe ? styles.mine : styles.theirs]} accessibilityLabel={`${item.fromMe ? "You" : `@${c.other.handle}`}: ${item.body}`} accessibilityHint={item.fromMe ? undefined : "Long press to report"}>
-            <Text style={[type.body, item.fromMe && { color: "#fff" }]}>{item.body}</Text>
+            {item.body ? <Text style={[type.body, item.fromMe && { color: "#fff" }]}>{item.body}</Text> : null}
+            {item.gif ? <Gif gif={item.gif} maxWidth={200} /> : null}
           </Pressable>
         )}
       />
@@ -86,6 +88,7 @@ export default function Conversation() {
       ) : null}
       {c.canSend ? (
         <View style={styles.inputRow}>
+          <GifButton onPick={(g) => void send(g)} />
           <TextInput value={text} onChangeText={setText} placeholder="Message" placeholderTextColor={color.lose} maxLength={1000} style={styles.input} accessibilityLabel="Message" multiline />
           <Pressable onPress={() => void send()} disabled={!text.trim() || sending} style={[styles.send, (!text.trim() || sending) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel="Send message">
             <Text style={{ color: "#fff", fontWeight: "700" }}>Send</Text>
@@ -104,7 +107,7 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: "80%", paddingHorizontal: space.md, paddingVertical: 10, borderRadius: radius.lg },
   mine: { alignSelf: "flex-end", backgroundColor: color.violet, borderBottomRightRadius: 4 },
   theirs: { alignSelf: "flex-start", backgroundColor: color.surface2, borderBottomLeftRadius: 4 },
-  inputRow: { flexDirection: "row", gap: space.sm, padding: space.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line, backgroundColor: color.ink },
+  inputRow: { flexDirection: "row", alignItems: "flex-end", gap: space.sm, padding: space.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line, backgroundColor: color.ink },
   input: { flex: 1, minHeight: 42, maxHeight: 120, borderRadius: radius.md, borderWidth: 1, borderColor: color.line, backgroundColor: color.surface2, color: color.text, paddingHorizontal: space.md, paddingVertical: 10, fontSize: 16 },
   send: { backgroundColor: color.violet, borderRadius: radius.md, paddingHorizontal: space.lg, justifyContent: "center" },
 });

@@ -298,6 +298,10 @@ export interface ConfigResponse {
   decades: number[];
   roundCounts: number[];
   tracksPerRound: number[];
+  /** GIF search: GIPHY wants searches made from the app with this key. Null when GIFs are off. */
+  giphy: { apiKey: string } | null;
+  /** Social sign-in providers set up on this server. */
+  signIn: { google: boolean; facebook: boolean; tiktok: boolean; apple: boolean };
 }
 
 export interface ListenRequest {
@@ -347,10 +351,25 @@ export interface ApiError {
 export const REACTIONS = ["🔥", "👏", "😂", "😮", "💀", "❤️"] as const;
 export type Reaction = (typeof REACTIONS)[number];
 
+/** A GIF from GIPHY, as stored on a message, post or comment. */
+export interface GifView {
+  id: string;
+  /** An animated GIF on GIPHY's media servers. */
+  url: string;
+  width: number;
+  height: number;
+  title: string;
+}
+
 export interface ChatMessageView {
   id: string;
   user: UserSummary;
+  /** May be empty when the message is just a GIF. */
   body: string;
+  gif: GifView | null;
+  likes: number;
+  /** Whether the viewer liked it (false for guests). */
+  liked: boolean;
   createdAt: string;
   /** Hidden by a moderator; only moderators receive hidden messages. */
   hidden: boolean;
@@ -384,7 +403,8 @@ export type NotificationType =
   | "NEW_MESSAGE"
   | "ACHIEVEMENT_UNLOCKED"
   | "LEVEL_UP"
-  | "STREAK_REMINDER";
+  | "STREAK_REMINDER"
+  | "COMMENT_LIKED";
 
 export interface NotificationView {
   id: string;
@@ -496,6 +516,7 @@ export interface PostView {
   id: string;
   author: UserSummary;
   body: string;
+  gif: GifView | null;
   createdAt: string;
   attachment: PostAttachment | null;
   likes: number;
@@ -513,8 +534,11 @@ export interface CommentView {
   id: string;
   author: UserSummary;
   body: string;
+  gif: GifView | null;
   createdAt: string;
   canDelete: boolean;
+  likes: number;
+  liked: boolean;
 }
 
 export interface PostDetailResponse {
@@ -524,6 +548,7 @@ export interface PostDetailResponse {
 
 export interface CreatePostRequest {
   body: string;
+  gif?: GifView;
   /** Optional attachment: one of these. */
   trackId?: string;
   catalogId?: string;
@@ -558,6 +583,7 @@ export interface InboxResponse {
 export interface DirectMessageView {
   id: string;
   body: string;
+  gif: GifView | null;
   createdAt: string;
   fromMe: boolean;
 }
@@ -616,4 +642,19 @@ export interface QuickBattleResponse {
   id: string;
   /** player: you took someone's waiting battle; bot: the VYBZ bot took yours; waiting: yours is open for others. */
   matched: "player" | "bot" | "waiting";
+}
+
+// ── Imports ────────────────────────────────────────────────────────────────
+
+export interface ImportPlaylistRequest {
+  /** A YouTube or YouTube Music playlist link (public or unlisted). */
+  url: string;
+}
+
+export interface ImportPlaylistResponse {
+  playlistId: string;
+  title: string;
+  imported: number;
+  /** Videos that couldn't be added (removed, private, not music…). */
+  skipped: number;
 }

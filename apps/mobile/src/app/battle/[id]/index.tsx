@@ -2,7 +2,9 @@ import type { BattleView, EntryView, RoundView, TrackView } from "@vybz/core";
 import * as Haptics from "expo-haptics";
 import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { shareStoryCard } from "@/lib/share-card";
+import * as WebBrowser from "expo-web-browser";
 import { EntryPlayer } from "@/components/entry-player";
 import { LiveStrip } from "@/components/live-strip";
 import { SaveButton } from "@/components/save-button";
@@ -70,7 +72,7 @@ export default function BattleScreen() {
           title: b.title,
           headerRight: () =>
             b.visibility === "PUBLIC" || b.inviteCode ? (
-              <Pressable onPress={() => shareBattle(b)} accessibilityRole="button" accessibilityLabel="Share battle" hitSlop={12} style={{ paddingHorizontal: 8 }}>
+              <Pressable onPress={() => shareMenu(b)} accessibilityRole="button" accessibilityLabel="Share battle" hitSlop={12} style={{ paddingHorizontal: 8 }}>
                 <Text style={{ color: color.text, fontSize: 15, fontWeight: "700" }}>Share</Text>
               </Pressable>
             ) : null,
@@ -88,6 +90,15 @@ export default function BattleScreen() {
       </View>
 
       <Scoreboard battle={b} />
+      {(b.status === "IN_PROGRESS" || b.status === "COMPLETE") && (b.visibility === "PUBLIC" || b.inviteCode) ? (
+        <Pressable
+          onPress={() => void WebBrowser.openBrowserAsync(`${API_URL}/watch/${b.id}${b.visibility === "PRIVATE" && b.inviteCode ? `?code=${b.inviteCode}` : ""}`)}
+          accessibilityRole="link"
+          style={{ alignSelf: "center", paddingVertical: 4 }}
+        >
+          <Text style={[type.small, { color: color.violetSoft, fontWeight: "700" }]}>📺 Watch party: cast it to a TV or show it on your stream</Text>
+        </Pressable>
+      ) : null}
       {error ? <ErrorBanner message={error} /> : null}
 
       {b.format === "MULTI" && b.status === "OPEN_CHALLENGE" ? (
@@ -118,6 +129,27 @@ type Act = (key: string, fn: () => Promise<BattleView | { id: string }>) => Prom
 
 function inviteLink(b: BattleView): string {
   return `${API_URL}/battle/${b.id}${b.visibility === "PRIVATE" && b.inviteCode ? `?code=${b.inviteCode}` : ""}`;
+}
+
+/** Share the story card (an image for Instagram, Snapchat, TikTok…) or the link. Public battles only get the card. */
+function shareMenu(b: BattleView) {
+  const card = () =>
+    void shareStoryCard(b.id)
+      .then((ok) => (ok ? undefined : shareBattle(b)))
+      .catch(() => Alert.alert("Couldn't make the card", "Try sharing the link instead."));
+  if (Platform.OS === "web" || b.visibility !== "PUBLIC") return shareBattle(b);
+  if (Platform.OS === "ios") {
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options: ["Share story card", "Share link", "Cancel"], cancelButtonIndex: 2, message: "The story card is an image for Instagram, Snapchat, TikTok and Facebook stories." },
+      (i) => (i === 0 ? card() : i === 1 ? shareBattle(b) : undefined),
+    );
+    return;
+  }
+  Alert.alert("Share battle", "The story card is an image for Instagram, Snapchat, TikTok and Facebook stories.", [
+    { text: "Story card", onPress: card },
+    { text: "Link", onPress: () => shareBattle(b) },
+    { text: "Cancel", style: "cancel" },
+  ]);
 }
 
 /** A message that fits where the battle is: a result to brag about, a vote to get, or a challenge to take. */

@@ -3,6 +3,7 @@ import { Link, useRouter } from "expo-router";
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text } from "react-native";
 import { space, type } from "@/components/theme";
+import { SocialSignIn } from "@/components/social-sign-in";
 import { Button, Card, ErrorBanner, Field } from "@/components/ui";
 import { signUp } from "@/lib/auth-client";
 
@@ -66,6 +67,7 @@ export default function SignUp() {
         <Text style={type.small}>You must be 13 or older (16 in the EU and UK) to use VYBZ.</Text>
         {error ? <ErrorBanner message={error} /> : null}
         <Button title="Create account" onPress={() => void submit()} loading={busy} disabled={!name || !email || !password} />
+        <SocialSignIn />
         <Link href="/sign-in" replace asChild>
           <Button title="Already have an account? Sign in" kind="ghost" />
         </Link>
