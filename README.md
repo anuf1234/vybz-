@@ -36,6 +36,8 @@ Sign up (email/password or Google), challenge someone (or post an open challenge
 
 **Sharing, watch parties and imports (Step 6, part A).** Every public battle has a 9:16 story card (`/battle/:id/story`) that the app shares through the phone's share sheet to Instagram and Facebook Stories, Snapchat, TikTok or Messages. Watch-party mode (`/watch/:id`) is a full-screen view of a live battle (scoreboard, picks, vote bars, reactions, chat, and a QR code to listen and vote) for casting to a TV or as an OBS/Streamlabs browser source when going live; it carries no audio, so streams don't rebroadcast the music. Paste a public YouTube or YouTube Music playlist link to import it (up to 100 songs) as a VYBZ playlist you can battle from.
 
+**Sign-in, GIFs and comment likes (Step 6, part B).** Continue with Apple (native sheet on iPhone), Google, Facebook or TikTok; each button shows only when its keys are set. GIFs from GIPHY in battle chat, posts, comments and messages: searches run from the phone with `GIPHY_API_KEY`, and the server only accepts GIPHY image links. Likes on comments and chat messages, with a notification the first time someone likes your comment. Delete account (Profile), plus privacy, terms and data-deletion pages (`/privacy`, `/terms`, `/data-deletion`) for the App Store and the Meta and TikTok developer reviews.
+
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.
@@ -62,7 +64,7 @@ Then run the mobile app: see [apps/mobile/README.md](apps/mobile/README.md).
 
 ### Deploying
 
-- **Render (current test deployment):** `render.yaml` defines the web service and Postgres; the start command applies migrations first. A Render cron job (`vybz-scheduler`, every 5 minutes) calls `/api/cron/advance` with `CRON_SECRET`. Set `APPLE_MUSIC_KEY_ID`, `APPLE_MUSIC_PRIVATE_KEY` and `YOUTUBE_API_KEY` in the dashboard. Optional: `ANTHROPIC_API_KEY` turns on the AI judge.
+- **Render (current test deployment):** `render.yaml` defines the web service and Postgres; the start command applies migrations first. A Render cron job (`vybz-scheduler`, every 5 minutes) calls `/api/cron/advance` with `CRON_SECRET`. Set `APPLE_MUSIC_KEY_ID`, `APPLE_MUSIC_PRIVATE_KEY` and `YOUTUBE_API_KEY` in the dashboard. Optional: `ANTHROPIC_API_KEY` turns on the AI judge. Sign-in: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (plus `GOOGLE_IOS_CLIENT_ID`), `FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`, `TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET`; Apple needs nothing beyond the bundle ID. `GIPHY_API_KEY` turns on GIFs; `SUPPORT_EMAIL` sets the contact on the legal pages.
 - Run `pnpm --filter @vybz/db migrate` against production as a release step (not during `next build`).
 - `apps/web/vercel.json` schedules `/api/cron/advance` every minute (needs `CRON_SECRET`; per-minute crons need Vercel Pro). Battles also advance whenever they're viewed, so a missed tick only delays closing rounds nobody is watching.
 - Set `AUTH_REQUIRE_EMAIL_VERIFICATION=true` and `RESEND_API_KEY` in production. `VYBZ_DEMO_CATALOG` is refused on the live site.

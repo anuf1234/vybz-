@@ -2,6 +2,7 @@ import { Link, useRouter } from "expo-router";
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text } from "react-native";
 import { space, type } from "@/components/theme";
+import { SocialSignIn } from "@/components/social-sign-in";
 import { Button, ErrorBanner, Field } from "@/components/ui";
 import { signIn } from "@/lib/auth-client";
 
@@ -25,13 +26,6 @@ export default function SignIn() {
     else router.replace("/");
   }
 
-  async function google() {
-    setError(null);
-    const res = await signIn.social({ provider: "google", callbackURL: "/" });
-    if (res.error) setError("Google sign-in isn't available right now.");
-    else if (router.canGoBack()) router.back();
-  }
-
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }} keyboardShouldPersistTaps="handled">
@@ -40,7 +34,7 @@ export default function SignIn() {
         <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" textContentType="password" onSubmitEditing={() => void submit()} />
         {error ? <ErrorBanner message={error} /> : null}
         <Button title="Sign in" onPress={() => void submit()} loading={busy} disabled={!email || !password} />
-        <Button title="Continue with Google" kind="secondary" onPress={() => void google()} />
+        <SocialSignIn />
         <Link href="/sign-up" replace asChild>
           <Button title="New here? Create an account" kind="ghost" />
         </Link>

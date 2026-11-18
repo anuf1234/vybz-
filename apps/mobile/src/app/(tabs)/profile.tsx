@@ -1,6 +1,7 @@
 import { Link } from "expo-router";
 import { useState } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
 import { ProfileBody } from "@/components/profile-body";
 import { color, space, type } from "@/components/theme";
 import { Button, Card, EmptyState, ErrorBanner, Field, Loading } from "@/components/ui";
@@ -9,7 +10,7 @@ import { signOut, useSession } from "@/lib/auth-client";
 import { clearLibrary } from "@/lib/library-store";
 import { useNow, useResource } from "@/lib/use-resource";
 import { appleMusicSupported, connectAppleMusic, disconnectAppleMusic, useAppleMusicFull } from "@/lib/apple-music";
-import { useServerConfig } from "@/lib/config";
+import { API_URL, useServerConfig } from "@/lib/config";
 
 export default function Profile() {
   const session = useSession();
@@ -113,7 +114,50 @@ export default function Profile() {
           void signOut();
         }}
       />
+      <AccountFooter />
     </ScrollView>
+  );
+}
+
+/** Legal links and account deletion (App Store rule: deletion must be in the app). */
+function AccountFooter() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const open = (path: string) => void WebBrowser.openBrowserAsync(`${API_URL}${path}`);
+
+  const doDelete = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteAccount();
+      clearLibrary();
+      await signOut();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't delete your account. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = () =>
+    Alert.alert("Delete your account?", "This removes your profile, posts, comments, messages, playlists and battle history. It can't be undone.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete account", style: "destructive", onPress: () => void doDelete() },
+    ]);
+
+  return (
+    <View style={{ gap: space.sm, marginTop: space.lg }}>
+      <View style={{ flexDirection: "row", justifyContent: "center", gap: space.lg }}>
+        <Text style={[type.small, { color: color.violet }]} onPress={() => open("/privacy")} accessibilityRole="link">
+          Privacy
+        </Text>
+        <Text style={[type.small, { color: color.violet }]} onPress={() => open("/terms")} accessibilityRole="link">
+          Terms
+        </Text>
+      </View>
+      {error ? <ErrorBanner message={error} /> : null}
+      <Button title="Delete account" kind="ghost" onPress={confirm} loading={busy} />
+    </View>
   );
 }
 

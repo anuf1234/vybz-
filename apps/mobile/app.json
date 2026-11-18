@@ -17,7 +17,8 @@
         ],
         "NSAppleMusicUsageDescription": "VYBZ uses Apple Music to play full songs in battles for subscribers.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.urexp.vybz",
@@ -44,7 +45,8 @@
         }
       ],
       "expo-image",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true

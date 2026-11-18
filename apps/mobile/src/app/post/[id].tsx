@@ -1,8 +1,9 @@
 import { frameColor } from "@vybz/core";
-import type { CommentView } from "@vybz/core";
+import type { CommentView, GifView } from "@vybz/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Gif, GifButton } from "@/components/gif";
 import { PostCard } from "@/components/post-card";
 import { usePreviewPlayer } from "@/components/preview-player";
 import { color, radius, space, type } from "@/components/theme";
@@ -36,11 +37,11 @@ export default function PostScreen() {
     );
   }
 
-  const send = async () => {
+  const send = async (gif?: GifView) => {
     setSending(true);
     setError(null);
     try {
-      const c = await api.comment(id, text);
+      const c = await api.comment(id, gif ? text.trim() : text, gif);
       setText("");
       detail.setData({ post: { ...d.post, comments: d.post.comments + 1 }, comments: [...d.comments, c] });
     } catch (err) {
@@ -48,6 +49,19 @@ export default function PostScreen() {
     } finally {
       setSending(false);
     }
+  };
+
+  const toggleLike = (c: CommentView) => {
+    const next = !c.liked;
+    const patch = (fn: (x: CommentView) => CommentView) => detail.setData({ ...d, comments: d.comments.map((x) => (x.id === c.id ? fn(x) : x)) });
+    patch((x) => ({ ...x, liked: next, likes: x.likes + (next ? 1 : -1) }));
+    void api.likeComment(c.id, next).then(
+      (r) => patch((x) => ({ ...x, ...r })),
+      (err) => {
+        patch((x) => ({ ...x, liked: c.liked, likes: c.likes }));
+        setError(err instanceof ApiRequestError ? err.message : "That didn't work.");
+      },
+    );
   };
 
   const commentActions = (c: CommentView) => {
@@ -90,7 +104,20 @@ export default function PostScreen() {
               <Text style={type.small}>
                 <Text style={{ fontWeight: "700", color: color.text }}>@{item.author.handle}</Text> · {ago(item.createdAt, now)}
               </Text>
-              <Text style={type.body}>{item.body}</Text>
+              {item.body ? <Text style={type.body}>{item.body}</Text> : null}
+              {item.gif ? <Gif gif={item.gif} maxWidth={220} /> : null}
+              <View style={{ flexDirection: "row", gap: space.md, alignItems: "center", marginTop: 2 }}>
+                {signedIn ? (
+                  <Pressable onPress={() => toggleLike(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`${item.liked ? "Unlike" : "Like"} comment, ${item.likes} likes`}>
+                    <Text style={[type.small, { color: item.liked ? color.danger : color.muted, fontWeight: "700" }]}>
+                      {item.liked ? "♥" : "♡"}
+                      {item.likes ? ` ${item.likes}` : " Like"}
+                    </Text>
+                  </Pressable>
+                ) : item.likes ? (
+                  <Text style={type.small}>♥ {item.likes}</Text>
+                ) : null}
+              </View>
             </View>
             {item.canDelete || signedIn ? (
               <Pressable onPress={() => commentActions(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel={item.canDelete ? "Delete comment" : "Report comment"}>
@@ -107,6 +134,7 @@ export default function PostScreen() {
       ) : null}
       {signedIn ? (
         <View style={styles.inputRow}>
+          <GifButton onPick={(g) => void send(g)} />
           <TextInput value={text} onChangeText={setText} placeholder="Add a comment" placeholderTextColor={color.lose} maxLength={500} style={styles.input} accessibilityLabel="Comment" multiline />
           <Pressable onPress={() => void send()} disabled={!text.trim() || sending} style={[styles.send, (!text.trim() || sending) && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel="Send comment">
             <Text style={{ color: "#fff", fontWeight: "700" }}>Send</Text>
@@ -119,7 +147,7 @@ export default function PostScreen() {
 
 const styles = StyleSheet.create({
   comment: { flexDirection: "row", gap: space.sm, alignItems: "flex-start", paddingVertical: space.xs },
-  inputRow: { flexDirection: "row", gap: space.sm, padding: space.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line, backgroundColor: color.ink },
+  inputRow: { flexDirection: "row", alignItems: "center", gap: space.sm, padding: space.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line, backgroundColor: color.ink },
   input: { flex: 1, minHeight: 42, maxHeight: 120, borderRadius: radius.md, borderWidth: 1, borderColor: color.line, backgroundColor: color.surface2, color: color.text, paddingHorizontal: space.md, paddingVertical: 10, fontSize: 16 },
   send: { backgroundColor: color.violet, borderRadius: radius.md, paddingHorizontal: space.lg, justifyContent: "center" },
 });

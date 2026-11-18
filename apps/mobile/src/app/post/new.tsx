@@ -1,7 +1,8 @@
-import type { CatalogHit } from "@vybz/core";
+import type { CatalogHit, GifView } from "@vybz/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Gif, GifButton } from "@/components/gif";
 import { usePreviewPlayer } from "@/components/preview-player";
 import { SongRow } from "@/components/song-row";
 import { color, radius, space, type } from "@/components/theme";
@@ -20,6 +21,7 @@ export default function NewPost() {
   const router = useRouter();
   const [body, setBody] = useState("");
   const [song, setSong] = useState<CatalogHit | null>(null);
+  const [gif, setGif] = useState<GifView | null>(null);
   const [finding, setFinding] = useState(false);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<CatalogHit[]>([]);
@@ -65,7 +67,7 @@ export default function NewPost() {
     preview.stop();
     try {
       const attach = preset ? preset.body : song ? { catalogId: song.catalogId } : {};
-      const { id } = await api.createPost({ body, ...attach });
+      const { id } = await api.createPost({ body, ...attach, ...(gif ? { gif } : {}) });
       router.replace({ pathname: "/post/[id]", params: { id } });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Couldn't post that.");
@@ -135,8 +137,19 @@ export default function NewPost() {
           <Button title="Attach a song" kind="secondary" onPress={() => setFinding(true)} />
         )}
 
+        {gif ? (
+          <View style={{ gap: space.xs }}>
+            <Gif gif={gif} maxWidth={320} />
+            <Pressable onPress={() => setGif(null)} accessibilityRole="button" hitSlop={8}>
+              <Text style={[type.small, { color: color.danger }]}>Remove GIF</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <GifButton onPick={setGif} />
+        )}
+
         {error ? <ErrorBanner message={error} /> : null}
-        <Button title="Post" onPress={() => void publish()} loading={busy} disabled={!body.trim()} />
+        <Button title="Post" onPress={() => void publish()} loading={busy} disabled={!body.trim() && !gif} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
