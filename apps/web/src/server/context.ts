@@ -64,6 +64,9 @@ export function getAuth(): Auth {
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } }
       : {}),
+    ...(env.FACEBOOK_CLIENT_ID && env.FACEBOOK_CLIENT_SECRET ? { facebook: { clientId: env.FACEBOOK_CLIENT_ID, clientSecret: env.FACEBOOK_CLIENT_SECRET } } : {}),
+    ...(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET ? { tiktok: { clientKey: env.TIKTOK_CLIENT_KEY, clientSecret: env.TIKTOK_CLIENT_SECRET } } : {}),
+    ...(env.APPLE_SIGN_IN ? { apple: { bundleId: env.APPLE_BUNDLE_ID } } : {}),
     trustedOrigins: [
       ...(process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
       // Development only: Expo Go and the Expo web dev server.

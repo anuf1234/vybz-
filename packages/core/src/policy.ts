@@ -4,7 +4,7 @@
  */
 
 export type Role = "USER" | "CREATOR" | "MODERATOR" | "ADMIN";
-export type AccountStatus = "ACTIVE" | "SUSPENDED" | "BANNED";
+export type AccountStatus = "ACTIVE" | "SUSPENDED" | "BANNED" | "DELETED";
 
 export interface Actor {
   userId: string;

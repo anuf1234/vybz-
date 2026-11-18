@@ -15,6 +15,17 @@ const ServerEnvSchema = z.object({
   BETTER_AUTH_URL: z.string().url().optional(),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  FACEBOOK_CLIENT_ID: z.string().min(1).optional(),
+  FACEBOOK_CLIENT_SECRET: z.string().min(1).optional(),
+  TIKTOK_CLIENT_KEY: z.string().min(1).optional(),
+  TIKTOK_CLIENT_SECRET: z.string().min(1).optional(),
+  /** Sign in with Apple from the iPhone app (native ID tokens for this bundle ID). */
+  APPLE_SIGN_IN: bool(true),
+  APPLE_BUNDLE_ID: z.string().min(3).default("com.urexp.vybz"),
+  /** Shown on the privacy, terms and data-deletion pages. */
+  SUPPORT_EMAIL: z.string().email().default("support@urexp.com"),
+  /** GIPHY API key for GIF search (used by the apps, per GIPHY's rules). */
+  GIPHY_API_KEY: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   MAIL_FROM: z.string().min(3).default("VYBZ <noreply@mail.urexp.com>"),
   AUTH_REQUIRE_EMAIL_VERIFICATION: bool(isProd),

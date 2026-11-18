@@ -15,7 +15,7 @@ export interface VoterFacts {
   userId: string;
   emailVerified: boolean;
   createdAt: Date;
-  status: "ACTIVE" | "SUSPENDED" | "BANNED";
+  status: "ACTIVE" | "SUSPENDED" | "BANNED" | "DELETED";
 }
 
 export interface ListenProofFacts {
