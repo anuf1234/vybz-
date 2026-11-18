@@ -85,6 +85,13 @@
       "when": 1794968647880,
       "tag": "0011_trivia",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794969891306,
+      "tag": "0012_dj",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { getBattleDeps } from "@/server/context";
 import { botJoinDaily, botPlayAll } from "@/server/bot";
 import { ensureDailyBattle } from "@/server/daily";
 import { botTakeStaleQuick } from "@/server/quick";
+import { closeDueDjBattles } from "@/server/dj";
 import { sendStreakReminders } from "@/server/reminders";
 import { serverEnv } from "@/server/env";
 
@@ -29,7 +30,8 @@ async function handle(req: Request) {
   const quick = await botTakeStaleQuick(deps).catch((err) => (console.error("bot quick failed", err), 0));
   const botPicks = await botPlayAll(deps).catch((err) => (console.error("bot play failed", err), 0));
   const reminders = await sendStreakReminders(deps.db, deps.push).catch((err) => (console.error("reminders failed", err), 0));
-  return NextResponse.json({ advanced, judged, daily, quick, botPicks, reminders });
+  const djBattles = await closeDueDjBattles(deps).catch((err) => (console.error("dj battles failed", err), 0));
+  return NextResponse.json({ advanced, judged, daily, quick, botPicks, reminders, djBattles });
 }
 
 export { handle as GET, handle as POST };

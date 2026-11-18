@@ -260,6 +260,10 @@ export async function wallet(db: Executor, user: UserRow | null, cursor?: string
         const item = shopItem(r.ref.split(":")[0]);
         return { label: `Bought ${item ? `${item.icon} ${item.title}` : "an item"}`, link: "/shop" };
       }
+      case "DJ_LESSON":
+        return { label: `DJ University: ${r.ref}`, link: "/dj" };
+      case "DJ_BATTLE":
+        return { label: "DJ battle", link: "/dj" };
       case "TRIVIA":
         return { label: r.ref.startsWith("daily:") ? `Daily trivia ${r.ref.slice(6)}` : "Trivia practice", link: "/trivia" };
       default:

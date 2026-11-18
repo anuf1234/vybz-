@@ -23,7 +23,9 @@ export type AchievementMetric =
   | "triviaDaily"
   | "triviaPerfect"
   | "triviaCorrect"
-  | "bestTriviaStreak";
+  | "bestTriviaStreak"
+  | "djLessons"
+  | "djBattleWins";
 
 export interface AchievementDef {
   code: string;
@@ -73,6 +75,9 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   a("trivia_streak_7", "📚", "Daily scholar", "Play daily trivia 7 days in a row.", "bestTriviaStreak", 7, 120, 50),
   a("trivia_30", "🎓", "Music professor", "Finish 30 daily trivia games.", "triviaDaily", 30, 250, 100),
   a("trivia_correct_250", "🗃️", "Encyclopedia", "Answer 250 trivia questions correctly.", "triviaCorrect", 250, 200, 75),
+  a("dj_first_lesson", "🎧", "First lesson", "Complete a DJ University lesson.", "djLessons", 1, 20, 5),
+  a("dj_graduate", "🎓", "DJ graduate", "Complete all 11 DJ University lessons.", "djLessons", 11, 300, 150),
+  a("dj_battle_win", "🎚️", "Spin to win", "Win a DJ battle.", "djBattleWins", 1, 100, 40),
   a("level_5", "⭐", "Rising", "Reach level 5.", "level", 5, 0, 50),
   a("level_10", "🌟", "Headliner", "Reach level 10.", "level", 10, 0, 100),
   a("level_25", "💫", "Legend", "Reach level 25.", "level", 25, 0, 250),
@@ -264,7 +269,7 @@ export function battleReward(o: { won: boolean; roundsWon: number }): Reward {
   };
 }
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA";
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA" | "DJ_LESSON" | "DJ_BATTLE";
 
 export interface WalletEntry {
   id: string;
