@@ -1027,3 +1027,71 @@ export const djBattleVote = pgTable(
   },
   (t) => [primaryKey({ columns: [t.battleId, t.voterId] })],
 );
+
+// ── Party Mode ─────────────────────────────────────────────────────────────
+
+/** A party room. Hosted from a TV or laptop with a secret host key; anyone with the code can join. */
+export const party = pgTable(
+  "party",
+  {
+    id: text("id").primaryKey(),
+    /** Digits shown as VYBZ-<code>; unique among parties that haven't ended. */
+    code: text("code").notNull(),
+    title: text("title").notNull(),
+    genre: text("genre"),
+    hostUserId: text("host_user_id").references(() => user.id, { onDelete: "set null" }),
+    hostKeyHash: text("host_key_hash").notNull(),
+    /** Hashed creator address, to slow down mass creation. */
+    ipHash: text("ip_hash"),
+    phase: text("phase", { enum: ["LOBBY", "QUESTION", "REVEAL", "PICKING", "VOTING", "RESULT", "SCORES", "FINAL"] }).notNull().default("LOBBY"),
+    game: text("game", { enum: ["TRIVIA", "NAME_THAT_SONG", "PLAYLIST", "FINISH_THE_LYRICS", "DJ_SHOWDOWN"] }),
+    /** Games started in this party, for reward refs. */
+    gameNo: integer("game_no").notNull().default(0),
+    round: integer("round").notNull().default(0),
+    rounds: integer("rounds").notNull().default(0),
+    deadline: ts("deadline"),
+    /** Game state: question ids, playlist matchups and picks. */
+    data: jsonb("data").notNull().default(sql`'{}'::jsonb`),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    endedAt: ts("ended_at"),
+  },
+  (t) => [uniqueIndex("party_live_code_uq").on(t.code).where(sql`${t.endedAt} is null`), index("party_ip_idx").on(t.ipHash, t.createdAt)],
+);
+
+export const partyPlayer = pgTable(
+  "party_player",
+  {
+    id: text("id").primaryKey(),
+    partyId: text("party_id")
+      .notNull()
+      .references(() => party.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    keyHash: text("key_hash").notNull(),
+    score: integer("score").notNull().default(0),
+    removed: boolean("removed").notNull().default(false),
+    joinedAt: ts("joined_at").notNull().defaultNow(),
+    lastSeenAt: ts("last_seen_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("party_player_name_uq").on(t.partyId, sql`lower(${t.name})`), index("party_player_party_idx").on(t.partyId)],
+);
+
+/** One answer, pick or vote per player per step ("<gameNo>:<round>:<kind>"). */
+export const partyAnswer = pgTable(
+  "party_answer",
+  {
+    partyId: text("party_id")
+      .notNull()
+      .references(() => party.id, { onDelete: "cascade" }),
+    step: text("step").notNull(),
+    playerId: text("player_id")
+      .notNull()
+      .references(() => partyPlayer.id, { onDelete: "cascade" }),
+    value: jsonb("value").notNull(),
+    points: integer("points").notNull().default(0),
+    ms: integer("ms"),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.partyId, t.step, t.playerId] })],
+);

@@ -51,9 +51,14 @@ export default function Home() {
           </Link>
         </View>
       ) : null}
-      <Link href="/dj" asChild>
-        <Button title="🎧 DJ Vybz: learn, mix, battle" kind="secondary" />
-      </Link>
+      <View style={{ flexDirection: "row", gap: space.sm }}>
+        <Link href="/dj" asChild>
+          <Button title="🎧 DJ Vybz" kind="secondary" style={{ flex: 1 }} />
+        </Link>
+        <Link href="/party" asChild>
+          <Button title="🎉 Party Mode" kind="secondary" style={{ flex: 1 }} />
+        </Link>
+      </View>
       {signedIn ? <DailyReward key={session.data?.user.id} /> : null}
 
       {feed.error ? <ErrorBanner message={feed.error.message} onRetry={() => void feed.reload()} /> : null}
