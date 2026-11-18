@@ -8,6 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import { EntryPlayer } from "@/components/entry-player";
 import { LiveStrip } from "@/components/live-strip";
 import { SaveButton } from "@/components/save-button";
+import { OnboardingNext } from "@/components/onboarding-next";
 import { Scoreboard } from "@/components/scoreboard";
 import { color, radius, sideColor, space, type } from "@/components/theme";
 import { Artwork, Button, Card, ErrorBanner, Loading, Pill, SectionTitle, Segmented } from "@/components/ui";
@@ -90,6 +91,7 @@ export default function BattleScreen() {
       </View>
 
       <Scoreboard battle={b} />
+      <OnboardingNext key={b.status} when="trivia" />
       {(b.status === "IN_PROGRESS" || b.status === "COMPLETE") && (b.visibility === "PUBLIC" || b.inviteCode) ? (
         <Pressable
           onPress={() => void WebBrowser.openBrowserAsync(`${API_URL}/watch/${b.id}${b.visibility === "PRIVATE" && b.inviteCode ? `?code=${b.inviteCode}` : ""}`)}

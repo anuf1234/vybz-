@@ -6,6 +6,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
+import { OnboardingNext } from "@/components/onboarding-next";
 import { Button, Card, ErrorBanner, Loading } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { useNow } from "@/lib/use-resource";
@@ -253,6 +254,8 @@ function Results({ result: r }: { result: TriviaResult }) {
           </View>
         </Card>
       ) : null}
+
+      {r.mode === "DAILY" ? <OnboardingNext when="bonus" /> : null}
 
       {r.badges.length ? (
         <Card style={{ gap: space.sm }}>

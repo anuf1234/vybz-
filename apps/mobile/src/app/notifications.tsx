@@ -30,6 +30,7 @@ const ICON: Record<NotificationType, string> = {
   COMMENT_LIKED: "♥",
   DJ_BATTLE: "🎚️",
   WAR_RESULT: "💿",
+  TRIVIA_REVIEW: "🧠",
 };
 
 export default function NotificationsScreen() {

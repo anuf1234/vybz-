@@ -1,5 +1,6 @@
 import { TRIVIA_CATEGORY_INFO, type TriviaAdminQuestion, type TriviaCategory, type TriviaQuestionStatus, genreLabel } from "@vybz/core";
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { Chips, GENRE_OPTIONS } from "@/components/chips";
@@ -30,6 +31,8 @@ export default function TriviaAdmin() {
   const [editing, setEditing] = useState<TriviaAdminQuestion | "new" | null>(null);
   const [aiCat, setAiCat] = useState<Writable>("GENRE");
   const [aiGenre, setAiGenre] = useState<string | null>(null);
+  const router = useRouter();
+  const health = useResource(() => api.triviaHealth(), []);
 
   const run = async (key: string, fn: () => Promise<string | void>) => {
     setBusy(key);
@@ -56,6 +59,38 @@ export default function TriviaAdmin() {
       refreshControl={<RefreshControl tintColor={color.violet} refreshing={list.refreshing} onRefresh={() => void list.reload()} />}
       keyboardShouldPersistTaps="handled"
     >
+      {health.data ? (
+        <Card style={{ gap: space.sm, borderColor: health.data.low ? color.danger : color.line }}>
+          <Text style={type.label}>Question bank</Text>
+          <Text style={[type.title, { color: health.data.low ? color.danger : color.text }]}>
+            {health.data.daysLeft} days of daily trivia left
+          </Text>
+          <Text style={type.small}>
+            {health.data.fresh} fresh questions · {health.data.drafts} drafts waiting · thinnest: {health.data.thinGenres
+              .slice(0, 3)
+              .map((g) => `${g.label} (${g.approved})`)
+              .join(", ")}
+          </Text>
+          <Text style={type.small}>
+            {health.data.lastRun ? `Last weekly run ${new Date(health.data.lastRun.at).toLocaleDateString()}: ${health.data.lastRun.note ?? ""}` : "The weekly pipeline hasn't run yet."}
+            {health.data.aiReady || health.data.lastRun?.note?.includes("ANTHROPIC_API_KEY") ? "" : " AI drafting needs ANTHROPIC_API_KEY."}
+          </Text>
+          {health.data.drafts ? <Button title={`Review ${health.data.drafts} drafts one by one`} onPress={() => router.push("/mod/trivia-review")} /> : null}
+          <Button
+            title="Run the pipeline now"
+            kind="secondary"
+            loading={busy === "pipe"}
+            onPress={() =>
+              void run("pipe", async () => {
+                const r = await api.runTriviaPipeline();
+                await health.reload();
+                return r.note;
+              })
+            }
+          />
+        </Card>
+      ) : null}
+
       <Card style={{ gap: space.sm }}>
         <Text style={type.label}>Add questions</Text>
         <Button title="✍️ Write a question" onPress={() => setEditing("new")} />

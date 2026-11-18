@@ -885,20 +885,24 @@ export async function adminDraftWithAi(deps: BattleDeps, drafter: TriviaDrafter 
   const genre = typeof b.genre === "string" && b.genre ? b.genre : null;
   if (genre && !(GENRE_KEYS as string[]).includes(genre)) throw new ServiceError(400, "INVALID_GENRE");
   const count = Math.min(10, Math.max(1, Number(b.count) || 5));
+  try {
+    return await insertDrafts(deps.db, drafter, staff.id, category, genre, count);
+  } catch (err) {
+    console.error("trivia drafting failed", err);
+    throw new ServiceError(502, "AI_FAILED", "The AI couldn't draft questions just now. Try again.");
+  }
+}
+
+/** Asks the drafter for questions and stores the good ones as drafts (duplicates, malformed and lyric questions dropped). */
+export async function insertDrafts(db: Executor, drafter: TriviaDrafter, createdById: string | null, category: TriviaCategory, genre: string | null, count: number): Promise<{ added: number; skipped: number }> {
   const q = schema.triviaQuestion;
-  const existing = await deps.db
+  const existing = await db
     .select({ prompt: q.prompt })
     .from(q)
     .where(and(eq(q.category, category), genre ? eq(q.genre, genre) : sql`true`))
     .orderBy(desc(q.createdAt))
     .limit(80);
-  let drafts: TriviaQuestionInput[];
-  try {
-    drafts = await drafter.draft({ category, genre, count, avoid: existing.map((e) => e.prompt) });
-  } catch (err) {
-    console.error("trivia drafting failed", err);
-    throw new ServiceError(502, "AI_FAILED", "The AI couldn't draft questions just now. Try again.");
-  }
+  const drafts = await drafter.draft({ category, genre, count, avoid: existing.map((e) => e.prompt) });
   const seen = new Set(existing.map((e) => e.prompt.toLowerCase()));
   let skipped = 0;
   const rows: (typeof q.$inferInsert)[] = [];
@@ -918,12 +922,12 @@ export async function adminDraftWithAi(deps: BattleDeps, drafter: TriviaDrafter 
         explanation: input.explanation ?? null,
         source: "AI",
         status: "DRAFT",
-        createdById: staff.id,
+        createdById,
       });
     } catch {
       skipped++;
     }
   }
-  if (rows.length) await deps.db.insert(q).values(rows);
+  if (rows.length) await db.insert(q).values(rows);
   return { added: rows.length, skipped };
 }

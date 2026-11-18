@@ -751,6 +751,11 @@ export const userProgress = pgTable("user_progress", {
   streakFreezes: integer("streak_freezes").notNull().default(0),
   /** Profile frame shown around the avatar (a shop item key). */
   frame: text("frame"),
+  /** Genres picked during onboarding (VYBZ genre keys). */
+  favoriteGenres: text("favorite_genres").array().notNull().default(sql`'{}'::text[]`),
+  /** Finished the first-run path (first battle, then today's trivia), or skipped it. */
+  onboardedAt: ts("onboarded_at"),
+  onboardingSkipped: boolean("onboarding_skipped").notNull().default(false),
   updatedAt: updatedAt(),
 });
 
@@ -1144,3 +1149,11 @@ export const warVote = pgTable(
   },
   (t) => [primaryKey({ columns: [t.warId, t.voterId, t.category] }), index("war_vote_created_idx").on(t.category, t.createdAt)],
 );
+
+/** When recurring background jobs last ran (weekly trivia drafts, …). */
+export const jobRun = pgTable("job_run", {
+  key: text("key").primaryKey(),
+  lastRunAt: ts("last_run_at").notNull(),
+  /** What the run did, for the staff screens. */
+  note: text("note"),
+});

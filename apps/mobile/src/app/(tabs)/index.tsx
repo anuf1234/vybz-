@@ -3,11 +3,13 @@ import { Link } from "expo-router";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { BattleCard } from "@/components/battle-card";
 import { DailyReward } from "@/components/daily-reward";
+import { StartHere } from "@/components/start-here";
 import { color, space, type } from "@/components/theme";
 import { Button, EmptyState, ErrorBanner, Loading, SectionTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 import { useNow, useResource } from "@/lib/use-resource";
+import { useState } from "react";
 
 export default function Home() {
   const session = useSession();
@@ -17,6 +19,8 @@ export default function Home() {
   const featured = useResource(() => api.battles("featured"), [signedIn], { pollMs: 60_000 });
   const daily = useResource(() => api.battles("daily"), [signedIn], { pollMs: 60_000 });
   const now = useNow(1000);
+  // While a new player is on the first-run path, Home stays focused on it.
+  const [onboarding, setOnboarding] = useState(false);
 
   const today = daily.data?.items[0];
   const featuredItems = (featured.data?.items ?? []).filter((b) => b.id !== today?.id);
@@ -29,7 +33,13 @@ export default function Home() {
   return (
     <ScrollView
       contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}
-      refreshControl={<RefreshControl tintColor={color.violet} refreshing={feed.refreshing} onRefresh={() => void Promise.all([feed.reload(), vote.reload(), featured.reload(), daily.reload()])} />}
+      refreshControl={
+        <RefreshControl
+          tintColor={color.violet}
+          refreshing={feed.refreshing}
+          onRefresh={() => void Promise.all([feed.reload(), vote.reload(), featured.reload(), daily.reload()])}
+        />
+      }
     >
       <View style={{ gap: space.xs }}>
         <Text style={[type.display, { fontSize: 30 }]}>BATTLE YOUR TASTE.</Text>
@@ -41,7 +51,8 @@ export default function Home() {
         </Link>
       ) : null}
 
-      {signedIn ? (
+      {signedIn ? <StartHere key={session.data?.user.id} onState={(o) => setOnboarding(!!o?.active)} /> : null}
+      {signedIn && !onboarding ? (
         <View style={{ flexDirection: "row", gap: space.sm }}>
           <Link href="/quick" asChild>
             <Button title="⚡ Quick battle" style={{ flex: 1 }} />
@@ -51,18 +62,22 @@ export default function Home() {
           </Link>
         </View>
       ) : null}
-      <View style={{ flexDirection: "row", gap: space.sm }}>
-        <Link href="/dj" asChild>
-          <Button title="🎧 DJ Vybz" kind="secondary" style={{ flex: 1 }} />
-        </Link>
-        <Link href="/party" asChild>
-          <Button title="🎉 Party Mode" kind="secondary" style={{ flex: 1 }} />
-        </Link>
-      </View>
-      <Link href="/wars" asChild>
-        <Button title="💿 Album & Single Wars" kind="secondary" />
-      </Link>
-      {signedIn ? <DailyReward key={session.data?.user.id} /> : null}
+      {!onboarding ? (
+        <>
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <Link href="/dj" asChild>
+              <Button title="🎧 DJ Vybz" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+            <Link href="/party" asChild>
+              <Button title="🎉 Party Mode" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+          </View>
+          <Link href="/wars" asChild>
+            <Button title="💿 Album & Single Wars" kind="secondary" />
+          </Link>
+        </>
+      ) : null}
+      {signedIn && !onboarding ? <DailyReward key={session.data?.user.id} /> : null}
 
       {feed.error ? <ErrorBanner message={feed.error.message} onRetry={() => void feed.reload()} /> : null}
       {feed.loading && !feed.data ? <Loading /> : null}
