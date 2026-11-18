@@ -52,6 +52,10 @@ export function getTriviaDrafter(): TriviaDrafter | null {
   return env.ANTHROPIC_API_KEY ? new AnthropicTriviaDrafter({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_JUDGE_MODEL }) : null;
 }
 
+export function getPartyDeps(): import("./party").PartyDeps {
+  return { ...getBattleDeps(), origin: publicOrigin(), trivia: getTriviaOptions() };
+}
+
 export function getBattleDeps(): BattleDeps {
   const env = serverEnv();
   return {
