@@ -223,3 +223,35 @@ export interface ChartResponse {
   prevWeek: string | null;
   nextWeek: string | null;
 }
+
+// ── Growth metrics (staff) ─────────────────────────────────────────────────
+
+export interface MetricsResponse {
+  asOf: string;
+  users: number;
+  newUsers7d: number;
+  /** Active today / in the last 7 / 30 days (UTC). */
+  dau: number;
+  wau: number;
+  mau: number;
+  /** DAU as a share of MAU, %. */
+  stickiness: number | null;
+  daily: { day: string; dau: number; signups: number }[];
+  /** Signup cohorts by week: % active exactly 1, 7 and 30 days after joining (null until the cohort is old enough). */
+  retention: { week: string; size: number; d1: number | null; d7: number | null; d30: number | null }[];
+  week: {
+    battles: number;
+    votes: number;
+    warVotes: number;
+    trivia: number;
+    fires: number;
+    verdicts: number;
+    posts: number;
+    drops: number;
+    pendingMixtapes: number;
+    /** Actions per weekly active person. */
+    perActiveUser: number;
+  };
+  /** Taps out to streaming services. */
+  outbound: { service: string; week: number; month: number; total: number }[];
+}

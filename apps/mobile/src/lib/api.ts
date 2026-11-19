@@ -1,5 +1,6 @@
 import type {
   ArtistFollowHit,
+  MetricsResponse,
   ChartResponse,
   VerdictPair,
   DropsResponse,
@@ -401,6 +402,7 @@ export const api = {
   judge: (a: string, b: string, winner: string) => request<{ next: VerdictPair | null }>("POST", "/api/v1/verdict", { a, b, winner }),
   chart: (week?: string | null) => request<ChartResponse>("GET", `/api/v1/chart${week ? `?week=${encodeURIComponent(week)}` : ""}`),
   chartToSpotify: (week: string) => request<{ url: string; added: number }>("POST", "/api/v1/chart/spotify", { week }),
+  modMetrics: () => request<MetricsResponse>("GET", "/api/v1/mod/metrics"),
   modRunDrops: () => request<{ ran: boolean; added: number; note: string }>("POST", "/api/v1/mod/drops/run", {}),
   updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>

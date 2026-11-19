@@ -185,3 +185,51 @@ describe.skipIf(!TEST_DB_URL)("saving the chart to Spotify", () => {
     }
   });
 });
+
+describe.skipIf(!TEST_DB_URL)("growth metrics", () => {
+  it("counts active people, cohorts and outbound plays; staff only", async () => {
+    const h = await freshDb();
+    try {
+      const { metrics } = await import("../src/server/metrics");
+      const deps = { db: h.db, catalog: { metadata: [], playback: {}, storefront: "us" }, requireVerifiedEmail: false, aiJudge: null } as unknown as BattleDeps;
+      const day = 86_400_000;
+      const now = new Date();
+      const joined = new Date(now.getTime() - 10 * day);
+      const [mod, a, b] = (await h.db
+        .insert(schema.user)
+        .values([
+          { id: "u_m", name: "M", email: "m@x.com", handle: "modm", role: "MODERATOR", createdAt: joined },
+          { id: "u_a", name: "A", email: "a@x.com", handle: "usera", createdAt: joined },
+          { id: "u_b", name: "B", email: "b@x.com", handle: "userb", createdAt: joined },
+          { id: "u_bot", name: "Bot", email: "bot@x.com", handle: "botx", isSystem: true, createdAt: joined },
+        ])
+        .returning()) as [UserRow, UserRow, UserRow];
+      // a: active on join day, day 1 and today; b: only day 7; the bot is ignored.
+      await h.db.insert(schema.activityDay).values([
+        { userId: a.id, day: "x1", createdAt: joined },
+        { userId: a.id, day: "x2", createdAt: new Date(joined.getTime() + day) },
+        { userId: a.id, day: "x3", createdAt: now },
+        { userId: b.id, day: "x4", createdAt: new Date(joined.getTime() + 7 * day) },
+        { userId: "u_bot", day: "x5", createdAt: now },
+      ]);
+      await h.db.insert(schema.outboundClick).values([
+        { id: "o1", userId: a.id, service: "spotify", kind: "release", ref: "r" },
+        { id: "o2", userId: null, viewerKey: "g:x", service: "spotify", kind: "release", ref: "r" },
+        { id: "o3", userId: b.id, service: "apple", kind: "war", ref: "w:A" },
+      ]);
+      await expect(metrics(deps, a)).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const m = await metrics(deps, mod, now);
+      expect(m).toMatchObject({ users: 3, dau: 1, wau: 2, mau: 2 });
+      expect(m.daily).toHaveLength(30);
+      expect(m.daily.at(-1)!.dau).toBe(1);
+      const cohort = m.retention.find((r) => r.size === 3)!;
+      expect(cohort).toMatchObject({ d1: 33.3, d7: 33.3, d30: null });
+      expect(m.outbound).toEqual([
+        { service: "spotify", week: 2, month: 2, total: 2 },
+        { service: "apple", week: 1, month: 1, total: 1 },
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+});

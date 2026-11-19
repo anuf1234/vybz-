@@ -55,6 +55,9 @@ export default function ModerationQueue() {
       <Link href="/mod/trivia" asChild>
         <Button title="🧠 Trivia questions" kind="secondary" />
       </Link>
+      <Link href="/mod/metrics" asChild>
+        <Button title="📈 Growth metrics" kind="secondary" />
+      </Link>
       <Link href="/mod/mixtapes" asChild>
         <Button title="📼 Mixtapes and drops" kind="secondary" />
       </Link>
