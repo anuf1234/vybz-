@@ -18,6 +18,7 @@ import { type BattleDeps, ServiceError, type UserRow, usersById } from "./battle
 import { CatalogError, ensureTrack, parseCatalogId } from "./catalog";
 import { createNotifications } from "./notifications";
 import { grant, systemIds } from "./progression";
+import { recordActivity } from "./vybz-streak";
 
 /**
  * Album and Single Wars. Sides are snapshots of the provider's album (with
@@ -234,6 +235,7 @@ export async function voteWar(deps: BattleDeps, viewer: UserRow | null, id: stri
       .from(l)
       .where(and(eq(l.userId, user.id), eq(l.reason, "WAR_VOTE"), gte(l.createdAt, new Date(Date.now() - 86_400_000))))) as [{ today: number }];
     if (today < WARS.voteXpPerDay) await grant(deps.db, user.id, "WAR_VOTE", id, { xp: WARS.voteXp, coins: 0 });
+    await recordActivity(deps.db, user.id);
   }
   return warView(deps, user, w);
 }

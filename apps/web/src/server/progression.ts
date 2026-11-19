@@ -101,7 +101,7 @@ export function shiftDay(day: string, by: number): string {
 /** After a time-zone change, a new "day" only counts once this much real time has passed. */
 const ZONE_CHANGE_GAP_MS = 4 * 3600_000;
 
-function daysBetween(from: string, to: string): number {
+export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
@@ -260,6 +260,8 @@ export async function wallet(db: Executor, user: UserRow | null, cursor?: string
         const item = shopItem(r.ref.split(":")[0]);
         return { label: `Bought ${item ? `${item.icon} ${item.title}` : "an item"}`, link: "/shop" };
       }
+      case "DROP_FIRE":
+        return { label: "🔥 Fired up a drop", link: "/drops" };
       case "ONBOARDING":
         return { label: "👋 Welcome bonus", link: null };
       case "WAR_VOTE":

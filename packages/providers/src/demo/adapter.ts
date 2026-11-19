@@ -6,6 +6,7 @@ import type {
   MetadataProvider,
   PlaybackProvider,
   PlaybackSource,
+  ReleaseProvider,
   SearchOptions,
   TrackCandidate,
   ThemeQuery,
@@ -53,7 +54,7 @@ const DEMO_ALBUMS: readonly { id: string; title: string; artistName: string; rel
   { id: "satellite-drive", title: "Satellite Drive", artistName: "Dune Theory", releaseYear: 2019, tracks: ["paper-satellites", "afterglow-drive"] },
 ];
 
-export class DemoCatalog implements MetadataProvider, PlaybackProvider, BrowseProvider, AlbumProvider {
+export class DemoCatalog implements MetadataProvider, PlaybackProvider, BrowseProvider, AlbumProvider, ReleaseProvider {
   readonly kind = "VYBZ_DEMO" as const;
 
   constructor(private readonly config: DemoCatalogConfig) {}
@@ -105,8 +106,38 @@ export class DemoCatalog implements MetadataProvider, PlaybackProvider, BrowsePr
   }
 
   async getAlbum(externalId: string): Promise<AlbumCandidate | null> {
+    if (externalId.startsWith("single-")) {
+      const single = (await this.newReleases()).find((a) => a.externalId === externalId);
+      const t = DEMO_TRACKS.find((x) => `single-${x.id}` === externalId);
+      return single && t ? { ...single, tracks: [this.toCandidate(t)] } : null;
+    }
     const al = DEMO_ALBUMS.find((x) => x.id === externalId);
     return al ? this.toAlbum(al, true) : null;
+  }
+
+  /** Demo "new releases": the demo albums, dated as if out this week, plus each demo track as a single. */
+  async newReleases(): Promise<AlbumCandidate[]> {
+    const today = new Date();
+    const daysAgo = (n: number) => new Date(today.getTime() - n * 86_400_000).toISOString().slice(0, 10);
+    const albums = DEMO_ALBUMS.map((al, i) => ({ ...this.toAlbum(al, false), releaseDate: daysAgo(i), format: "ALBUM" as const }));
+    const singles = DEMO_TRACKS.slice(0, 4).map((t, i) => ({
+      provider: "VYBZ_DEMO" as const,
+      externalId: `single-${t.id}`,
+      title: t.title,
+      artistName: t.artistName,
+      releaseDate: daysAgo(i),
+      genres: t.genres,
+      artwork: { url: this.asset(t.id, "jpg"), width: 300, height: 300 },
+      trackCount: 1,
+      isSingle: true,
+      format: "SINGLE" as const,
+    }));
+    return [...albums, ...singles];
+  }
+
+  async latestRelease(artistId: string): Promise<AlbumCandidate | null> {
+    const all = await this.newReleases();
+    return all.find((a) => artistSlug(a.artistName) === artistId) ?? null;
   }
 
   async topAlbums(): Promise<AlbumCandidate[]> {

@@ -12,3 +12,4 @@ export * from "./trivia";
 export * from "./dj";
 export * from "./party";
 export * from "./wars";
+export * from "./drops";

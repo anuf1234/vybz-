@@ -5,7 +5,7 @@ import { type Executor, and, asc, eq, isNotNull, schema } from "@vybz/db";
 export async function streaksFor(db: Executor, userId: string, at = new Date()): Promise<Streaks> {
   const p = schema.battleParticipant;
   const b = schema.battle;
-  const [claims, results, progress, trivia] = await Promise.all([
+  const [claims, results, progress, trivia, active] = await Promise.all([
     db.select({ day: schema.dailyClaim.day }).from(schema.dailyClaim).where(eq(schema.dailyClaim.userId, userId)),
     db
       .select({ id: p.id, winner: b.winnerParticipantId, endedAt: b.endedAt })
@@ -19,6 +19,7 @@ export async function streaksFor(db: Executor, userId: string, at = new Date()):
       .from(schema.triviaPlay)
       .innerJoin(schema.triviaSet, eq(schema.triviaSet.id, schema.triviaPlay.setId))
       .where(and(eq(schema.triviaPlay.userId, userId), eq(schema.triviaSet.mode, "DAILY"), isNotNull(schema.triviaPlay.finishedAt))),
+    db.select({ day: schema.activityDay.day }).from(schema.activityDay).where(eq(schema.activityDay.userId, userId)),
   ]);
   const tz = progress[0]?.tz ?? "UTC";
   const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
@@ -35,6 +36,10 @@ export async function streaksFor(db: Executor, userId: string, at = new Date()):
     ),
     trivia: dayRuns(
       trivia.flatMap((t) => (t.day ? [t.day] : [])),
+      today,
+    ),
+    vybz: dayRuns(
+      active.map((a) => a.day),
       today,
     ),
   };

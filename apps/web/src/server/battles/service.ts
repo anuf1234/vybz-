@@ -1,3 +1,4 @@
+import { recordActivity } from "../vybz-streak";
 import { checkAchievements } from "../achievements";
 import { awardBattle, awardVote } from "../progression";
 import {
@@ -184,6 +185,7 @@ async function afterBattleCompleted(deps: BattleDeps, agg: BattleAggregate): Pro
 async function afterVote(deps: BattleDeps, voter: UserRow, battleId: string, roundIndex: number): Promise<void> {
   try {
     await awardVote(deps.db, voter.id, battleId, roundIndex, now(deps));
+    await recordActivity(deps.db, voter.id, now(deps));
     await checkAchievements(deps.db, deps.push, [voter.id]);
   } catch (err) {
     console.error("progression failed", voter.id, err);
@@ -377,6 +379,7 @@ export async function submitPick(deps: BattleDeps, actorIn: UserRow | null, id: 
     if (isUniqueViolation(err)) throw new ServiceError(409, "TRACK_ALREADY_USED");
     throw err;
   }
+  await recordActivity(deps.db, actor.id, now(deps));
 }
 
 // ── AI judge ───────────────────────────────────────────────────────────────

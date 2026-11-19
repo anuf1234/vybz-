@@ -1149,3 +1149,95 @@ export const warVote = pgTable(
   },
   (t) => [primaryKey({ columns: [t.warId, t.voterId, t.category] }), index("war_vote_created_idx").on(t.category, t.createdAt)],
 );
+
+// ── Daily Drops ────────────────────────────────────────────────────────────
+
+/** A new single, EP, album or mixtape. Provider releases are snapshots; mixtapes are submitted links. VYBZ never hosts audio. */
+export const release = pgTable(
+  "release",
+  {
+    id: text("id").primaryKey(),
+    /** APPLE_MUSIC, VYBZ_DEMO, … or SUBMISSION for mixtape links. */
+    provider: text("provider").notNull(),
+    /** The provider's album id; for submissions, the normalized link. */
+    externalId: text("external_id").notNull(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    artistName: text("artist_name").notNull(),
+    artworkUrl: text("artwork_url"),
+    externalUrl: text("external_url"),
+    releaseDate: text("release_date"),
+    genres: text("genres").array().notNull().default(sql`'{}'::text[]`),
+    trackCount: integer("track_count"),
+    source: text("source").notNull(),
+    status: text("status").notNull().default("LIVE"),
+    /** UTC day (YYYY-MM-DD) it became a drop. */
+    dropDay: text("drop_day").notNull(),
+    /** How high it ranked when found (lower is bigger); orders the daily post. */
+    rank: integer("rank").notNull().default(1000),
+    submittedById: text("submitted_by_id").references(() => user.id, { onDelete: "set null" }),
+    note: text("note"),
+    warId: text("war_id").references(() => war.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("release_provider_uq").on(t.provider, t.externalId),
+    index("release_drop_idx").on(t.status, t.dropDay, t.rank),
+    index("release_artist_idx").on(t.artistName),
+  ],
+);
+
+/** 🔥 on a drop. */
+export const releaseFire = pgTable(
+  "release_fire",
+  {
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.releaseId, t.userId] }), index("release_fire_user_idx").on(t.userId, t.createdAt)],
+);
+
+/** Artists someone follows for new-release alerts. */
+export const artistFollow = pgTable(
+  "artist_follow",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    artworkUrl: text("artwork_url"),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.provider, t.externalId] }), index("artist_follow_artist_idx").on(t.provider, t.externalId)],
+);
+
+/** The day's drops run (once per UTC day). */
+export const dropRun = pgTable("drop_run", {
+  day: text("day").primaryKey(),
+  postId: text("post_id").references(() => post.id, { onDelete: "set null" }),
+  found: integer("found").notNull().default(0),
+  note: text("note"),
+  createdAt: createdAt(),
+});
+
+/** Days someone did something that counts for the VYBZ streak, in their time zone. */
+export const activityDay = pgTable(
+  "activity_day",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    /** A missed day covered by a streak freeze. */
+    frozen: boolean("frozen").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);

@@ -9,6 +9,7 @@ import {
   type PlaybackProvider,
   type PlaybackSource,
   ProviderError,
+  type ReleaseProvider,
   type SearchOptions,
   type ThemeQuery,
   type TrackCandidate,
@@ -88,7 +89,12 @@ export interface AppleMusicAdapterConfig {
   /** Returns a valid developer token (see DeveloperTokenCache). */
   developerToken: () => Promise<string>;
   fetch?: FetchLike;
+  /** Apple editorial playlists to read new releases from (searched by name). */
+  newReleasePlaylists?: string[];
 }
+
+/** Apple's editorial new-music playlists. */
+export const NEW_RELEASE_PLAYLISTS = ["New Music Daily", "Rap Life", "R&B Now", "A-List: Pop", "New in Afrobeats"];
 
 const AlbumSchema = z.object({
   id: z.string(),
@@ -109,7 +115,7 @@ const AlbumSearchSchema = z.object({ results: z.object({ albums: z.object({ data
 const AlbumsResponseSchema = z.object({ data: z.array(AlbumSchema) });
 const AlbumChartsSchema = z.object({ results: z.object({ albums: z.array(z.object({ data: z.array(AlbumSchema) })).optional() }) });
 
-export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, BrowseProvider, AlbumProvider {
+export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, BrowseProvider, AlbumProvider, ReleaseProvider {
   readonly kind = "APPLE_MUSIC" as const;
   private readonly fetchFn: FetchLike;
   private readonly genreIds = new Map<string, { at: number; byName: Promise<Map<string, string>> }>();
@@ -264,6 +270,46 @@ export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, Br
     return (AlbumChartsSchema.parse(json).results.albums ?? []).flatMap((c) => c.data.map(toAlbum));
   }
 
+  /**
+   * New releases: the album and song charts plus Apple's editorial new-music
+   * playlists, interleaved so each source gets a look in. Songs are turned
+   * into their release (single, EP or album). Any one source failing is
+   * skipped.
+   */
+  async newReleases(opts: SearchOptions): Promise<AlbumCandidate[]> {
+    const sf = storefront(opts);
+    const soft = <T>(p: Promise<T[]>) => p.catch(() => [] as T[]);
+    const albumChart = soft(this.topAlbums({ ...opts, limit: 50 }));
+    const songChart = soft(
+      this.get(`/catalog/${sf}/charts?types=songs&chart=most-played&limit=50`, true).then((json) =>
+        json === null ? [] : (ChartsSchema.parse(json).results.songs ?? []).flatMap((c) => releasesFromSongs(c.data)),
+      ),
+    );
+    const terms = this.config.newReleasePlaylists ?? NEW_RELEASE_PLAYLISTS;
+    const playlists = terms.map((term) => soft(this.editorialPlaylistItems(sf, term).then(releasesFromSongs)));
+    const lists = await Promise.all([...playlists, songChart, albumChart]);
+    const seen = new Set<string>();
+    return interleave(lists).filter((a) => !seen.has(a.externalId) && !!seen.add(a.externalId));
+  }
+
+  async latestRelease(artistId: string, opts: SearchOptions): Promise<AlbumCandidate | null> {
+    const json = await this.get(`/catalog/${storefront(opts)}/artists/${encodeURIComponent(artistId)}/view/latest-release`, true);
+    if (json === null) return null;
+    const parsed = AlbumsResponseSchema.safeParse(json);
+    const al = parsed.success ? parsed.data.data[0] : undefined;
+    return al ? toAlbum(al) : null;
+  }
+
+  /** Items of Apple's own playlist by that name (not user playlists). */
+  private async editorialPlaylistItems(sf: string, term: string): Promise<{ type: string }[]> {
+    const params = new URLSearchParams({ term, types: "playlists", limit: "10" });
+    const found = PlaylistSearchSchema.parse(await this.get(`/catalog/${sf}/search?${params}`)).results.playlists?.data ?? [];
+    const pick = found.find((p) => p.attributes.curatorName === "Apple Music" && p.attributes.name.toLowerCase() === term.toLowerCase()) ?? found.find((p) => p.attributes.curatorName === "Apple Music");
+    if (!pick) return [];
+    const json = await this.get(`/catalog/${sf}/playlists/${encodeURIComponent(pick.id)}/tracks?limit=100`, true);
+    return json === null ? [] : MixedListSchema.parse(json).data;
+  }
+
   sources(ref: TrackProviderRef, viewer: ViewerContext): PlaybackSource[] {
     const attribution = {
       provider: this.kind,
@@ -346,6 +392,42 @@ function toCandidate(song: Song): TrackCandidate {
   };
 }
 
+/** " - Single" / " - EP" on Apple names. */
+function formatOf(name: string, isSingle: boolean | undefined): "SINGLE" | "EP" | "ALBUM" {
+  if (isSingle || /\s+-\s+Single$/i.test(name)) return "SINGLE";
+  if (/\s+-\s+EP$/i.test(name)) return "EP";
+  return "ALBUM";
+}
+
+/** The release each song in a list comes from, using the album id in the song's Apple Music link. */
+function releasesFromSongs(items: readonly { type: string }[]): AlbumCandidate[] {
+  const out: AlbumCandidate[] = [];
+  for (const item of items) {
+    if (item.type !== "songs") continue;
+    const parsed = SongSchema.safeParse(item);
+    if (!parsed.success) continue;
+    const a = parsed.data.attributes;
+    const albumId = a.url?.match(/\/album\/(?:[^/]+\/)?(\d+)/)?.[1];
+    if (!albumId || !a.albumName) continue;
+    const year = a.releaseDate ? Number.parseInt(a.releaseDate.slice(0, 4), 10) : undefined;
+    const format = formatOf(a.albumName, undefined);
+    out.push({
+      provider: "APPLE_MUSIC",
+      externalId: albumId,
+      title: a.albumName.replace(/\s+-\s+(Single|EP)$/i, ""),
+      artistName: a.artistName,
+      ...(year && Number.isFinite(year) ? { releaseYear: year } : {}),
+      ...(a.releaseDate ? { releaseDate: a.releaseDate } : {}),
+      genres: (a.genreNames ?? []).filter((g) => g !== "Music"),
+      ...(a.artwork ? { artwork: { url: appleArtworkUrl(a.artwork.url, 600), width: 600, height: 600 } } : {}),
+      ...(a.url ? { externalUrl: a.url.replace(/\?.*$/, "") } : {}),
+      isSingle: format === "SINGLE",
+      format,
+    });
+  }
+  return out;
+}
+
 function toAlbum(al: Album): AlbumCandidate {
   const a = al.attributes;
   const year = a.releaseDate ? Number.parseInt(a.releaseDate.slice(0, 4), 10) : undefined;
@@ -362,6 +444,7 @@ function toAlbum(al: Album): AlbumCandidate {
     ...(a.url ? { externalUrl: a.url } : {}),
     ...(a.trackCount !== undefined ? { trackCount: a.trackCount } : {}),
     isSingle: a.isSingle ?? false,
+    format: formatOf(a.name, a.isSingle),
     ...(tracks ? { tracks } : {}),
   };
 }
