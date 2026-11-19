@@ -44,13 +44,20 @@ describe.skipIf(!TEST_DB_URL)("Song of the Day / Week and Album of the Week", ()
     await fireRelease(deps, fans[2]!, albums[1]!.id, { on: true });
 
     const t = await topDrops(deps, fans[0]!);
-    expect(t.songsToday.map((r) => [r.release.id, r.stats])).toEqual([
-      [hot.id, { score: 12, fires: 4, wins: 0, listens: 0, plays: 0 }],
-      [warm.id, { score: 2, fires: 0, wins: 0, listens: 2, plays: 0 }],
-    ]);
+    // The app gets positions only, never counts.
+    expect(t.songsToday.map((r) => r.release.id)).toEqual([hot.id, warm.id]);
+    expect(JSON.stringify(t)).not.toMatch(/"(heat|fires|wins|listens|plays|stats)"/);
     expect(t.songsWeek[0]!.release.id).toBe(hot.id);
-    expect(t.albumsWeek[0]).toMatchObject({ rank: 1, release: { id: albums[1]!.id }, stats: { score: 5, fires: 1, wins: 1 } });
+    expect(t.albumsWeek[0]).toMatchObject({ rank: 1, release: { id: albums[1]!.id } });
     expect(t.history).toEqual([]);
+    // The counts behind it.
+    const { heat } = await import("../src/server/drop-awards");
+    const day = new Date().toISOString().slice(0, 10);
+    const w = { start: new Date(`${day}T00:00:00Z`), end: new Date(Date.now() + 86_400_000) };
+    const songs = await heat(h.db, w, ["SINGLE"]);
+    expect(songs.get(hot.id)).toEqual({ score: 12, fires: 4, wins: 0, listens: 0, plays: 0 });
+    expect(songs.get(warm.id)).toEqual({ score: 2, fires: 0, wins: 0, listens: 2, plays: 0 });
+    expect((await heat(h.db, w, ["ALBUM"])).get(albums[1]!.id)).toMatchObject({ score: 5, fires: 1, wins: 1 });
   });
 
   it("freezes the winners when the day and week end, posts them and tells the artist's fans", async () => {
@@ -70,6 +77,25 @@ describe.skipIf(!TEST_DB_URL)("Song of the Day / Week and Album of the Week", ()
     expect(notes.some((n) => n.type === "DROP_AWARD" && n.title.includes("Song of the Day"))).toBe(true);
     const t = await topDrops(deps, null);
     expect(t.history.map((x) => x.award)).toHaveLength(3);
+    // Posts and notifications name the winner but give no counts.
+    const posts = await h.db.select().from(schema.post);
+    expect(posts.some((p) => p.body.includes("Song of the Day"))).toBe(true);
+    expect(posts.every((p) => !/\d+ (fires|listens|plays)/.test(p.body))).toBe(true);
+
+    // Staff can export the counts for partners; others can't.
+    const { exportAwards, exportReleaseStats, snapshotDay } = await import("../src/server/partner-data");
+    const mod = ((await h.db.insert(schema.user).values({ id: "u_hm", name: "M", email: "hm@x.com", handle: "heatmod", role: "MODERATOR" }).returning()) as [UserRow])[0];
+    await expect(exportReleaseStats(deps, fans[0]!, new URLSearchParams())).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const today = new Date().toISOString().slice(0, 10);
+    expect(await snapshotDay(h.db, today)).toBeGreaterThan(0);
+    const json = (await exportReleaseStats(deps, mod, new URLSearchParams())) as { rows: { releaseId: string; fires: number; heat: number; listensBy: Record<string, number> }[] };
+    const hotRow = json.rows.find((r) => r.releaseId === hot.id)!;
+    expect(hotRow).toMatchObject({ fires: 4, heat: 12 });
+    const csv = (await exportReleaseStats(deps, mod, new URLSearchParams("format=csv"))) as string;
+    expect(csv.split("\n")[0]).toBe("day,release_id,title,artist,type,catalog,catalog_id,heat,fires,this_or_that_wins,this_or_that_matchups,apple_music_plays,listens,listens_spotify,listens_apple_music,listens_youtube,listens_other");
+    expect(csv).toContain(hot.id);
+    const awardsCsv = (await exportAwards(deps, mod, new URLSearchParams("format=csv"))) as string;
+    expect(awardsCsv.split("\n").filter(Boolean)).toHaveLength(4);
   });
 });
 
@@ -127,9 +153,12 @@ describe.skipIf(!TEST_DB_URL)("Count my plays (Apple Music)", () => {
       // Not due again until a few hours pass; the same day doesn't count twice.
       expect(await syncPlays(deps, m, later(11))).toBe(0);
       const t = await topDrops(deps, null, later(10));
-      expect(t.songsToday.find((r) => r.release.id === "r_single")?.stats).toMatchObject({ plays: 1, score: 2 });
-      expect(t.albumsWeek.find((r) => r.release.id === "r_album")?.stats).toMatchObject({ plays: 1 });
-      expect((await musicLinkStatus(deps, m, u, later(10))).playsCounted).toBe(2);
+      expect(t.songsToday.some((r) => r.release.id === "r_single")).toBe(true);
+      const { heat } = await import("../src/server/drop-awards");
+      const w = { start: new Date(Date.now() - 86_400_000), end: later(48) };
+      expect((await heat(h.db, w, ["SINGLE"])).get("r_single")).toMatchObject({ plays: 1, score: 2 });
+      expect((await heat(h.db, w, ["ALBUM"])).get("r_album")).toMatchObject({ plays: 1 });
+      expect(await musicLinkStatus(deps, m, u)).toEqual({ available: true, linked: true });
 
       // A revoked token is forgotten.
       fail = 401;

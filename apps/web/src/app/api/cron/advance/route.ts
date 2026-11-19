@@ -14,6 +14,7 @@ import { publishWeeklyChart } from "@/server/verdict";
 import { advanceTournaments } from "@/server/tournaments";
 import { giveDropAwards } from "@/server/drop-awards";
 import { syncPlays } from "@/server/music-plays";
+import { snapshotRecent } from "@/server/partner-data";
 import { serverEnv } from "@/server/env";
 
 /**
@@ -45,8 +46,10 @@ async function handle(req: Request) {
   const chart = await publishWeeklyChart(deps).catch((err) => (console.error("weekly chart failed", err), null));
   const tournaments = await advanceTournaments(deps).catch((err) => (console.error("tournaments failed", err), 0));
   const plays = await syncPlays(deps, getMusicDeps()).catch((err) => (console.error("play sync failed", err), 0));
+  // Partner totals: hourly is plenty (exports refresh today on demand).
+  const stats = new Date().getUTCMinutes() >= 5 ? 0 : await snapshotRecent(deps.db).catch((err) => (console.error("stats snapshot failed", err), 0));
   const awards = await giveDropAwards(deps).catch((err) => (console.error("drop awards failed", err), 0));
-  return NextResponse.json({ chart, tournaments, awards, plays, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
+  return NextResponse.json({ chart, tournaments, awards, plays, stats, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
 }
 
 export { handle as GET, handle as POST };

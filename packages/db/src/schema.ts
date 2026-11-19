@@ -1491,3 +1491,29 @@ export const playEvent = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.releaseId, t.day] }), index("play_event_created_idx").on(t.createdAt)],
 );
+
+/**
+ * Daily per-release totals, kept for partners (labels, brands, buyers) and
+ * never shown in the app. Counts of people, not who they are.
+ */
+export const releaseDayStats = pgTable(
+  "release_day_stats",
+  {
+    day: text("day").notNull(),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    fires: integer("fires").notNull().default(0),
+    wins: integer("wins").notNull().default(0),
+    /** This-or-That matchups the release appeared in. */
+    matchups: integer("matchups").notNull().default(0),
+    /** Verified plays (people) from linked Apple Music accounts. */
+    plays: integer("plays").notNull().default(0),
+    /** People who tapped out to listen, total and by service. */
+    listens: integer("listens").notNull().default(0),
+    listensBy: jsonb("listens_by").notNull().default(sql`'{}'::jsonb`),
+    heat: integer("heat").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.releaseId] }), index("release_day_stats_release_idx").on(t.releaseId)],
+);

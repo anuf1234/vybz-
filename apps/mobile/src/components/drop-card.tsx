@@ -37,7 +37,7 @@ export function DropCard({ drop, signedIn, onChange }: { drop: ReleaseView; sign
   };
   const fire = () =>
     act(async () => {
-      update({ ...d, fired: !d.fired, fires: d.fires + (d.fired ? -1 : 1) });
+      update({ ...d, fired: !d.fired });
       update(await api.fireDrop(d.id, !d.fired));
     });
   const follow = () =>
@@ -75,7 +75,7 @@ export function DropCard({ drop, signedIn, onChange }: { drop: ReleaseView; sign
         </View>
       </View>
       <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
-        <Action label={`🔥 ${d.fires}`} on={d.fired} onPress={fire} a11y={d.fired ? "Remove your fire" : "Fire this drop up"} />
+        <Action label={d.fired ? "🔥 Fired up" : "🔥"} on={d.fired} onPress={fire} a11y={d.fired ? "Remove your fire" : "Fire this drop up"} />
         {d.externalUrl ? <Action label={`▶ ${d.host ?? "Listen"}`} onPress={() => void listenOn("source", "release", d.id)} a11y={`Listen on ${d.host ?? "the web"}`} /> : null}
         {spotify && d.kind !== "MIXTAPE" ? <Action label="Spotify" onPress={() => void listenOn("spotify", "release", d.id)} a11y="Open in Spotify" /> : null}
         {d.warId || (d.ref && d.kind !== "MIXTAPE") ? <Action label={d.warId ? "⚔️ In a war" : "⚔️ Start a war"} onPress={war} a11y="Album war" /> : null}

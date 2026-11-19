@@ -1,8 +1,7 @@
-import { DROP_AWARDS, HEAT, type HeatRow } from "@vybz/core";
+import { DROP_AWARDS, type HeatRow } from "@vybz/core";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
-import { statLine } from "@/components/drop-awards";
 import { color, radius, space, type } from "@/components/theme";
 import { EmptyState, ErrorBanner, Loading, Segmented, SectionTitle } from "@/components/ui";
 import { Cover } from "@/components/war-card";
@@ -22,23 +21,21 @@ export default function TopDrops() {
   const list = t?.[race] ?? [];
   return (
     <>
-      <Stack.Screen options={{ title: "Top drops" }} />
+      <Stack.Screen options={{ title: "Top charts" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }} refreshControl={<RefreshControl tintColor={color.violet} refreshing={res.refreshing} onRefresh={() => void res.reload()} />}>
-        <Text style={type.small}>
-          Heat = 🔥 fires ×{HEAT.fire} + This-or-That wins ×{HEAT.win} + Apple Music plays ×{HEAT.play} + listens ×{HEAT.listen}. Plays come from people who turned on Count my plays; plays and listens count once per person. Days and weeks are in UTC; winners are announced when each ends.
-        </Text>
+        <Text style={type.small}>The most-played and most-loved new music on VYBZ, updated through the day.</Text>
         <Segmented
           value={race}
           onChange={setRace}
           options={[
-            { value: "songsToday", label: "Song · day" },
-            { value: "songsWeek", label: "Song · week" },
-            { value: "albumsWeek", label: "Album · week" },
+            { value: "songsToday", label: "Today" },
+            { value: "songsWeek", label: "Songs · week" },
+            { value: "albumsWeek", label: "Albums · week" },
           ]}
         />
         {res.error ? <ErrorBanner message={res.error.message} onRetry={() => void res.reload()} /> : null}
         {res.loading && !t ? <Loading /> : null}
-        {t && !list.length ? <EmptyState title="No votes yet" body="Fire up drops and pick in This or That to start the race." /> : null}
+        {t && !list.length ? <EmptyState title="Charts are warming up" body="🔥 your favorite drops and pick in This or That." /> : null}
         {list.map((r) => (
           <Row key={r.release.id} r={r} onArtist={() => router.push({ pathname: "/artist/[name]", params: { name: r.release.artistName } })} />
         ))}
@@ -54,9 +51,6 @@ export default function TopDrops() {
                   </Text>
                   <Text style={[type.small, { color: color.text }]} numberOfLines={1}>
                     {h.release.title} · {h.release.artistName}
-                  </Text>
-                  <Text style={type.small}>
-                    {h.stats.score} heat · {statLine(h.stats)}
                   </Text>
                 </View>
               </View>
@@ -81,16 +75,11 @@ function Row({ r, onArtist }: { r: HeatRow; onArtist: () => void }) {
         <Text style={[type.small, { color: color.text }]} onPress={onArtist} accessibilityRole="link">
           {r.release.artistName}
         </Text>
-        <Text style={type.small}>{statLine(r.stats)}</Text>
         {spotify && r.release.kind !== "MIXTAPE" ? (
           <Text style={[type.small, { color: color.violetSoft }]} onPress={() => void listenOn("spotify", "release", r.release.id)} accessibilityRole="link">
             Spotify ↗
           </Text>
         ) : null}
-      </View>
-      <View style={{ alignItems: "flex-end" }}>
-        <Text style={[type.display, { fontSize: 22, color: color.violetSoft }]}>{r.stats.score}</Text>
-        <Text style={type.small}>heat</Text>
       </View>
     </View>
   );

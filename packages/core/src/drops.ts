@@ -98,7 +98,7 @@ export interface ReleaseView {
   dropDay: string;
   /** Catalog ref usable for wars (`PROVIDER:id`); null for mixtapes. */
   ref: string | null;
-  fires: number;
+  /** You fired it up. (Counts aren't shown in the app; they're kept for partners.) */
   fired: boolean;
   /** Following this release's artist. */
   following: boolean;
@@ -280,8 +280,6 @@ export interface ArtistPage {
   followers: number;
   following: boolean;
   releases: ReleaseView[];
-  /** Fires across their drops. */
-  fires: number;
   /** Average Fan Verdict of their releases that have one. */
   verdict: number | null;
   wars: { won: number; lost: number; drawn: number; open: number; recent: { id: string; title: string; status: "OPEN" | "CLOSED"; result: "WON" | "LOST" | "DRAW" | null; challenge: boolean }[] };
@@ -330,22 +328,36 @@ export interface MusicLinkStatus {
   /** Server can read Apple Music listening (Apple Music is set up). */
   available: boolean;
   linked: boolean;
-  lastSyncAt: string | null;
-  /** Verified plays of drops counted for you in the last 7 days. */
-  playsCounted: number;
 }
 
+/** One release's totals for one day (partner data export, staff only). */
+export interface ReleaseDayStatsRow {
+  day: string;
+  releaseId: string;
+  title: string;
+  artistName: string;
+  kind: ReleaseKind;
+  provider: string;
+  externalId: string;
+  fires: number;
+  wins: number;
+  matchups: number;
+  plays: number;
+  listens: number;
+  listensBy: Record<string, number>;
+  heat: number;
+}
+
+/** A chart position, as the app shows it: rank only, no counts (those are kept for partners). */
 export interface HeatRow {
   rank: number;
   release: ReleaseView;
-  stats: HeatStats;
 }
 
 export interface DropAwardView {
   award: DropAwardKind;
   period: string;
   release: ReleaseView;
-  stats: HeatStats;
 }
 
 export interface TopDropsResponse {

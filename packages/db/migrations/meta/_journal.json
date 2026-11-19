@@ -169,6 +169,13 @@
       "when": 1795103571663,
       "tag": "0023_music_plays",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795115996400,
+      "tag": "0024_release_day_stats",
+      "breakpoints": true
     }
   ]
 }

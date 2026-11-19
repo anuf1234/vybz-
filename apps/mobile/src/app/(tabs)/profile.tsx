@@ -203,11 +203,10 @@ function CountMyPlays() {
       <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
         <View style={{ flex: 1 }}>
           <Text style={[type.body, { fontWeight: "700" }]}>Count my plays</Text>
-          <Text style={type.small}>Your Apple Music plays of Daily Drops count toward Song of the Day, Song of the Week and Album of the Week. Only totals are ever shown.</Text>
+          <Text style={type.small}>Your Apple Music plays of Daily Drops help decide Song of the Day, Song of the Week and Album of the Week. Your plays are never shown to anyone.</Text>
         </View>
         <Switch value={s.linked} disabled={busy} onValueChange={(v) => void toggle(v)} accessibilityLabel="Count my Apple Music plays" />
       </View>
-      {s.linked ? <Text style={type.small}>{s.playsCounted ? `${s.playsCounted} drop play${s.playsCounted === 1 ? "" : "s"} counted this week.` : "No drop plays counted yet this week."}</Text> : null}
       {note ? <Text style={type.small}>{note}</Text> : null}
     </View>
   );

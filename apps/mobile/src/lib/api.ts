@@ -160,6 +160,21 @@ async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", p
   return json as T;
 }
 
+/** Downloads text (CSV exports) with the session, for staff. */
+export async function requestText(path: string): Promise<string> {
+  const headers: Record<string, string> = { Accept: "text/csv" };
+  if (Platform.OS !== "web") {
+    const cookie = await authClient.getCookie();
+    if (cookie) headers.Cookie = cookie;
+  }
+  const res = await fetch(`${API_URL}${path}`, { headers, credentials: Platform.OS === "web" ? "include" : "omit" }).catch(() => {
+    throw new ApiRequestError(0, "NETWORK", "Can't reach VYBZ. Check your connection.");
+  });
+  const text = await res.text();
+  if (!res.ok) throw new ApiRequestError(res.status, "ERROR", res.status === 403 ? "Staff only." : "Couldn't export that. Try again.");
+  return text;
+}
+
 const MESSAGES: Record<string, string> = {
   SIGN_IN_REQUIRED: "Sign in to do that.",
   EMAIL_NOT_VERIFIED: "Verify your email first. Check your inbox.",

@@ -7,7 +7,11 @@ import { createNotifications } from "./notifications";
 import { shiftDay } from "./progression";
 
 /**
- * Song of the Day, Song of the Week and Album of the Week. A release's heat
+ * Song of the Day, Song of the Week and Album of the Week. Like Apple
+ * Music's charts, the app shows positions only; the counts behind them are
+ * kept (drop_award.stats, release_day_stats) for partners and never sent
+ * to the app.
+ * A release's heat
  * in a period counts fans' fires and This-or-That wins and the people who
  * tapped out to listen (one listen per person per release per period).
  * Leaders are live; when a day or week ends its winner is frozen, posted
@@ -78,9 +82,9 @@ async function rows(db: Executor, viewer: UserRow | null, list: [string, HeatSta
   if (!top.length) return [];
   const rels = await db.select().from(schema.release).where(inArray(schema.release.id, top.map(([id]) => id)));
   const v = await views(db, viewer, rels as ReleaseRow[]);
-  return top.flatMap(([id, stats], i) => {
+  return top.flatMap(([id], i) => {
     const release = v.find((x) => x.id === id);
-    return release ? [{ rank: i + 1, release, stats }] : [];
+    return release ? [{ rank: i + 1, release }] : [];
   });
 }
 
@@ -97,7 +101,7 @@ export async function topDrops(deps: BattleDeps, viewer: UserRow | null, now = n
   const v = await views(deps.db, viewer, rels as ReleaseRow[]);
   const history: DropAwardView[] = awards.flatMap((a) => {
     const release = v.find((x) => x.id === a.releaseId);
-    return release ? [{ award: a.award as DropAwardKind, period: a.period, release, stats: a.stats as HeatStats }] : [];
+    return release ? [{ award: a.award as DropAwardKind, period: a.period, release }] : [];
   });
   return {
     day,
@@ -121,11 +125,10 @@ async function give(deps: BattleDeps, award: DropAwardKind, period: string, w: W
   const [rel] = await deps.db.select().from(schema.release).where(eq(schema.release.id, id));
   if (!rel) return true;
   const a = DROP_AWARDS[award];
-  const line = `${stats.fires} fires · ${stats.wins} This-or-That wins · ${stats.plays ?? 0} Apple Music plays · ${stats.listens} listens`;
   try {
     const bot = await botUser(deps);
     const postId = newId();
-    await deps.db.insert(schema.post).values({ id: postId, authorId: bot.id, body: `${a.icon} ${a.label}: ${rel.title} by ${rel.artistName}\n\n${line}\n\nVoted by fans on VYBZ.` });
+    await deps.db.insert(schema.post).values({ id: postId, authorId: bot.id, body: `${a.icon} ${a.label}: ${rel.title} by ${rel.artistName}\n\nChosen by what VYBZ fans played and voted for.` });
     await deps.db.update(schema.dropAward).set({ postId }).where(and(eq(schema.dropAward.award, award), eq(schema.dropAward.period, period)));
   } catch (err) {
     console.error("award post failed", err);
@@ -137,7 +140,7 @@ async function give(deps: BattleDeps, award: DropAwardKind, period: string, w: W
   await createNotifications(
     deps.db,
     deps.push,
-    fans.map((f) => ({ userId: f.userId, type: "DROP_AWARD" as const, title: `${a.icon} ${rel.artistName} has the ${a.label}`, body: `"${rel.title}" · ${line}`, battleId: null, link: "/drops/top" })),
+    fans.map((f) => ({ userId: f.userId, type: "DROP_AWARD" as const, title: `${a.icon} ${rel.artistName} has the ${a.label}`, body: `"${rel.title}" was the most-played and most-loved on VYBZ.`, battleId: null, link: "/drops/top" })),
   );
   return true;
 }

@@ -9,8 +9,8 @@ import { requireEnv } from "./env";
  * "Count my plays": with a person's opt-in, VYBZ reads their recently
  * played Apple Music songs a few times a day and counts plays of current
  * Daily Drops (one per person per release per UTC day) toward Song of the
- * Day / Week and Album of the Week. Only those counts are used; nobody's
- * listening is shown to anyone. The Music User Token is stored encrypted
+ * Day / Week and Album of the Week. Nobody's plays are shown in the app;
+ * only de-identified totals per release are kept (release_day_stats). The Music User Token is stored encrypted
  * and deleted when they switch it off.
  */
 
@@ -51,14 +51,10 @@ function requireUser(user: UserRow | null): UserRow {
   return user;
 }
 
-export async function musicLinkStatus(deps: BattleDeps, m: MusicDeps, viewer: UserRow | null, now = new Date()): Promise<MusicLinkStatus> {
+export async function musicLinkStatus(deps: BattleDeps, m: MusicDeps, viewer: UserRow | null): Promise<MusicLinkStatus> {
   const user = requireUser(viewer);
-  const [link] = await deps.db.select().from(schema.musicLink).where(eq(schema.musicLink.userId, user.id));
-  const [{ n }] = (await deps.db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(schema.playEvent)
-    .where(and(eq(schema.playEvent.userId, user.id), gte(schema.playEvent.createdAt, new Date(now.getTime() - 7 * 86_400_000))))) as [{ n: number }];
-  return { available: !!(m.appDeveloperToken && m.reader), linked: !!link, lastSyncAt: link?.lastSyncAt?.toISOString() ?? null, playsCounted: n };
+  const [link] = await deps.db.select({ userId: schema.musicLink.userId }).from(schema.musicLink).where(eq(schema.musicLink.userId, user.id));
+  return { available: !!(m.appDeveloperToken && m.reader), linked: !!link };
 }
 
 /** The developer token the app hands to MusicKit to get this person's Music User Token. */
@@ -84,7 +80,7 @@ export async function linkAppleMusic(deps: BattleDeps, m: MusicDeps, viewer: Use
   // Start from what they've already played, so only plays from now on count.
   const values = { userId: user.id, tokenEnc: sealToken(token), lastSeen: recent.map((r) => r.songId), lastSyncAt: now };
   await deps.db.insert(schema.musicLink).values(values).onConflictDoUpdate({ target: schema.musicLink.userId, set: values });
-  return musicLinkStatus(deps, m, user, now);
+  return musicLinkStatus(deps, m, user);
 }
 
 /** Turn it off: forget the token. Plays already counted stay in the totals. */
