@@ -77,7 +77,11 @@ export async function runDailyDrops(deps: BattleDeps, opts: { now?: Date; force?
   const now = opts.now ?? new Date();
   const day = utcDay(now);
   const none: DropRunResult = { ran: false, found: 0, added: 0, postId: null, wars: 0, notified: 0, note: "" };
-  if (!opts.force && now.getUTCHours() < DROPS.postHourUtc) return { ...none, note: "Not time yet." };
+  if (!opts.force && now.getUTCHours() < DROPS.postHourUtc) {
+    // The very first run happens right away, so Daily Drops isn't empty until the next morning.
+    const [any] = await deps.db.select({ day: schema.dropRun.day }).from(schema.dropRun).limit(1);
+    if (any) return { ...none, note: "Not time yet." };
+  }
   const [claimed] = await deps.db.insert(schema.dropRun).values({ day, createdAt: now }).onConflictDoNothing().returning();
   if (!claimed) return { ...none, note: "Already ran today." };
 

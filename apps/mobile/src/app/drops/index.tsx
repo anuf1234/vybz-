@@ -83,7 +83,7 @@ export default function Drops() {
           range === "following" ? (
             <EmptyState title="Nothing from your artists yet" body="Follow artists and their new music shows up here (and we'll tell you when they drop)." action={signedIn ? <Button title="Find artists" onPress={() => router.push("/drops/artists")} /> : undefined} />
           ) : (
-            <EmptyState title="No drops here yet" body="New music lands every morning. Check back soon, or share a mixtape." />
+            <EmptyState title="No drops here yet" body="New music lands every morning around 8 am Eastern. Check back soon, or share a mixtape." />
           )
         ) : null}
         {cursor ? <Button title={loadingMore ? "Loading…" : "Load more"} kind="secondary" onPress={() => void loadMore()} /> : null}
