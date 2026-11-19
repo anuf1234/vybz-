@@ -906,6 +906,11 @@ export async function profile(deps: BattleDeps, viewer: UserRow | null, handle: 
     record: all,
     recent: await toListItems(deps, viewer, rows),
     social: await socialFor(deps.db, viewer, u.id),
+    artist: await deps.db
+      .select({ name: schema.artistProfile.name })
+      .from(schema.artistProfile)
+      .where(and(eq(schema.artistProfile.userId, u.id), eq(schema.artistProfile.status, "VERIFIED")))
+      .then((r) => r[0] ?? null),
   };
 }
 

@@ -100,7 +100,13 @@ export default function War() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }} refreshControl={<RefreshControl tintColor={color.violet} refreshing={res.refreshing} onRefresh={() => void res.reload()} />}>
-      <Stack.Screen options={{ title: w.kind === "ALBUM" ? "Album war" : "Single war" }} />
+      <Stack.Screen options={{ title: w.challenge ? "Artist challenge" : w.kind === "ALBUM" ? "Album war" : "Single war" }} />
+      {w.challenge ? (
+        <Card style={{ borderColor: color.violet }}>
+          <Text style={[type.body, { fontWeight: "800", textAlign: "center" }]}>⚔️ {w.challenge.from} called out {w.challenge.to}</Text>
+          <Text style={[type.small, { textAlign: "center" }]}>An artist challenge. The fans decide.</Text>
+        </Card>
+      ) : null}
       <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
         {(["A", "B"] as const).map((s) => {
           const x = s === "A" ? w.a : w.b;

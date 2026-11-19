@@ -64,7 +64,9 @@ export function DropCard({ drop, signedIn, onChange }: { drop: ReleaseView; sign
             {d.title}
           </Text>
           <Text style={type.small} numberOfLines={1}>
-            {d.artistName}
+            <Text style={{ color: color.text, fontWeight: "700" }} onPress={() => router.push({ pathname: "/artist/[name]", params: { name: d.artistName } })} accessibilityRole="link">
+              {d.artistName}
+            </Text>
             {d.releaseDate ? ` · ${d.releaseDate}` : ""}
           </Text>
           {d.submittedBy ? <Text style={type.small}>Shared by @{d.submittedBy.handle}</Text> : null}

@@ -106,6 +106,9 @@ export default function Profile() {
       <Link href="/rankings" asChild>
         <Button title="Rankings" kind="secondary" />
       </Link>
+      <Link href="/artist/claim" asChild>
+        <Button title={prof.data?.artist ? "🎤 Your artist profile" : "🎤 Are you an artist? Claim your profile"} kind="secondary" />
+      </Link>
       <Button
         title="Sign out"
         kind="ghost"

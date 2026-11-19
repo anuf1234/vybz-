@@ -1122,6 +1122,8 @@ export const war = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     closesAt: ts("closes_at").notNull(),
     winner: text("winner", { enum: ["A", "B", "DRAW"] }),
+    /** Artist challenge: the challenging artist (side A) and who they called out (side B). */
+    challenge: jsonb("challenge"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1298,3 +1300,35 @@ export const chartWeek = pgTable("chart_week", {
   postId: text("post_id").references(() => post.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
+
+// ── Artists ────────────────────────────────────────────────────────────────
+
+/** An artist's claimed VYBZ profile. Verified by a moderator from a proof link (an official post showing the code). */
+export const artistProfile = pgTable(
+  "artist_profile",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** As it appears on releases. */
+    name: text("name").notNull(),
+    /** lower-cased name, one verified profile per artist name. */
+    nameKey: text("name_key").notNull(),
+    provider: text("provider"),
+    externalId: text("external_id"),
+    bio: text("bio"),
+    /** { instagram?, tiktok?, x?, youtube?, website? } as https URLs. */
+    links: jsonb("links").notNull().default(sql`'{}'::jsonb`),
+    status: text("status").notNull().default("PENDING"),
+    /** The code the artist posts from an official account. */
+    code: text("code").notNull(),
+    proofUrl: text("proof_url").notNull(),
+    reviewedById: text("reviewed_by_id").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: ts("reviewed_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("artist_profile_verified_uq").on(t.nameKey).where(sql`${t.status} = 'VERIFIED'`), index("artist_profile_status_idx").on(t.status)],
+);

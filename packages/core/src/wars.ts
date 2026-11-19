@@ -78,6 +78,8 @@ export interface WarView {
   categories: { key: WarCategory; label: string; hint: string; a: number | null; b: number | null; mine: "A" | "B" | null }[];
   tracks: { index: number; a: WarTrack; b: WarTrack; votes: { a: number; b: number } | null; mine: "A" | "B" | null }[];
   winner: "A" | "B" | "DRAW" | null;
+  /** Artist challenge (side A called out side B). */
+  challenge?: { from: string; to: string; fromHandle: string | null } | null;
   createdAt: string;
 }
 
@@ -92,6 +94,8 @@ export interface WarListItem {
   closesAt: string;
   winner: "A" | "B" | "DRAW" | null;
   voted: boolean;
+  /** Artist challenge (side A called out side B). */
+  challenge?: { from: string; to: string; fromHandle: string | null } | null;
 }
 
 export type WarPeriod = "week" | "month" | "year";

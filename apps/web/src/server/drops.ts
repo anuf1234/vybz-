@@ -195,7 +195,7 @@ async function openDropWars(deps: BattleDeps, rows: ReleaseRow[]): Promise<numbe
 }
 
 /** Albums are warred as albums; a single's war uses its (first) song. */
-async function warRef(deps: BattleDeps, r: ReleaseRow): Promise<string | null> {
+export async function warRef(deps: BattleDeps, r: ReleaseRow): Promise<string | null> {
   const ref = `${r.provider}:${r.externalId}`;
   if (r.kind !== "SINGLE") return ref;
   const p = providerOf<AlbumProvider>(deps, isAlbumProvider);

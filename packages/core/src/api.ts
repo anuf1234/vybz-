@@ -340,6 +340,8 @@ export interface ProfileView {
     /** Null when signed out or it's you. */
     viewer: { follows: boolean; followedBy: boolean; blocked: boolean; canMessage: boolean } | null;
   };
+  /** Verified artist behind this account. */
+  artist?: { name: string } | null;
 }
 
 export interface ApiError {

@@ -134,6 +134,13 @@
       "when": 1795048173989,
       "tag": "0018_fan_verdict",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795048686621,
+      "tag": "0019_artists",
+      "breakpoints": true
     }
   ]
 }

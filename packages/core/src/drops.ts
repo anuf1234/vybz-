@@ -255,3 +255,41 @@ export interface MetricsResponse {
   /** Taps out to streaming services. */
   outbound: { service: string; week: number; month: number; total: number }[];
 }
+
+// ── Artists ────────────────────────────────────────────────────────────────
+
+export type ArtistProfileStatus = "PENDING" | "VERIFIED" | "REJECTED";
+export const ARTIST_LINKS = ["instagram", "tiktok", "x", "youtube", "website"] as const;
+export type ArtistLinkKey = (typeof ARTIST_LINKS)[number];
+
+export interface ArtistProfileView {
+  id: string;
+  name: string;
+  status: ArtistProfileStatus;
+  bio: string | null;
+  links: Partial<Record<ArtistLinkKey, string>>;
+  owner: { handle: string; displayName: string };
+  /** Only shown to the owner and staff while pending. */
+  code: string | null;
+  proofUrl: string | null;
+}
+
+export interface ArtistPage {
+  name: string;
+  profile: ArtistProfileView | null;
+  followers: number;
+  following: boolean;
+  releases: ReleaseView[];
+  /** Fires across their drops. */
+  fires: number;
+  /** Average Fan Verdict of their releases that have one. */
+  verdict: number | null;
+  wars: { won: number; lost: number; drawn: number; open: number; recent: { id: string; title: string; status: "OPEN" | "CLOSED"; result: "WON" | "LOST" | "DRAW" | null; challenge: boolean }[] };
+}
+
+/** Artist challenge on a war: side A called out side B. */
+export interface WarChallenge {
+  from: string;
+  to: string;
+  fromHandle: string | null;
+}
