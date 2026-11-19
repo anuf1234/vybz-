@@ -29,6 +29,9 @@ export default function Privacy() {
         <li>
           <strong>Device information:</strong> a push-notification token if you allow notifications, your time zone (for daily rewards), and basic technical logs such as IP address and request times, kept to run and protect the service.
         </li>
+        <li>
+          <strong>Crash and performance data:</strong> when the app crashes or hits an error, it sends a report with the error, the screen it happened on, your device model, OS and app version, and how long screens took to load. These reports aren&apos;t linked to your account or used to track you.
+        </li>
       </ul>
 
       <h2>How we use it</h2>
@@ -47,7 +50,7 @@ export default function Privacy() {
         <li>Your handle, display name, profile picture, public battles, posts, comments, chat messages, public playlists, followers and achievements are visible to other people.</li>
         <li>Direct messages are visible only to you and the person you&apos;re talking with, and to our moderators when a message is reported.</li>
         <li>
-          Service providers who help us run VYBZ process data for us: hosting (Render), email delivery, push notifications (Expo), music catalogs and playback (Apple Music, YouTube), GIF search (GIPHY), and, for AI-judged battles, the AI model provider (Anthropic), which receives song details but not who picked them.
+          Service providers who help us run VYBZ process data for us: hosting (Render), email delivery, push notifications, app updates and crash reports (Expo), music catalogs and playback (Apple Music, YouTube), GIF search (GIPHY), and, for AI-judged battles, the AI model provider (Anthropic), which receives song details but not who picked them.
         </li>
         <li>We may share information if the law requires it or to protect people&apos;s safety.</li>
       </ul>

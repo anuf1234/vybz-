@@ -160,6 +160,9 @@ function AccountFooter() {
         <Text style={[type.small, { color: color.violet }]} onPress={() => open("/terms")} accessibilityRole="link">
           Terms
         </Text>
+        <Text style={[type.small, { color: color.violet }]} onPress={() => open("/support")} accessibilityRole="link">
+          Help
+        </Text>
       </View>
       {error ? <ErrorBanner message={error} /> : null}
       <Button title="Delete account" kind="ghost" onPress={confirm} loading={busy} />

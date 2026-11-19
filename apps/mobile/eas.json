@@ -15,7 +15,8 @@
       },
       "android": {
         "image": "latest"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -27,7 +28,8 @@
       },
       "android": {
         "image": "latest"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -39,13 +41,16 @@
       },
       "android": {
         "image": "latest"
-      }
+      },
+      "channel": "production",
+      "uploadSourceMaps": true
     },
     "testflight": {
       "extends": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://vybz-5d42.onrender.com"
-      }
+      },
+      "channel": "testflight"
     }
   },
   "submit": {

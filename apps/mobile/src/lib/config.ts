@@ -2,7 +2,9 @@ import type { ConfigResponse } from "@vybz/core";
 import { useEffect, useState } from "react";
 
 /** Base URL of the VYBZ web app, which serves /api/auth and /api/v1. */
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
+// Release bundles (store builds and over-the-air updates) fall back to the live
+// server, so an update published without the env var can't point at localhost.
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? (__DEV__ ? "http://localhost:3000" : "https://vybz-5d42.onrender.com")).replace(/\/$/, "");
 
 let cached: ConfigResponse | null = null;
 

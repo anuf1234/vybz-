@@ -3,7 +3,7 @@
     "name": "VYBZ",
     "slug": "vybz",
     "scheme": "vybz",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -17,7 +17,8 @@
         ],
         "NSAppleMusicUsageDescription": "VYBZ uses Apple Music to play full songs in battles for subscribers.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.urexp.vybz",
@@ -56,6 +57,14 @@
       "eas": {
         "projectId": "c3e187e0-9853-454f-be60-cf8a28db6ecf"
       }
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c3e187e0-9853-454f-be60-cf8a28db6ecf",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
     }
   }
 }
