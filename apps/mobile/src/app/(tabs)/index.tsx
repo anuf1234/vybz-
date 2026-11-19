@@ -53,52 +53,21 @@ export default function Home() {
       ) : null}
 
       {signedIn ? <StartHere key={session.data?.user.id} onState={(o) => setOnboarding(!!o?.active)} /> : null}
-      {signedIn && !onboarding ? (
+      {signedIn && !onboarding ? <TodayCard key={`today-${session.data?.user.id}`} /> : null}
+      {!onboarding ? (
         <View style={{ flexDirection: "row", gap: space.sm }}>
-          <Link href="/quick" asChild>
+          <Link href={signedIn ? "/quick" : "/sign-up"} asChild>
             <Button title="⚡ Quick battle" style={{ flex: 1 }} />
           </Link>
-          <Link href="/trivia" asChild>
-            <Button title="🧠 Daily trivia" kind="secondary" style={{ flex: 1 }} />
+          <Link href={signedIn ? "/verdict" : "/drops"} asChild>
+            <Button title={signedIn ? "🆚 This or That" : "🆕 Daily Drops"} kind="secondary" style={{ flex: 1 }} />
           </Link>
         </View>
       ) : null}
-      {signedIn && !onboarding ? <TodayCard key={`today-${session.data?.user.id}`} /> : null}
       {!onboarding ? (
-        <>
-          {!signedIn ? (
-            <Link href="/drops" asChild>
-              <Button title="🆕 Daily Drops: new music today" kind="secondary" />
-            </Link>
-          ) : null}
-          <View style={{ flexDirection: "row", gap: space.sm }}>
-            <Link href="/dj" asChild>
-              <Button title="🎧 DJ Vybz" kind="secondary" style={{ flex: 1 }} />
-            </Link>
-            <Link href="/party" asChild>
-              <Button title="🎉 Party Mode" kind="secondary" style={{ flex: 1 }} />
-            </Link>
-          </View>
-          <Link href="/wars" asChild>
-            <Button title="💿 Album & Single Wars" kind="secondary" />
-          </Link>
-          <View style={{ flexDirection: "row", gap: space.sm }}>
-            <Link href="/ranked" asChild>
-              <Button title="🏆 Ranked" kind="secondary" style={{ flex: 1 }} />
-            </Link>
-            <Link href="/tournaments" asChild>
-              <Button title="🗂️ Tournaments" kind="secondary" style={{ flex: 1 }} />
-            </Link>
-          </View>
-          <View style={{ flexDirection: "row", gap: space.sm }}>
-            <Link href="/verdict" asChild>
-              <Button title="🆚 This or That" kind="secondary" style={{ flex: 1 }} />
-            </Link>
-            <Link href="/chart" asChild>
-              <Button title="📊 VYBZ Chart" kind="secondary" style={{ flex: 1 }} />
-            </Link>
-          </View>
-        </>
+        <Link href="/play" asChild>
+          <Button title="🎮 More ways to play" kind="ghost" />
+        </Link>
       ) : null}
       {signedIn && !onboarding ? <DailyReward key={session.data?.user.id} /> : null}
 

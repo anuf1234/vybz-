@@ -1,9 +1,9 @@
-import { type DjLessonStepResult, djLesson } from "@vybz/core";
+import type { DjLessonStepResult } from "@vybz/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
-import { Button, Card, EmptyState, ErrorBanner } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, Loading } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 
@@ -11,9 +11,13 @@ import { useResource } from "@/lib/use-resource";
 export default function Lesson() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const lesson = djLesson(id);
+  const content = useResource(() => api.djLesson(id!), [id]);
+  const lesson = content.data ?? null;
   const uni = useResource(() => api.djUniversity(), []);
-  const [answers, setAnswers] = useState<(number | null)[]>(() => (lesson ? lesson.quiz.map(() => null) : []));
+  const [answers, setAnswers] = useState<(number | null)[]>([]);
+  useEffect(() => {
+    if (lesson) setAnswers(lesson.quiz.map(() => null));
+  }, [lesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [result, setResult] = useState<DjLessonStepResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +27,16 @@ export default function Lesson() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
-  if (!lesson) return <EmptyState title="Lesson not found" />;
+  if (content.error?.code === "PRO_REQUIRED")
+    return (
+      <EmptyState
+        title="Part of VYBZ Pro"
+        body="The first two DJ University courses are free. VYBZ Pro unlocks all of them."
+        action={<Button title="✨ See VYBZ Pro" onPress={() => router.replace("/pro")} />}
+      />
+    );
+  if (content.error) return <ErrorBanner message={content.error.message} onRetry={() => void content.reload()} />;
+  if (!lesson) return <Loading />;
   const progress = result?.progress ?? uni.data?.lessons.find((l) => l.id === id)?.progress;
 
   const step = async (key: string, body: Parameters<typeof api.djLessonStep>[1]) => {

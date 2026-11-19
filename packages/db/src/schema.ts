@@ -1411,3 +1411,29 @@ export const tournamentVote = pgTable(
   },
   (t) => [primaryKey({ columns: [t.tournamentId, t.userId, t.round, t.match] })],
 );
+
+// ── VYBZ Pro ───────────────────────────────────────────────────────────────
+
+/** A person's VYBZ Pro subscription (App Store auto-renewable). Refreshed from Apple's App Store Server API. */
+export const subscription = pgTable(
+  "subscription",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("APPLE"),
+    productId: text("product_id").notNull(),
+    /** Apple's originalTransactionId; one VYBZ account per subscription. */
+    originalTransactionId: text("original_transaction_id").notNull().unique(),
+    environment: text("environment").notNull(),
+    /** ACTIVE, GRACE, BILLING_RETRY, EXPIRED, REVOKED */
+    status: text("status").notNull(),
+    expiresAt: ts("expires_at"),
+    willRenew: boolean("will_renew").notNull().default(true),
+    /** The period (expiry) we last granted the monthly streak freezes for. */
+    perksFor: ts("perks_for"),
+    checkedAt: ts("checked_at").notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+);

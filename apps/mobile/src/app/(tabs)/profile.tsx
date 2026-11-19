@@ -94,6 +94,9 @@ export default function Profile() {
           <Button title="Moderation queue" kind="secondary" />
         </Link>
       ) : null}
+      <Link href="/pro" asChild>
+        <Button title="✨ VYBZ Pro" kind="secondary" />
+      </Link>
       <Link href="/wallet" asChild>
         <Button title="XP & coins" kind="secondary" />
       </Link>

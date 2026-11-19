@@ -16,7 +16,10 @@ export function ProfileBody({ profile, now, actions }: { profile: ProfileView; n
       <View style={styles.header}>
         <Avatar name={user.displayName} image={user.image} size={72} ring={frameColor(user.frame) ?? color.violet} />
         <Text style={type.title}>{user.displayName}</Text>
-        <Text style={type.small}>@{user.handle}</Text>
+        <Text style={type.small}>
+          @{user.handle}
+          {profile.pro ? <Text style={{ color: color.violetSoft, fontWeight: "800" }}>  ✨ Pro</Text> : null}
+        </Text>
         {profile.artist ? (
           <Pressable onPress={() => router.push({ pathname: "/artist/[name]", params: { name: profile.artist!.name } })} accessibilityRole="link" accessibilityLabel={`Verified artist ${profile.artist.name}. Open artist page.`}>
             <Text style={[type.small, { color: color.violetSoft, fontWeight: "800" }]}>✓ Verified artist: {profile.artist.name} ›</Text>

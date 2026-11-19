@@ -342,6 +342,8 @@ export interface ProfileView {
   };
   /** Verified artist behind this account. */
   artist?: { name: string } | null;
+  /** VYBZ Pro member (subscribers only, not staff). */
+  pro?: boolean;
   /** This season's ranked standing, once they've played a ranked battle. */
   rank?: { rating: number; divisionLabel: string; icon: string; placement: boolean } | null;
 }

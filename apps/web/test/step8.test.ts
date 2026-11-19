@@ -108,6 +108,10 @@ describe.skipIf(!TEST_DB_URL)("step 8: DJ studio, university and battles", () =>
 
   it("tracks DJ University progress and pays once when a lesson is done", async () => {
     const lesson = djLesson("beatmatching")!;
+    // Beatmatching is a VYBZ Pro course.
+    await h.db
+      .insert(schema.subscription)
+      .values({ userId: dj1.id, productId: "com.urexp.vybz.pro.monthly", originalTransactionId: "t-dj1", environment: "Sandbox", status: "ACTIVE", expiresAt: new Date(Date.now() + 86_400_000), perksFor: new Date(Date.now() + 86_400_000) });
     const uni = await djUniversity(deps, dj1);
     expect(uni).toMatchObject({ completed: 0, total: 11 });
     await djLessonStep(deps, dj1, lesson.id, { step: "learn" });

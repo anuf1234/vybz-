@@ -914,6 +914,11 @@ export async function profile(deps: BattleDeps, viewer: UserRow | null, handle: 
       .from(schema.artistProfile)
       .where(and(eq(schema.artistProfile.userId, u.id), eq(schema.artistProfile.status, "VERIFIED")))
       .then((r) => r[0] ?? null),
+    pro: await deps.db
+      .select({ status: schema.subscription.status, expiresAt: schema.subscription.expiresAt })
+      .from(schema.subscription)
+      .where(eq(schema.subscription.userId, u.id))
+      .then((r) => !!r[0] && (r[0].status === "ACTIVE" || r[0].status === "GRACE") && !!r[0].expiresAt && r[0].expiresAt > now(deps)),
     rank: await deps.db
       .select()
       .from(schema.userRating)

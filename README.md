@@ -62,6 +62,10 @@ Sign up (email/password or Google), challenge someone (or post an open challenge
 
 **Growth metrics.** **Moderation → Growth metrics**: daily/weekly/monthly active people, DAU/MAU, Day-1/7/30 retention by signup week, last week's activity, and plays sent to each streaming service.
 
+**VYBZ Pro.** A monthly App Store subscription (`com.urexp.vybz.pro.monthly`): all 11 DJ University courses (the first two stay free, and so do the Studio and DJ battles), a Pro badge, and 2 streak freezes each paid month. The app buys it with StoreKit (expo-iap), passing an account token; the server confirms it with Apple's App Store Server API (`APPLE_IAP_KEY_ID`, `APPLE_IAP_ISSUER_ID`, `APPLE_IAP_PRIVATE_KEY`) and follows renewals, cancellations and refunds via App Store Server Notifications at `/api/apple/notifications`. Staff accounts have Pro for testing. Pro course content is only served to Pro members.
+
+**Navigation.** Home stays focused on today (Today card, Quick battle, This or That); every mode lives in the Play tab.
+
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.

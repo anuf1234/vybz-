@@ -148,6 +148,13 @@
       "when": 1795049001419,
       "tag": "0020_ranked_tournaments",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795054642869,
+      "tag": "0021_pro",
+      "breakpoints": true
     }
   ]
 }

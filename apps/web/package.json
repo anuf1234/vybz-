@@ -17,6 +17,7 @@
     "@vybz/db": "workspace:*",
     "@vybz/providers": "workspace:*",
     "better-auth": "^1.7.25",
+    "jose": "^6.2.12",
     "next": "16.4.6",
     "qrcode": "^1.5.4",
     "react": "19.3.1",
