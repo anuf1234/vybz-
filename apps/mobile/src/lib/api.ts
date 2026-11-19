@@ -87,6 +87,7 @@ import type {
   RankingsResponse,
 } from "@vybz/core";
 import type { ProviderKind } from "@vybz/providers";
+import { Observe } from "expo-observe";
 import { Platform } from "react-native";
 import { appleMusicFullEnabled } from "./apple-music";
 import { authClient } from "./auth-client";
@@ -143,6 +144,10 @@ async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", p
     throw new ApiRequestError(0, "NETWORK", "Can't reach VYBZ. Check your connection.");
   }
   const text = await res.text();
+  // Server faults are worth knowing about; 4xx are normal answers (not found, sign in...).
+  if (res.status >= 500 && res.status !== 502 && res.status !== 503) {
+    Observe.reportError(new ApiRequestError(res.status, "SERVER", `${method} ${path.split("?")[0]} -> ${res.status}`));
+  }
   let json: unknown = null;
   try {
     json = text ? JSON.parse(text) : null;

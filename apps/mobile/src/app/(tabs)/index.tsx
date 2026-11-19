@@ -10,7 +10,8 @@ import { Button, EmptyState, ErrorBanner, Loading, SectionTitle } from "@/compon
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 import { useNow, useResource } from "@/lib/use-resource";
-import { useState } from "react";
+import { useObserve } from "expo-observe";
+import { useEffect, useState } from "react";
 
 export default function Home() {
   const session = useSession();
@@ -22,6 +23,12 @@ export default function Home() {
   const now = useNow(1000);
   // While a new player is on the first-run path, Home stays focused on it.
   const [onboarding, setOnboarding] = useState(false);
+  // Time-to-interactive: Home is usable once the battle feed has loaded.
+  const { markInteractive } = useObserve();
+  const feedLoaded = feed.data != null || feed.error != null;
+  useEffect(() => {
+    if (feedLoaded) markInteractive();
+  }, [feedLoaded, markInteractive]);
 
   const today = daily.data?.items[0];
   const featuredItems = (featured.data?.items ?? []).filter((b) => b.id !== today?.id);

@@ -1,0 +1,20 @@
+# Ships a JavaScript-only change to phones already running a VYBZ build,
+# without a new App Store / TestFlight build. Run it from the Expo dashboard
+# (Workflows > OTA update > Run) or with: npx eas-cli@latest workflow:run ota-update.yml
+#
+# Only builds whose native code matches (same runtime fingerprint) take the
+# update. After adding a native module, make a new build instead.
+name: OTA update
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    name: Publish to TestFlight channel
+    type: update
+    env:
+      EXPO_PUBLIC_API_URL: https://vybz-5d42.onrender.com
+    params:
+      channel: testflight
+      platform: ios

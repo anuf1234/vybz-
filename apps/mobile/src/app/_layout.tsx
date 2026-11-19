@@ -1,13 +1,29 @@
 import { setAudioModeAsync } from "expo-audio";
 import { Stack, useRouter } from "expo-router";
+import { Observe, ObserveRoot } from "expo-observe";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { CrashScreen } from "@/components/crash-screen";
 import { color } from "@/components/theme";
 import { restoreAppleMusic } from "@/lib/apple-music";
 import { useSession } from "@/lib/auth-client";
 import { registerForPush, useTappedPath } from "@/lib/push";
+import { useOtaUpdates } from "@/lib/updates";
+
+// Crash and error reporting (Expo Observe): native crashes, unhandled JS
+// errors and render errors, tagged with the screen they happened on.
+Observe.configure({ integrations: { "expo-router": true } });
 
 export default function RootLayout() {
+  return (
+    <ObserveRoot errorBoundaryFallback={(props) => <CrashScreen {...props} />}>
+      <AppStack />
+    </ObserveRoot>
+  );
+}
+
+function AppStack() {
+  useOtaUpdates();
   const router = useRouter();
   const session = useSession();
   const signedIn = Boolean(session.data);
