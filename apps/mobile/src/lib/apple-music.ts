@@ -67,3 +67,11 @@ export function useAppleMusicFull(): boolean {
   }, []);
   return v;
 }
+
+/** For "Count my plays": asks for Apple Music access if needed, then a Music User Token for VYBZ's server. */
+export async function appleMusicUserToken(developerToken: string): Promise<string | "denied" | "unsupported"> {
+  if (!AppleMusicNativeModule) return "unsupported";
+  const status = (await AppleMusicNativeModule.authorizationStatus()) === "authorized" ? "authorized" : await AppleMusicNativeModule.authorize();
+  if (status !== "authorized") return "denied";
+  return AppleMusicNativeModule.userToken(developerToken);
+}

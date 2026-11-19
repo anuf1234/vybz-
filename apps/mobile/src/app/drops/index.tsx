@@ -3,6 +3,7 @@ import { Link, Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { Chips } from "@/components/chips";
+import { AwardLeaders } from "@/components/drop-awards";
 import { DropCard } from "@/components/drop-card";
 import { color, space, type } from "@/components/theme";
 import { Button, EmptyState, ErrorBanner, Loading, Segmented } from "@/components/ui";
@@ -21,6 +22,7 @@ export default function Drops() {
   const [range, setRange] = useState<Range>("today");
   const [kind, setKind] = useState<ReleaseKind | null>(null);
   const list = useResource(() => api.drops(range, kind), [range, kind, signedIn]);
+  const top = useResource(() => api.topDrops(), [signedIn]);
   const [more, setMore] = useState<{ items: ReleaseView[]; cursor: string | null } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const items = [...(list.data?.items ?? []), ...(more?.items ?? [])];
@@ -43,12 +45,13 @@ export default function Drops() {
       <Stack.Screen options={{ title: "Daily Drops" }} />
       <ScrollView
         contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}
-        refreshControl={<RefreshControl tintColor={color.violet} refreshing={list.refreshing} onRefresh={() => (reset(), void list.reload())} />}
+        refreshControl={<RefreshControl tintColor={color.violet} refreshing={list.refreshing} onRefresh={() => (reset(), void list.reload(), void top.reload())} />}
       >
         <View style={{ gap: space.xs }}>
           <Text style={[type.display, { fontSize: 30 }]}>DAILY DROPS</Text>
           <Text style={type.small}>New singles, EPs, albums and mixtapes, every day. 🔥 what you're playing, follow artists, and start a war.</Text>
         </View>
+        {top.data ? <AwardLeaders top={top.data} /> : null}
         <Segmented
           value={range}
           onChange={(v) => (reset(), setRange(v))}

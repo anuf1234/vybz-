@@ -1,5 +1,7 @@
 import type {
   ArtistFollowHit,
+  MusicLinkStatus,
+  TopDropsResponse,
   DjLesson,
   ProStatus,
   RankedResponse,
@@ -163,6 +165,21 @@ async function request<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", p
   return json as T;
 }
 
+/** Downloads text (CSV exports) with the session, for staff. */
+export async function requestText(path: string): Promise<string> {
+  const headers: Record<string, string> = { Accept: "text/csv" };
+  if (Platform.OS !== "web") {
+    const cookie = await authClient.getCookie();
+    if (cookie) headers.Cookie = cookie;
+  }
+  const res = await fetch(`${API_URL}${path}`, { headers, credentials: Platform.OS === "web" ? "include" : "omit" }).catch(() => {
+    throw new ApiRequestError(0, "NETWORK", "Can't reach VYBZ. Check your connection.");
+  });
+  const text = await res.text();
+  if (!res.ok) throw new ApiRequestError(res.status, "ERROR", res.status === 403 ? "Staff only." : "Couldn't export that. Try again.");
+  return text;
+}
+
 const MESSAGES: Record<string, string> = {
   SIGN_IN_REQUIRED: "Sign in to do that.",
   EMAIL_NOT_VERIFIED: "Verify your email first. Check your inbox.",
@@ -210,6 +227,8 @@ const MESSAGES: Record<string, string> = {
   SUBSCRIPTION_IN_USE: "This subscription belongs to another VYBZ account.",
   INVALID_PURCHASE: "That isn't a VYBZ Pro purchase.",
   APPLE_UNAVAILABLE: "Couldn't reach the App Store. Try again in a moment.",
+  APPLE_MUSIC_UNAVAILABLE: "Apple Music isn't available right now.",
+  INVALID_TOKEN: "Apple Music didn't accept that. Try connecting again.",
   INVALID_PAIR: "Those two can't be matched up.",
   MIXTAPE_EXISTS: "That mixtape has already been submitted.",
   INVALID_MIXTAPE: "Add the mixtape's title and artist.",
@@ -441,6 +460,11 @@ export const api = {
   pro: () => request<ProStatus>("GET", "/api/v1/me/pro"),
   claimPro: (transactionId: string) => request<ProStatus>("POST", "/api/v1/me/pro/claim", { transactionId }),
   djLesson: (id: string) => request<DjLesson>("GET", `/api/v1/dj/lessons/${encodeURIComponent(id)}`),
+  topDrops: () => request<TopDropsResponse>("GET", "/api/v1/drops/top"),
+  musicLink: () => request<MusicLinkStatus>("GET", "/api/v1/me/music"),
+  appleDeveloperToken: () => request<{ token: string }>("GET", "/api/v1/me/music/apple/developer-token"),
+  linkAppleMusic: (userToken: string) => request<MusicLinkStatus>("POST", "/api/v1/me/music/apple", { userToken }),
+  unlinkAppleMusic: () => request<MusicLinkStatus>("DELETE", "/api/v1/me/music/apple"),
   modRunDrops: () => request<{ ran: boolean; added: number; note: string }>("POST", "/api/v1/mod/drops/run", {}),
   updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>

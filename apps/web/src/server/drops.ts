@@ -272,12 +272,7 @@ export async function verdictStats(db: Executor, ids: string[], since?: Date, un
 export async function views(db: Executor, viewer: UserRow | null, rows: ReleaseRow[]): Promise<ReleaseView[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
-  const [fires, mine, follows, submitters, openWars, verdicts] = await Promise.all([
-    db
-      .select({ id: schema.releaseFire.releaseId, n: sql<number>`count(*)::int` })
-      .from(schema.releaseFire)
-      .where(inArray(schema.releaseFire.releaseId, ids))
-      .groupBy(schema.releaseFire.releaseId),
+  const [mine, follows, submitters, openWars, verdicts] = await Promise.all([
     viewer
       ? db
           .select({ id: schema.releaseFire.releaseId })
@@ -311,7 +306,6 @@ export async function views(db: Executor, viewer: UserRow | null, rows: ReleaseR
       genres: r.genres,
       dropDay: r.dropDay,
       ref: r.provider === "SUBMISSION" ? null : `${r.provider}:${r.externalId}`,
-      fires: fires.find((x) => x.id === r.id)?.n ?? 0,
       fired: mine.some((m) => m.id === r.id),
       following: followed.has(norm(r.artistName)),
       warId: r.warId && open.has(r.warId) ? r.warId : null,

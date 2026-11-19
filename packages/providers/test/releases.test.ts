@@ -51,4 +51,14 @@ describe("new releases", () => {
     expect(await a.latestRelease("77", opts)).toMatchObject({ externalId: "960", title: "Newest", format: "SINGLE" });
     expect(await a.latestRelease("78", opts)).toBeNull();
   });
+
+  it("reads a person's recently played songs with their Music User Token", async () => {
+    const stub = stubFetch({ "/me/recent/played/tracks": { data: [song("1", "Fresh One - Single", "900"), { id: "pl", type: "playlists", attributes: {} }, song("2", "Big EP - EP", "901")] } });
+    const a = new AppleMusicAdapter({ developerToken: async () => "dev", fetch: stub.fetch });
+    expect(await a.recentlyPlayed("user-token")).toEqual([
+      { songId: "1", albumId: "900", title: "Song 1", artistName: "New Artist" },
+      { songId: "2", albumId: "901", title: "Song 2", artistName: "New Artist" },
+    ]);
+    expect((stub.calls[0]!.init!.headers as Record<string, string>)["Music-User-Token"]).toBe("user-token");
+  });
 });

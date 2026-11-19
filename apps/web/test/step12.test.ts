@@ -95,12 +95,13 @@ describe.skipIf(!TEST_DB_URL)("daily drops, the VYBZ streak and the daily push",
   it("fires up a drop: XP once, counts for the streak, can be undone", async () => {
     const { items } = await listDrops(deps, fan, new URLSearchParams());
     const v = await fireRelease(deps, fan, items[0]!.id, { on: true });
-    expect(v).toMatchObject({ fires: 1, fired: true });
+    expect(v).toMatchObject({ fired: true });
+    expect(v).not.toHaveProperty("fires");
     await fireRelease(deps, fan, items[0]!.id, { on: true });
     const ledger = await h.db.select().from(schema.ledgerEntry).where(and(eq(schema.ledgerEntry.userId, fan.id), eq(schema.ledgerEntry.reason, "DROP_FIRE")));
     expect(ledger).toHaveLength(1);
     expect((await vybzStreak(h.db, fan.id)).activeToday).toBe(true);
-    expect(await fireRelease(deps, fan, items[0]!.id, { on: false })).toMatchObject({ fires: 0, fired: false });
+    expect(await fireRelease(deps, fan, items[0]!.id, { on: false })).toMatchObject({ fired: false });
   });
 
   it("covers missed days with streak freezes", async () => {

@@ -96,7 +96,6 @@ function Header({ a, follows, onFollow }: { a: ArtistPage; follows: boolean; onF
       ) : null}
       <View style={{ flexDirection: "row", gap: space.lg, marginTop: space.xs }}>
         <Stat label="Followers" value={String(a.followers)} />
-        <Stat label="Fires" value={String(a.fires)} />
         <Stat label="Fan Verdict" value={a.verdict === null ? "–" : `${a.verdict}%`} />
         <Stat label="War record" value={`${a.wars.won}-${a.wars.lost}`} />
       </View>

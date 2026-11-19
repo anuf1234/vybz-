@@ -1437,3 +1437,83 @@ export const subscription = pgTable(
     updatedAt: updatedAt(),
   },
 );
+
+/** Song of the Day, Song of the Week and Album of the Week, frozen when each period ends. */
+export const dropAward = pgTable(
+  "drop_award",
+  {
+    /** "SONG_DAY" | "SONG_WEEK" | "ALBUM_WEEK" */
+    award: text("award").notNull(),
+    /** "2026-11-19" for days, "2026-W47" for weeks. */
+    period: text("period").notNull(),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    /** { score, fires, wins, listens } at the time. */
+    stats: jsonb("stats").notNull(),
+    postId: text("post_id").references(() => post.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.award, t.period] }), index("drop_award_release_idx").on(t.releaseId)],
+);
+
+/**
+ * A person's opt-in link to their Apple Music listening ("Count my plays").
+ * The Music User Token is stored encrypted; deleting the row forgets it.
+ */
+export const musicLink = pgTable("music_link", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull().default("APPLE_MUSIC"),
+  /** AES-256-GCM: iv.tag.ciphertext (base64url). */
+  tokenEnc: text("token_enc").notNull(),
+  /** Song ids seen at the last sync, newest first, to spot new plays. */
+  lastSeen: jsonb("last_seen").notNull().default(sql`'[]'::jsonb`),
+  lastSyncAt: ts("last_sync_at"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** Verified plays of a drop from a linked music service: one per person per release per UTC day. */
+export const playEvent = pgTable(
+  "play_event",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    source: text("source").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.releaseId, t.day] }), index("play_event_created_idx").on(t.createdAt)],
+);
+
+/**
+ * Daily per-release totals, kept for partners (labels, brands, buyers) and
+ * never shown in the app. Counts of people, not who they are.
+ */
+export const releaseDayStats = pgTable(
+  "release_day_stats",
+  {
+    day: text("day").notNull(),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    fires: integer("fires").notNull().default(0),
+    wins: integer("wins").notNull().default(0),
+    /** This-or-That matchups the release appeared in. */
+    matchups: integer("matchups").notNull().default(0),
+    /** Verified plays (people) from linked Apple Music accounts. */
+    plays: integer("plays").notNull().default(0),
+    /** People who tapped out to listen, total and by service. */
+    listens: integer("listens").notNull().default(0),
+    listensBy: jsonb("listens_by").notNull().default(sql`'{}'::jsonb`),
+    heat: integer("heat").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.releaseId] }), index("release_day_stats_release_idx").on(t.releaseId)],
+);

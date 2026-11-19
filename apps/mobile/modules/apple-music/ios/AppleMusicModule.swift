@@ -40,6 +40,15 @@ public class AppleMusicModule: Module {
       }
     }
 
+    /// A Music User Token for this person, so VYBZ's server can read their recently played
+    /// songs (only when they opt in to "Count my plays"). Needs Apple Music access.
+    AsyncFunction("userToken") { (developerToken: String) async throws -> String in
+      guard MusicAuthorization.currentStatus == .authorized else {
+        throw NotAuthorizedException()
+      }
+      return try await MusicUserTokenProvider().userToken(for: developerToken, options: [])
+    }
+
     /// Plays a catalog song from the start, replacing whatever was queued.
     AsyncFunction("play") { (catalogId: String) async throws in
       guard MusicAuthorization.currentStatus == .authorized else {

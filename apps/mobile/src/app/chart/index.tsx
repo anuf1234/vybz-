@@ -7,7 +7,7 @@ import { Button, EmptyState, ErrorBanner, Loading } from "@/components/ui";
 import { Cover } from "@/components/war-card";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
-import { API_URL, useServerConfig } from "@/lib/config";
+import { API_URL, useServerConfig, useSpotifyEnabled } from "@/lib/config";
 import { ApiRequestError } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import { listenOn } from "@/lib/listen";
@@ -88,6 +88,7 @@ function SpotifySave({ week }: { week: string }) {
 }
 
 function Row({ r }: { r: ChartRow }) {
+  const spotify = useSpotifyEnabled();
   const move = r.lastRank === null ? "NEW" : r.lastRank > r.rank ? `▲${r.lastRank - r.rank}` : r.lastRank < r.rank ? `▼${r.rank - r.lastRank}` : "=";
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.md, padding: space.sm, borderRadius: radius.md, borderWidth: 1, borderColor: r.rank === 1 ? color.violet : color.line, backgroundColor: color.surface1 }}>
@@ -100,7 +101,7 @@ function Row({ r }: { r: ChartRow }) {
         <Text style={type.small} numberOfLines={1}>
           {r.release.artistName} · {r.games} matchups
         </Text>
-        {r.release.kind !== "MIXTAPE" ? (
+        {spotify && r.release.kind !== "MIXTAPE" ? (
           <Text style={[type.small, { color: color.violetSoft }]} onPress={() => void listenOn("spotify", "release", r.release.id)} accessibilityRole="link">
             Spotify ↗
           </Text>

@@ -42,9 +42,14 @@ function buildApple(): AppleMusicAdapter | null {
     { teamId, keyId, privateKey: env.APPLE_MUSIC_PRIVATE_KEY },
     env.APP_ORIGIN ? { origins: [env.APP_ORIGIN] } : {},
   );
+  // The iPhone app asks MusicKit for a Music User Token with a developer token that isn't tied to a web origin.
+  const appTokens = new DeveloperTokenCache({ teamId, keyId, privateKey: env.APPLE_MUSIC_PRIVATE_KEY });
+  appDeveloperToken = () => appTokens.get();
   return new AppleMusicAdapter({ developerToken: () => tokens.get() });
 }
 
+/** Developer token for the iPhone app's MusicKit user-token request. Null when Apple Music isn't set up. */
+export let appDeveloperToken: (() => Promise<string>) | null = null;
 export const apple = buildApple();
 export const youtube = env.YOUTUBE_API_KEY ? new YouTubeAdapter({ apiKey: env.YOUTUBE_API_KEY }) : null;
 

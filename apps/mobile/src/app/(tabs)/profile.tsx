@@ -1,7 +1,7 @@
 import { Link } from "expo-router";
 import { useState } from "react";
 import * as WebBrowser from "expo-web-browser";
-import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
 import { ProfileBody } from "@/components/profile-body";
 import { color, space, type } from "@/components/theme";
 import { Button, Card, EmptyState, ErrorBanner, Field, Loading } from "@/components/ui";
@@ -9,7 +9,7 @@ import { ApiRequestError, api } from "@/lib/api";
 import { signOut, useSession } from "@/lib/auth-client";
 import { clearLibrary } from "@/lib/library-store";
 import { useNow, useResource } from "@/lib/use-resource";
-import { appleMusicSupported, connectAppleMusic, disconnectAppleMusic, useAppleMusicFull } from "@/lib/apple-music";
+import { appleMusicSupported, appleMusicUserToken, connectAppleMusic, disconnectAppleMusic, useAppleMusicFull } from "@/lib/apple-music";
 import { API_URL, useServerConfig } from "@/lib/config";
 
 export default function Profile() {
@@ -171,6 +171,50 @@ function AccountFooter() {
 }
 
 /** Which services battles can play on, and connecting Apple Music for full tracks. */
+/** Opt-in: count my Apple Music plays of Daily Drops toward Song of the Day/Week and Album of the Week. */
+function CountMyPlays() {
+  const status = useResource(() => api.musicLink(), []);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const s = status.data;
+  if (!s?.available) return null;
+
+  const toggle = async (on: boolean) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      if (on) {
+        const { token } = await api.appleDeveloperToken();
+        const ut = await appleMusicUserToken(token);
+        if (ut === "denied") return setNote("Apple Music access wasn't allowed. You can turn it on in Settings › Privacy › Media & Apple Music.");
+        if (ut === "unsupported") return setNote("This needs the VYBZ iPhone app.");
+        status.setData(await api.linkAppleMusic(ut));
+        setNote("On. Plays of Daily Drops from now on will count.");
+      } else {
+        status.setData(await api.unlinkAppleMusic());
+        setNote("Off. We've deleted the Apple Music access we had.");
+      }
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "That didn't work. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={{ gap: space.xs, marginTop: space.xs }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+        <View style={{ flex: 1 }}>
+          <Text style={[type.body, { fontWeight: "700" }]}>Count my plays</Text>
+          <Text style={type.small}>Your Apple Music plays of Daily Drops help decide Song of the Day, Song of the Week and Album of the Week. Your plays are never shown to anyone.</Text>
+        </View>
+        <Switch value={s.linked} disabled={busy} onValueChange={(v) => void toggle(v)} accessibilityLabel="Count my Apple Music plays" />
+      </View>
+      {note ? <Text style={type.small}>{note}</Text> : null}
+    </View>
+  );
+}
+
 function MusicServices() {
   const config = useServerConfig();
   const appleFull = useAppleMusicFull();
@@ -221,6 +265,7 @@ function MusicServices() {
             <Text style={type.small}>Full Apple Music tracks are available in the VYBZ iPhone app.</Text>
           )}
           {note ? <Text style={type.small}>{note}</Text> : null}
+          {appleMusicSupported ? <CountMyPlays /> : null}
         </View>
       ) : null}
       <Text style={type.small}>In a battle, pick "Listen on" to choose the service. Both sides always play on the same one.</Text>

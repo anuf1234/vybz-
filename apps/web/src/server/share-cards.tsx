@@ -135,7 +135,6 @@ export async function dropCard(id: string, format: CardFormat): Promise<ImageRes
   const { db } = getBattleDeps();
   const [r] = await db.select().from(schema.release).where(eq(schema.release.id, id));
   if (!r || r.status !== "LIVE") return plain(format, f);
-  const [{ n: fires }] = (await db.select({ n: sql<number>`count(*)::int` }).from(schema.releaseFire).where(eq(schema.releaseFire.releaseId, id))) as [{ n: number }];
   const story = format === "story";
   const kind = r.kind === "SINGLE" ? "New single" : r.kind === "EP" ? "New EP" : r.kind === "MIXTAPE" ? "New mixtape" : "New album";
   return frame(
@@ -147,7 +146,6 @@ export async function dropCard(id: string, format: CardFormat): Promise<ImageRes
         <div style={{ display: "flex", fontSize: story ? 40 : 28, color: SOFT, fontWeight: 800 }}>{kind.toUpperCase()}</div>
         <div style={{ display: "flex", fontSize: story ? 84 : 54, fontWeight: 800, textAlign: story ? "center" : "left", maxWidth: story ? 920 : 640 }}>{r.title.slice(0, 50)}</div>
         <div style={{ display: "flex", fontSize: story ? 44 : 32, color: MUTED }}>{r.artistName.slice(0, 50)}</div>
-        {fires ? <div style={{ display: "flex", fontSize: story ? 48 : 32, fontWeight: 800, marginTop: 10 }}>{`${fires} ${fires === 1 ? "fire" : "fires"} on VYBZ`}</div> : null}
       </div>
     </div>,
     "Fire it up on VYBZ.",

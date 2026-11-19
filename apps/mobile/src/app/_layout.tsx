@@ -88,6 +88,7 @@ function AppStack() {
         <Stack.Screen name="drops/index" options={{ title: "Daily Drops" }} />
         <Stack.Screen name="drops/submit" options={{ title: "Share a mixtape", presentation: "modal" }} />
         <Stack.Screen name="drops/artists" options={{ title: "Artists" }} />
+        <Stack.Screen name="drops/top" options={{ title: "Top charts" }} />
         <Stack.Screen name="verdict" options={{ title: "This or That" }} />
         <Stack.Screen name="ranked" options={{ title: "Ranked" }} />
         <Stack.Screen name="pro" options={{ title: "VYBZ Pro", presentation: "modal" }} />
