@@ -63,9 +63,12 @@ describe.skipIf(!TEST_DB_URL)("daily drops, the VYBZ streak and the daily push",
   it("waits for the post hour, then gathers drops once a day, posts them and opens wars", async () => {
     // Follow a demo artist first so the run notifies.
     await followArtist(deps, fan, { provider: "VYBZ_DEMO", externalId: "kaia-stone", name: "Kaia Stone" });
+    // Before the post hour, only the very first run goes ahead.
+    await h.db.insert(schema.dropRun).values({ day: "2000-01-01", note: "an earlier run" });
     const early = new Date();
     early.setUTCHours(DROPS.postHourUtc - 1, 0, 0, 0);
     expect((await runDailyDrops(deps, { now: early })).ran).toBe(false);
+    await h.db.delete(schema.dropRun);
 
     const later = new Date();
     later.setUTCHours(DROPS.postHourUtc, 5, 0, 0);
@@ -161,5 +164,23 @@ describe.skipIf(!TEST_DB_URL)("daily drops, the VYBZ streak and the daily push",
     expect(await sendDailyDigest(h.db, deps.push, noonNy)).toBe(0);
     expect(pushed).toHaveLength(1);
     expect(pushed[0]!.body).toContain("Today's trivia is ready.");
+  });
+});
+
+describe.skipIf(!TEST_DB_URL)("the very first drops run", () => {
+  it("doesn't wait for the post hour", async () => {
+    const h = await freshDb();
+    try {
+      forgetBot();
+      const demo = new DemoCatalog({ assetBaseUrl: "http://localhost:3000" });
+      const deps: BattleDeps = { db: h.db, catalog: { metadata: [demo], playback: { VYBZ_DEMO: demo }, storefront: "us" }, requireVerifiedEmail: false, aiJudge: null };
+      const early = new Date();
+      early.setUTCHours(1, 0, 0, 0);
+      const r = await runDailyDrops(deps, { now: early });
+      expect(r.ran).toBe(true);
+      expect(r.added).toBeGreaterThan(0);
+    } finally {
+      await h.close();
+    }
   });
 });
