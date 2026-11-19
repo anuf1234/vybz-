@@ -44,7 +44,7 @@ export default function Tournament() {
         <Text style={type.title}>{t.title}</Text>
         {t.description ? <Text style={type.small}>{t.description}</Text> : null}
         <Text style={type.small}>
-          {t.entries.length} songs · {t.voters} voters{current ? ` · ${current.name} ends ${new Date(t.roundEndsAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}` : ""}
+          {t.entries.length} songs · {t.voters} voter{t.voters === 1 ? "" : "s"}{current ? ` · ${current.name} ends ${new Date(t.roundEndsAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}` : ""}
         </Text>
         {champ ? (
           <Card style={{ alignItems: "center", gap: space.sm, borderColor: color.violet }}>

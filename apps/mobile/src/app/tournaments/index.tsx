@@ -33,7 +33,7 @@ export default function Tournaments() {
             </View>
             <Text style={[type.body, { fontWeight: "800" }]}>{t.title}</Text>
             <Text style={type.small}>
-              {t.champion ? `🏆 ${t.champion.title} by ${t.champion.artistName}` : `${t.roundName} · ends ${new Date(t.roundEndsAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}`} · {t.size} songs · {t.voters} voters
+              {t.champion ? `🏆 ${t.champion.title} by ${t.champion.artistName}` : `${t.roundName} · ends ${new Date(t.roundEndsAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}`} · {t.size} songs · {t.voters} voter{t.voters === 1 ? "" : "s"}
             </Text>
           </Pressable>
         ))}
