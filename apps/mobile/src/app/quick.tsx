@@ -14,7 +14,8 @@ export default function Quick() {
   const session = useSession();
   const config = useServerConfig();
   const botAvailable = Boolean(config?.aiJudge.available);
-  const params = useLocalSearchParams<{ genre?: string }>();
+  const params = useLocalSearchParams<{ genre?: string; ranked?: string }>();
+  const ranked = params.ranked === "1";
   const [genre, setGenre] = useState<string | null>(params.genre && GENRES.some((g) => g.key === params.genre) ? params.genre : null);
   const [decade, setDecade] = useState<number | null>(null);
   const [busy, setBusy] = useState<"find" | "bot" | null>(null);
@@ -42,7 +43,7 @@ export default function Quick() {
     setBusy(vsBot ? "bot" : "find");
     setError(null);
     try {
-      const r = await api.quickBattle({ genre, decade, vsBot });
+      const r = await api.quickBattle({ genre, decade, vsBot, ...(ranked ? { ranked: true } : {}) });
       if (r.matched === "waiting") setWaitingId(r.id);
       else router.replace({ pathname: "/battle/[id]", params: { id: r.id } });
     } catch (err) {
@@ -66,7 +67,7 @@ export default function Quick() {
         <Text style={[type.small, { textAlign: "center" }]}>
           Your battle is open to everyone looking for the same vibe.{botAvailable ? " If nobody takes it in a couple of minutes, the VYBZ bot will." : ""}
         </Text>
-        {botAvailable ? <Button title="🤖 Play the VYBZ bot now" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
+        {botAvailable && !ranked ? <Button title="🤖 Play the VYBZ bot now" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
         <Button title="Open my battle" kind="secondary" onPress={() => router.replace({ pathname: "/battle/[id]", params: { id: waitingId } })} />
         <Button title="Cancel" kind="ghost" onPress={() => void cancel()} />
         {error ? <Text style={[type.small, { color: color.danger, textAlign: "center" }]}>{error}</Text> : null}
@@ -95,8 +96,11 @@ export default function Quick() {
           ))}
         </View>
       </Card>
-      <Button title="⚡ Find a battle" loading={busy === "find"} onPress={() => void go(false)} />
-      {botAvailable ? <Button title="🤖 Play the VYBZ bot" kind="secondary" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
+      <Button title={ranked ? "🏆 Find a ranked battle" : "⚡ Find a battle"} loading={busy === "find"} onPress={() => void go(false)} />
+      {botAvailable && !ranked ? <Button title="🤖 Play the VYBZ bot" kind="secondary" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
+      {ranked ? <Text style={[type.small, { textAlign: "center" }]}>Ranked battles are against people near your rating. Wins move you up the divisions.</Text> : (
+        <Button title="🏆 Play ranked instead" kind="ghost" onPress={() => router.setParams({ ranked: "1" })} />
+      )}
       {error ? <Text style={[type.small, { color: color.danger, textAlign: "center" }]}>{error}</Text> : null}
     </ScrollView>
   );

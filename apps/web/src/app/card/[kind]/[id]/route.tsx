@@ -1,12 +1,14 @@
 import type { ImageResponse } from "next/og";
 import { battleCard } from "@/server/share-card";
-import { type CardFormat, chartCard, dropCard, plainCard, warCard } from "@/server/share-cards";
+import { type CardFormat, chartCard, dropCard, plainCard, rankCard, tournamentCard, warCard } from "@/server/share-cards";
 
 const CARDS: Record<string, (id: string, f: CardFormat) => Promise<ImageResponse>> = {
   battle: battleCard,
   war: warCard,
   drop: dropCard,
   chart: chartCard,
+  tournament: tournamentCard,
+  rank: rankCard,
 };
 
 /** Share images: /card/<battle|war|drop|…>/<id>?format=story|wide. */

@@ -22,6 +22,13 @@ export function ProfileBody({ profile, now, actions }: { profile: ProfileView; n
             <Text style={[type.small, { color: color.violetSoft, fontWeight: "800" }]}>✓ Verified artist: {profile.artist.name} ›</Text>
           </Pressable>
         ) : null}
+        {profile.rank ? (
+          <Pressable onPress={() => router.push("/ranked")} accessibilityRole="link" accessibilityLabel={`Ranked ${profile.rank.divisionLabel}, ${profile.rank.rating}`}>
+            <Text style={[type.small, { fontWeight: "800", color: color.text }]}>
+              {profile.rank.icon} {profile.rank.placement ? "Placement" : profile.rank.divisionLabel} · {profile.rank.rating}
+            </Text>
+          </Pressable>
+        ) : null}
         <View style={styles.counts}>
           <Count label="Followers" value={profile.social.followers} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "followers" } })} />
           <Count label="Following" value={profile.social.following} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "following" } })} />

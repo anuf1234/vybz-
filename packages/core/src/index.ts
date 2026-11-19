@@ -13,3 +13,4 @@ export * from "./dj";
 export * from "./party";
 export * from "./wars";
 export * from "./drops";
+export * from "./ranked";

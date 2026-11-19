@@ -182,6 +182,8 @@ export const battle = pgTable(
     dailyDate: text("daily_date").unique(),
     /** An open challenge from Quick Battle: anyone may take it, and the VYBZ bot does if nobody does. */
     quickMatch: boolean("quick_match").notNull().default(false),
+    /** Ranked quick battle: players are matched by rating and the result moves their ratings. Never the bot. */
+    ranked: boolean("ranked").notNull().default(false),
     /** When the scheduler next needs to look at this battle. */
     nextDeadlineAt: ts("next_deadline_at"),
     /** Optimistic lock for state transitions. */
@@ -1331,4 +1333,81 @@ export const artistProfile = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("artist_profile_verified_uq").on(t.nameKey).where(sql`${t.status} = 'VERIFIED'`), index("artist_profile_status_idx").on(t.status)],
+);
+
+// ── Ranked and tournaments ─────────────────────────────────────────────────
+
+/** Ranked rating for the current season (soft-reset each quarter). */
+export const userRating = pgTable(
+  "user_rating",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    season: text("season").notNull(),
+    rating: integer("rating").notNull().default(1000),
+    peak: integer("peak").notNull().default(1000),
+    games: integer("games").notNull().default(0),
+    wins: integer("wins").notNull().default(0),
+    losses: integer("losses").notNull().default(0),
+    draws: integer("draws").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("user_rating_board_idx").on(t.season, t.rating)],
+);
+
+/** Ranked battles already applied to ratings (so a result counts once). */
+export const ratedBattle = pgTable("rated_battle", {
+  battleId: text("battle_id")
+    .primaryKey()
+    .references(() => battle.id, { onDelete: "cascade" }),
+  /** { [userId]: { before, after } } */
+  changes: jsonb("changes").notNull(),
+  createdAt: createdAt(),
+});
+
+/** A song bracket (8 or 16 songs) voted through round by round over about a week. */
+export const tournament = pgTable(
+  "tournament",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    description: text("description"),
+    creatorId: text("creator_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Seeded entries: [{ catalogId, trackId, title, artistName, artworkUrl, previewUrl, externalUrl }]. */
+    entries: jsonb("entries").notNull(),
+    /** Index of the current round (0 = first). */
+    round: integer("round").notNull().default(0),
+    /** Entry indexes still in, in bracket order. */
+    alive: jsonb("alive").notNull(),
+    /** Finished rounds: [[{ a, b, votesA, votesB, winner }]]. */
+    results: jsonb("results").notNull().default(sql`'[]'::jsonb`),
+    status: text("status").notNull().default("LIVE"),
+    roundEndsAt: ts("round_ends_at").notNull(),
+    champion: integer("champion"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("tournament_status_idx").on(t.status, t.roundEndsAt)],
+);
+
+export const tournamentVote = pgTable(
+  "tournament_vote",
+  {
+    tournamentId: text("tournament_id")
+      .notNull()
+      .references(() => tournament.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    round: integer("round").notNull(),
+    /** Match index within the round. */
+    match: integer("match").notNull(),
+    /** Entry index voted for. */
+    entry: integer("entry").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.tournamentId, t.userId, t.round, t.match] })],
 );

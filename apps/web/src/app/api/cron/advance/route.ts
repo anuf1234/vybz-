@@ -11,6 +11,7 @@ import { closeDueWars } from "@/server/wars";
 import { sendStreakReminders } from "@/server/reminders";
 import { runDailyDrops, sendDailyDigest } from "@/server/drops";
 import { publishWeeklyChart } from "@/server/verdict";
+import { advanceTournaments } from "@/server/tournaments";
 import { serverEnv } from "@/server/env";
 
 /**
@@ -40,7 +41,8 @@ async function handle(req: Request) {
   const drops = await runDailyDrops(deps).catch((err) => (console.error("daily drops failed", err), null));
   const digest = await sendDailyDigest(deps.db, deps.push).catch((err) => (console.error("daily digest failed", err), 0));
   const chart = await publishWeeklyChart(deps).catch((err) => (console.error("weekly chart failed", err), null));
-  return NextResponse.json({ chart, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
+  const tournaments = await advanceTournaments(deps).catch((err) => (console.error("tournaments failed", err), 0));
+  return NextResponse.json({ chart, tournaments, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
 }
 
 export { handle as GET, handle as POST };

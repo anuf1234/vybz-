@@ -342,6 +342,8 @@ export interface ProfileView {
   };
   /** Verified artist behind this account. */
   artist?: { name: string } | null;
+  /** This season's ranked standing, once they've played a ranked battle. */
+  rank?: { rating: number; divisionLabel: string; icon: string; placement: boolean } | null;
 }
 
 export interface ApiError {
@@ -412,6 +414,8 @@ export type NotificationType =
   | "DJ_BATTLE"
   | "WAR_RESULT"
   | "ARTIST_DROP"
+  | "RANKED"
+  | "TOURNAMENT"
   | "DAILY_DIGEST";
 
 export interface NotificationView {
@@ -644,6 +648,8 @@ export interface QuickBattleRequest {
   decade?: number | null;
   /** Skip the wait and play the VYBZ bot (only when the AI judge is set up). */
   vsBot?: boolean;
+  /** Ranked: matched by rating, result moves both ratings, never the bot. */
+  ranked?: boolean;
 }
 
 export interface QuickBattleResponse {

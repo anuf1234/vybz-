@@ -78,3 +78,130 @@ describe.skipIf(!TEST_DB_URL)("artist profiles and challenges", () => {
     expect(page.wars.recent.some((w) => w.id === war.id && w.challenge)).toBe(true);
   });
 });
+
+describe("ranked rules", () => {
+  it("rates, divides and resets", async () => {
+    const { eloDelta, divisionOf, softReset, seasonOf, matchWindow, bracketOrder, roundName } = await import("@vybz/core");
+    expect(eloDelta(1000, 1000, 1)).toBe(16);
+    expect(eloDelta(1000, 1000, 0)).toBe(-16);
+    expect(eloDelta(1400, 1000, 1)).toBeLessThan(4);
+    expect(divisionOf(1000).key).toBe("BRONZE");
+    expect(divisionOf(1150).key).toBe("GOLD");
+    expect(divisionOf(2000).key).toBe("LEGEND");
+    expect(softReset(1400)).toBe(1200);
+    expect(seasonOf(new Date("2026-11-18T00:00:00Z"))).toBe("2026-Q4");
+    expect(matchWindow(0)).toBe(150);
+    expect(matchWindow(30 * 60_000)).toBe(400);
+    expect(bracketOrder(8)).toEqual([0, 7, 3, 4, 1, 6, 2, 5]);
+    expect(roundName(16, 0)).toBe("Round of 16");
+    expect(roundName(16, 3)).toBe("Final");
+  });
+});
+
+describe.skipIf(!TEST_DB_URL)("ranked battles", () => {
+  it("matches by rating, never the bot, and applies the result once", async () => {
+    const h = await freshDb();
+    forgetBot();
+    try {
+      const { quickBattle } = await import("../src/server/quick");
+      const { loadBattle } = await import("../src/server/battles/repo");
+      const { applyRanked, rankedBoard, ratingFor } = await import("../src/server/ranked");
+      const { DemoJudge } = await import("../src/server/ai-judge");
+      const demo = new DemoCatalog({ assetBaseUrl: "http://localhost:3000" });
+      const deps: BattleDeps = { db: h.db, catalog: { metadata: [demo], playback: { VYBZ_DEMO: demo }, storefront: "us" }, requireVerifiedEmail: false, aiJudge: new DemoJudge() };
+      const [a, b, c] = (await h.db
+        .insert(schema.user)
+        .values([
+          { id: "u_a", name: "A", email: "a@x.com", handle: "ranka" },
+          { id: "u_b", name: "B", email: "b@x.com", handle: "rankb" },
+          { id: "u_c", name: "C", email: "c@x.com", handle: "rankc" },
+        ])
+        .returning()) as [UserRow, UserRow, UserRow];
+      await expect(quickBattle(deps, a, { ranked: true, vsBot: true })).rejects.toMatchObject({ code: "RANKED_NO_BOT" });
+      // c is far above a: not matched.
+      await ratingFor(h.db, c.id);
+      await h.db.update(schema.userRating).set({ rating: 1600 }).where(eq(schema.userRating.userId, c.id));
+      const first = await quickBattle(deps, a, { ranked: true });
+      expect(first.matched).toBe("waiting");
+      expect((await quickBattle(deps, c, { ranked: true })).matched).toBe("waiting");
+      // An unranked quick battle never takes a ranked one.
+      expect((await quickBattle(deps, b, {})).matched).toBe("waiting");
+      const m = await quickBattle(deps, b, { ranked: true });
+      expect(m).toEqual({ id: first.id, matched: "player" });
+
+      const loaded = (await loadBattle(h.db, first.id))!;
+      const agg = loaded.aggregate;
+      const pa = agg.participants.find((p) => p.userId === a.id)!;
+      const done = { ...agg, status: "COMPLETE" as const, winnerParticipantId: pa.id };
+      expect(await applyRanked(h.db, null, done)).toBe(true);
+      expect(await applyRanked(h.db, null, done)).toBe(false);
+      const board = await rankedBoard(deps, a);
+      expect(board.me).toMatchObject({ rating: 1024, games: 1, wins: 1, placement: true, division: "BRONZE" });
+      expect(board.top.map((r) => [r.user.handle, r.rating])).toEqual([
+        ["ranka", 1024],
+        ["rankb", 976],
+      ]);
+      const { profile } = await import("../src/server/battles/service");
+      expect((await profile(deps, null, "ranka")).rank).toMatchObject({ rating: 1024, divisionLabel: "Bronze", placement: true });
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+describe.skipIf(!TEST_DB_URL)("tournaments", () => {
+  it("runs an 8-song bracket to a champion; ties go to the higher seed", async () => {
+    const h = await freshDb();
+    forgetBot();
+    try {
+      const { createTournament, voteTournament, advanceTournaments, getTournament, listTournaments } = await import("../src/server/tournaments");
+      const { DEMO_TRACKS } = await import("@vybz/providers");
+      const demo = new DemoCatalog({ assetBaseUrl: "http://localhost:3000" });
+      const deps: BattleDeps = { db: h.db, catalog: { metadata: [demo], playback: { VYBZ_DEMO: demo }, storefront: "us" }, requireVerifiedEmail: false, aiJudge: null };
+      const [mod, v1, v2] = (await h.db
+        .insert(schema.user)
+        .values([
+          { id: "u_m", name: "M", email: "m@x.com", handle: "tmod", role: "MODERATOR" },
+          { id: "u_1", name: "1", email: "1@x.com", handle: "tv1" },
+          { id: "u_2", name: "2", email: "2@x.com", handle: "tv2" },
+        ])
+        .returning()) as [UserRow, UserRow, UserRow];
+      const ids = DEMO_TRACKS.slice(0, 8).map((t) => `VYBZ_DEMO:${t.id}`);
+      await expect(createTournament(deps, v1, { title: "Best demo song", catalogIds: ids })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(createTournament(deps, mod, { title: "Best demo song", catalogIds: ids.slice(0, 5) })).rejects.toMatchObject({ code: "INVALID_SIZE" });
+      const start = new Date();
+      let t = await createTournament(deps, mod, { title: "Best demo song", catalogIds: ids }, start);
+      expect(t.rounds[0]!.name).toBe("Quarterfinals");
+      expect(t.rounds[0]!.matches.map((m) => [m.a, m.b])).toEqual([
+        [0, 7],
+        [3, 4],
+        [1, 6],
+        [2, 5],
+      ]);
+      // Seed 8 upsets seed 1; the others get no votes (higher seed wins the tie).
+      t = await voteTournament(deps, v1, t.id, { match: 0, entry: 7 }, start);
+      expect(t.rounds[0]!.matches[0]).toMatchObject({ votesA: 0, votesB: 1, mine: 7 });
+      await voteTournament(deps, v2, t.id, { match: 0, entry: 7 }, start);
+      await expect(voteTournament(deps, v1, t.id, { match: 0, entry: 3 }, start)).rejects.toMatchObject({ code: "INVALID_VOTE" });
+      const hours = (n: number) => new Date(start.getTime() + n * 3600_000);
+      expect(await advanceTournaments(deps, hours(43))).toBe(1);
+      t = await getTournament(deps, v1, t.id);
+      expect(t.rounds[1]!.name).toBe("Semifinals");
+      expect(t.rounds[1]!.matches.map((m) => [m.a, m.b])).toEqual([
+        [7, 3],
+        [1, 2],
+      ]);
+      await advanceTournaments(deps, hours(86));
+      await advanceTournaments(deps, hours(129));
+      t = await getTournament(deps, v1, t.id);
+      expect(t.status).toBe("DONE");
+      expect(t.champion).toBe(1);
+      expect(t.rounds).toHaveLength(3);
+      const notes = await h.db.select().from(schema.notification).where(eq(schema.notification.userId, v1.id));
+      expect(notes.some((n) => n.type === "TOURNAMENT" && n.title.includes("wins"))).toBe(true);
+      expect((await listTournaments(deps)).items[0]).toMatchObject({ status: "DONE", size: 8, voters: 2 });
+    } finally {
+      await h.close();
+    }
+  });
+});

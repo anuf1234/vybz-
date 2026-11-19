@@ -82,6 +82,22 @@ export default function Home() {
           <Link href="/wars" asChild>
             <Button title="💿 Album & Single Wars" kind="secondary" />
           </Link>
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <Link href="/ranked" asChild>
+              <Button title="🏆 Ranked" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+            <Link href="/tournaments" asChild>
+              <Button title="🗂️ Tournaments" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+          </View>
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <Link href="/verdict" asChild>
+              <Button title="🆚 This or That" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+            <Link href="/chart" asChild>
+              <Button title="📊 VYBZ Chart" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+          </View>
         </>
       ) : null}
       {signedIn && !onboarding ? <DailyReward key={session.data?.user.id} /> : null}

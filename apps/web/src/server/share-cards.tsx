@@ -4,6 +4,8 @@ import { eq, schema, sql } from "@vybz/db";
 import { getBattleDeps } from "@/server/context";
 import { getWar } from "@/server/wars";
 import { chart } from "@/server/verdict";
+import { getTournament } from "@/server/tournaments";
+import { rankView } from "@/server/ranked";
 import { INK, MUTED, SOFT, STORY, VIOLET, WIDE, type Font, loadFonts } from "@/server/share-card";
 
 /**
@@ -183,6 +185,73 @@ export async function chartCard(week: string, format: CardFormat): Promise<Image
       ))}
     </div>,
     "Ranked by fans in This or That.",
+  );
+}
+
+// ── Tournaments and ranks ──────────────────────────────────────────────────
+
+export async function tournamentCard(id: string, format: CardFormat): Promise<ImageResponse> {
+  const f = await loadFonts();
+  const t = await getTournament(getBattleDeps(), null, id).catch(() => null);
+  if (!t) return plain(format, f);
+  const story = format === "story";
+  if (t.champion !== null) {
+    const c = t.entries[t.champion]!;
+    return frame(
+      format,
+      f,
+      <div style={{ display: "flex", flexDirection: story ? "column" : "row", alignItems: "center", gap: story ? 44 : 48 }}>
+        <Cover url={await artData(c.artworkUrl)} size={story ? 640 : 380} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: story ? "center" : "flex-start", gap: 12 }}>
+          <div style={{ display: "flex", fontSize: story ? 38 : 26, color: SOFT, fontWeight: 800, letterSpacing: 3 }}>CHAMPION</div>
+          <div style={{ display: "flex", fontSize: story ? 80 : 52, fontWeight: 800, textAlign: story ? "center" : "left" }}>{c.title.slice(0, 40)}</div>
+          <div style={{ display: "flex", fontSize: story ? 42 : 30, color: MUTED }}>{c.artistName.slice(0, 40)}</div>
+          <div style={{ display: "flex", fontSize: story ? 36 : 24, marginTop: 10 }}>{t.title.slice(0, 60)}</div>
+        </div>
+      </div>,
+      "Run the next bracket on VYBZ.",
+    );
+  }
+  const round = t.rounds.at(-1)!;
+  const shown = round.matches.slice(0, story ? 4 : 2);
+  const arts = await Promise.all(shown.flatMap((m) => [artData(t.entries[m.a]!.artworkUrl), artData(t.entries[m.b]!.artworkUrl)]));
+  const size = story ? 150 : 90;
+  return frame(
+    format,
+    f,
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: story ? 34 : 14 }}>
+      <div style={{ display: "flex", fontSize: story ? 64 : 40, fontWeight: 800, textAlign: "center" }}>{t.title.slice(0, 50)}</div>
+      <div style={{ display: "flex", fontSize: story ? 38 : 26, color: SOFT, fontWeight: 800 }}>{round.name.toUpperCase()}</div>
+      {shown.map((m, i) => (
+        <div key={m.index} style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          <Cover url={arts[i * 2] ?? null} size={size} />
+          <div style={{ display: "flex", fontSize: story ? 36 : 24, color: MUTED, fontWeight: 800 }}>VS</div>
+          <Cover url={arts[i * 2 + 1] ?? null} size={size} />
+        </div>
+      ))}
+    </div>,
+    "Vote the bracket on VYBZ.",
+  );
+}
+
+export async function rankCard(handle: string, format: CardFormat): Promise<ImageResponse> {
+  const f = await loadFonts();
+  const { db } = getBattleDeps();
+  const [u] = await db.select().from(schema.user).where(eq(schema.user.handle, handle.toLowerCase()));
+  const [r] = u ? await db.select().from(schema.userRating).where(eq(schema.userRating.userId, u.id)) : [];
+  if (!u || !r || !r.games) return plain(format, f);
+  const v = rankView(r);
+  const story = format === "story";
+  return frame(
+    format,
+    f,
+    <div style={{ display: "flex", flexDirection: "column", alignItems: story ? "center" : "flex-start", gap: story ? 26 : 12 }}>
+      <div style={{ display: "flex", fontSize: story ? 40 : 26, color: SOFT, fontWeight: 800, letterSpacing: 3 }}>{`RANKED · ${v.season}`}</div>
+      <div style={{ display: "flex", fontSize: story ? 150 : 96, fontWeight: 800 }}>{v.divisionLabel.toUpperCase()}</div>
+      <div style={{ display: "flex", fontSize: story ? 80 : 52, fontWeight: 800 }}>{`${v.rating}`}</div>
+      <div style={{ display: "flex", fontSize: story ? 44 : 30, color: MUTED }}>{`@${u.handle} · ${v.wins}-${v.losses}${v.draws ? `-${v.draws}` : ""}`}</div>
+    </div>,
+    "Think your taste is better? Play ranked.",
   );
 }
 

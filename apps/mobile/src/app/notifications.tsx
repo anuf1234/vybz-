@@ -31,6 +31,8 @@ const ICON: Record<NotificationType, string> = {
   DJ_BATTLE: "🎚️",
   WAR_RESULT: "💿",
   ARTIST_DROP: "🆕",
+  RANKED: "🏆",
+  TOURNAMENT: "🗂️",
   DAILY_DIGEST: "🎧",
 };
 

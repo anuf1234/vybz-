@@ -1,4 +1,5 @@
 import { recordActivity } from "../vybz-streak";
+import { applyRanked, rankView } from "../ranked";
 import { checkAchievements } from "../achievements";
 import { awardBattle, awardVote } from "../progression";
 import {
@@ -38,6 +39,7 @@ import {
   plausiblePlayedMs,
   requiredListenMs,
   submitTrack,
+  seasonOf,
 } from "@vybz/core";
 import { type Database, type Executor, newId, schema, and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "@vybz/db";
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
@@ -176,6 +178,7 @@ async function letBotPlay(deps: BattleDeps, id: string): Promise<void> {
 async function afterBattleCompleted(deps: BattleDeps, agg: BattleAggregate): Promise<void> {
   try {
     await awardBattle(deps.db, agg);
+    await applyRanked(deps.db, deps.push, agg, now(deps));
     await checkAchievements(deps.db, deps.push, agg.participants.map((p) => p.userId));
   } catch (err) {
     console.error("progression failed", agg.id, err);
@@ -227,7 +230,7 @@ function requireBattler(deps: BattleDeps, actor: UserRow | null): UserRow {
   return actor;
 }
 
-export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown, opts: { dailyDate?: string; quickMatch?: boolean } = {}): Promise<{ id: string }> {
+export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown, opts: { dailyDate?: string; quickMatch?: boolean; ranked?: boolean } = {}): Promise<{ id: string }> {
   const actor = requireBattler(deps, actorIn);
   const parsed = CreateBattleSchema.safeParse(body);
   if (!parsed.success) throw new ServiceError(400, "INVALID_REQUEST", z.prettifyError(parsed.error));
@@ -262,7 +265,7 @@ export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, bo
   const theme = req.theme?.trim() || themeLabel(rulesResult.constraints);
   const visibility = req.visibility ?? "PUBLIC";
   await deps.db.transaction(async (tx) => {
-    await insertBattle(tx, battle, { title: req.title, theme, visibility, inviteCode: newInviteCode(), dailyDate: opts.dailyDate ?? null, quickMatch: opts.quickMatch ?? false });
+    await insertBattle(tx, battle, { title: req.title, theme, visibility, inviteCode: newInviteCode(), dailyDate: opts.dailyDate ?? null, quickMatch: opts.quickMatch ?? false, ranked: opts.ranked ?? false });
     if (invitees.length) await tx.insert(schema.battleInvite).values(invitees.map((u) => ({ battleId: battle.id, userId: u.id })));
   });
 
@@ -911,6 +914,15 @@ export async function profile(deps: BattleDeps, viewer: UserRow | null, handle: 
       .from(schema.artistProfile)
       .where(and(eq(schema.artistProfile.userId, u.id), eq(schema.artistProfile.status, "VERIFIED")))
       .then((r) => r[0] ?? null),
+    rank: await deps.db
+      .select()
+      .from(schema.userRating)
+      .where(and(eq(schema.userRating.userId, u.id), eq(schema.userRating.season, seasonOf(now(deps)))))
+      .then((r) => {
+        if (!r[0] || !r[0].games) return null;
+        const v = rankView(r[0]);
+        return { rating: v.rating, divisionLabel: v.divisionLabel, icon: v.icon, placement: v.placement };
+      }),
   };
 }
 
