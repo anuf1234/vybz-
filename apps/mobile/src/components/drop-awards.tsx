@@ -5,7 +5,7 @@ import { color, radius, space, type } from "./theme";
 import { Cover } from "./war-card";
 
 const n = (v: number, one: string, many: string) => `${v} ${v === 1 ? one : many}`;
-export const statLine = (s: HeatRow["stats"]) => `${s.fires} 🔥 · ${n(s.wins, "win", "wins")} · ${n(s.listens, "listen", "listens")}`;
+export const statLine = (s: HeatRow["stats"]) => `${s.fires} 🔥 · ${n(s.wins, "win", "wins")} · ${n(s.plays ?? 0, "play", "plays")} · ${n(s.listens, "listen", "listens")}`;
 
 /** The three races at the top of Daily Drops: who's leading right now. */
 export function AwardLeaders({ top }: { top: TopDropsResponse }) {

@@ -298,10 +298,11 @@ export interface WarChallenge {
 
 /**
  * How much each signal counts. Fires and This-or-That wins are fans
- * voting; listens are people tapping out to hear it (one per person per
- * release per period, so nobody can spam it).
+ * voting; listens are people tapping out to hear it; plays are real plays
+ * read from a linked Apple Music account (opt-in). Listens and plays count
+ * once per person per release per period, so nobody can spam them.
  */
-export const HEAT = { fire: 3, win: 2, listen: 1 } as const;
+export const HEAT = { fire: 3, win: 2, play: 2, listen: 1 } as const;
 
 export type DropAwardKind = "SONG_DAY" | "SONG_WEEK" | "ALBUM_WEEK";
 
@@ -316,10 +317,22 @@ export interface HeatStats {
   fires: number;
   wins: number;
   listens: number;
+  /** Verified plays from linked Apple Music accounts. Older awards don't have it. */
+  plays?: number;
 }
 
 export function heatScore(s: Omit<HeatStats, "score">): number {
-  return s.fires * HEAT.fire + s.wins * HEAT.win + s.listens * HEAT.listen;
+  return s.fires * HEAT.fire + s.wins * HEAT.win + (s.plays ?? 0) * HEAT.play + s.listens * HEAT.listen;
+}
+
+/** "Count my plays": linked Apple Music listening. */
+export interface MusicLinkStatus {
+  /** Server can read Apple Music listening (Apple Music is set up). */
+  available: boolean;
+  linked: boolean;
+  lastSyncAt: string | null;
+  /** Verified plays of drops counted for you in the last 7 days. */
+  playsCounted: number;
 }
 
 export interface HeatRow {

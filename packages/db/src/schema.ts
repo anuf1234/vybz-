@@ -1456,3 +1456,38 @@ export const dropAward = pgTable(
   },
   (t) => [primaryKey({ columns: [t.award, t.period] }), index("drop_award_release_idx").on(t.releaseId)],
 );
+
+/**
+ * A person's opt-in link to their Apple Music listening ("Count my plays").
+ * The Music User Token is stored encrypted; deleting the row forgets it.
+ */
+export const musicLink = pgTable("music_link", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull().default("APPLE_MUSIC"),
+  /** AES-256-GCM: iv.tag.ciphertext (base64url). */
+  tokenEnc: text("token_enc").notNull(),
+  /** Song ids seen at the last sync, newest first, to spot new plays. */
+  lastSeen: jsonb("last_seen").notNull().default(sql`'[]'::jsonb`),
+  lastSyncAt: ts("last_sync_at"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** Verified plays of a drop from a linked music service: one per person per release per UTC day. */
+export const playEvent = pgTable(
+  "play_event",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    source: text("source").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.releaseId, t.day] }), index("play_event_created_idx").on(t.createdAt)],
+);

@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { advanceAllDue, ensureAllAiVerdicts } from "@/server/battles/service";
-import { getBattleDeps } from "@/server/context";
+import { getBattleDeps, getMusicDeps } from "@/server/context";
 import { botJoinDaily, botPlayAll } from "@/server/bot";
 import { ensureDailyBattle } from "@/server/daily";
 import { botTakeStaleQuick } from "@/server/quick";
@@ -13,6 +13,7 @@ import { runDailyDrops, sendDailyDigest } from "@/server/drops";
 import { publishWeeklyChart } from "@/server/verdict";
 import { advanceTournaments } from "@/server/tournaments";
 import { giveDropAwards } from "@/server/drop-awards";
+import { syncPlays } from "@/server/music-plays";
 import { serverEnv } from "@/server/env";
 
 /**
@@ -43,8 +44,9 @@ async function handle(req: Request) {
   const digest = await sendDailyDigest(deps.db, deps.push).catch((err) => (console.error("daily digest failed", err), 0));
   const chart = await publishWeeklyChart(deps).catch((err) => (console.error("weekly chart failed", err), null));
   const tournaments = await advanceTournaments(deps).catch((err) => (console.error("tournaments failed", err), 0));
+  const plays = await syncPlays(deps, getMusicDeps()).catch((err) => (console.error("play sync failed", err), 0));
   const awards = await giveDropAwards(deps).catch((err) => (console.error("drop awards failed", err), 0));
-  return NextResponse.json({ chart, tournaments, awards, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
+  return NextResponse.json({ chart, tournaments, awards, plays, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
 }
 
 export { handle as GET, handle as POST };

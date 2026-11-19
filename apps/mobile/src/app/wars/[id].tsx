@@ -10,12 +10,13 @@ import { Cover } from "@/components/war-card";
 import { ApiRequestError, api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 import { useResource } from "@/lib/use-resource";
-import { API_URL } from "@/lib/config";
+import { API_URL, useSpotifyEnabled } from "@/lib/config";
 import { shareMenu } from "@/lib/share-card";
 import { listenOn } from "@/lib/listen";
 
 /** One war: vote each category, then track by track. Counts show once you've voted in a category. */
 export default function War() {
+  const spotify = useSpotifyEnabled();
   const { id } = useLocalSearchParams<{ id: string }>();
   const session = useSession();
   const res = useResource(() => api.war(id), [id]);
@@ -127,9 +128,11 @@ export default function War() {
                     <Text style={[type.small, { color: color.violetSoft }]}>Listen ↗</Text>
                   </Pressable>
                 ) : null}
-                <Pressable onPress={() => void listenOn("spotify", "war", w.id, s)} hitSlop={6} accessibilityRole="link" accessibilityLabel={`${x.title} on Spotify`}>
-                  <Text style={[type.small, { color: color.violetSoft }]}>Spotify ↗</Text>
-                </Pressable>
+                {spotify ? (
+                  <Pressable onPress={() => void listenOn("spotify", "war", w.id, s)} hitSlop={6} accessibilityRole="link" accessibilityLabel={`${x.title} on Spotify`}>
+                    <Text style={[type.small, { color: color.violetSoft }]}>Spotify ↗</Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           );

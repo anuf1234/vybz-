@@ -24,6 +24,9 @@ export default function Privacy() {
           <strong>What you do in VYBZ:</strong> battles you create or join, songs you pick, votes, listening progress used to unlock voting, reactions, chat messages, posts, comments, likes, follows, direct messages, playlists, saved songs, rewards and settings.
         </li>
         <li>
+          <strong>Apple Music listening, only if you turn on &ldquo;Count my plays&rdquo;:</strong> with your permission we read the songs you recently played in Apple Music a few times a day and count plays of current Daily Drops toward Song of the Day, Song of the Week and Album of the Week. We keep only which drops you played on which day, never your full listening history, and your plays are only ever shown as part of totals. The access token Apple gives us is stored encrypted and deleted when you turn it off.
+        </li>
+        <li>
           <strong>Device information:</strong> a push-notification token if you allow notifications, your time zone (for daily rewards), and basic technical logs such as IP address and request times, kept to run and protect the service.
         </li>
       </ul>
@@ -52,6 +55,7 @@ export default function Privacy() {
       <h2>Your choices</h2>
       <ul>
         <li>Edit your profile at any time, and turn notifications off in your phone&apos;s settings.</li>
+        <li>Turn &ldquo;Count my plays&rdquo; on or off at any time: Profile → Music services.</li>
         <li>Delete your account in the app: Profile → Delete account.</li>
         <li>Ask us for a copy of your data or to correct it by emailing <a href={`mailto:${email}`}>{email}</a>.</li>
       </ul>

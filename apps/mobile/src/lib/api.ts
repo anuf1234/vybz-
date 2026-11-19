@@ -1,5 +1,6 @@
 import type {
   ArtistFollowHit,
+  MusicLinkStatus,
   TopDropsResponse,
   DjLesson,
   ProStatus,
@@ -206,6 +207,8 @@ const MESSAGES: Record<string, string> = {
   SUBSCRIPTION_IN_USE: "This subscription belongs to another VYBZ account.",
   INVALID_PURCHASE: "That isn't a VYBZ Pro purchase.",
   APPLE_UNAVAILABLE: "Couldn't reach the App Store. Try again in a moment.",
+  APPLE_MUSIC_UNAVAILABLE: "Apple Music isn't available right now.",
+  INVALID_TOKEN: "Apple Music didn't accept that. Try connecting again.",
   INVALID_PAIR: "Those two can't be matched up.",
   MIXTAPE_EXISTS: "That mixtape has already been submitted.",
   INVALID_MIXTAPE: "Add the mixtape's title and artist.",
@@ -438,6 +441,10 @@ export const api = {
   claimPro: (transactionId: string) => request<ProStatus>("POST", "/api/v1/me/pro/claim", { transactionId }),
   djLesson: (id: string) => request<DjLesson>("GET", `/api/v1/dj/lessons/${encodeURIComponent(id)}`),
   topDrops: () => request<TopDropsResponse>("GET", "/api/v1/drops/top"),
+  musicLink: () => request<MusicLinkStatus>("GET", "/api/v1/me/music"),
+  appleDeveloperToken: () => request<{ token: string }>("GET", "/api/v1/me/music/apple/developer-token"),
+  linkAppleMusic: (userToken: string) => request<MusicLinkStatus>("POST", "/api/v1/me/music/apple", { userToken }),
+  unlinkAppleMusic: () => request<MusicLinkStatus>("DELETE", "/api/v1/me/music/apple"),
   modRunDrops: () => request<{ ran: boolean; added: number; note: string }>("POST", "/api/v1/mod/drops/run", {}),
   updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>

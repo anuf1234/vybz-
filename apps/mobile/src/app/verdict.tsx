@@ -7,6 +7,7 @@ import { Button, EmptyState, ErrorBanner, Loading } from "@/components/ui";
 import { Cover } from "@/components/war-card";
 import { api } from "@/lib/api";
 import { listenOn } from "@/lib/listen";
+import { useSpotifyEnabled } from "@/lib/config";
 
 /** This or That: pick the better of two new drops. Picks build each release's Fan Verdict and the weekly VYBZ Chart. */
 export default function Verdict() {
@@ -74,6 +75,7 @@ export default function Verdict() {
 }
 
 function Side({ r, onPick, disabled }: { r: ReleaseView; onPick: () => void; disabled: boolean }) {
+  const spotify = useSpotifyEnabled();
   return (
     <View style={{ flex: 1, gap: space.sm }}>
       <Pressable onPress={onPick} disabled={disabled} style={({ pressed }) => [styles.side, pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }]} accessibilityRole="button" accessibilityLabel={`Pick ${r.title} by ${r.artistName}`}>
@@ -91,7 +93,7 @@ function Side({ r, onPick, disabled }: { r: ReleaseView; onPick: () => void; dis
             Listen ↗
           </Text>
         ) : null}
-        {r.kind !== "MIXTAPE" ? (
+        {spotify && r.kind !== "MIXTAPE" ? (
           <Text style={[type.small, { color: color.violetSoft }]} onPress={() => void listenOn("spotify", "release", r.id)} accessibilityRole="link">
             Spotify ↗
           </Text>

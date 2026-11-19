@@ -32,7 +32,7 @@ const weekWindow = (week: string): Window => {
 /** Heat per release in a window, for releases of the given kinds. */
 export async function heat(db: Executor, w: Window, kinds: string[]): Promise<Map<string, HeatStats>> {
   const r = schema.release;
-  const [fires, wins, listens] = await Promise.all([
+  const [fires, wins, listens, plays] = await Promise.all([
     db
       .select({ id: schema.releaseFire.releaseId, n: sql<number>`count(*)::int` })
       .from(schema.releaseFire)
@@ -51,19 +51,26 @@ export async function heat(db: Executor, w: Window, kinds: string[]): Promise<Ma
       .innerJoin(r, eq(r.id, schema.outboundClick.ref))
       .where(and(eq(schema.outboundClick.kind, "release"), gte(schema.outboundClick.createdAt, w.start), lt(schema.outboundClick.createdAt, w.end), inArray(r.kind, kinds), eq(r.status, "LIVE")))
       .groupBy(schema.outboundClick.ref),
+    db
+      .select({ id: schema.playEvent.releaseId, n: sql<number>`count(distinct ${schema.playEvent.userId})::int` })
+      .from(schema.playEvent)
+      .innerJoin(r, eq(r.id, schema.playEvent.releaseId))
+      .where(and(gte(schema.playEvent.createdAt, w.start), lt(schema.playEvent.createdAt, w.end), inArray(r.kind, kinds), eq(r.status, "LIVE")))
+      .groupBy(schema.playEvent.releaseId),
   ]);
   const out = new Map<string, HeatStats>();
-  const get = (id: string) => out.get(id) ?? { score: 0, fires: 0, wins: 0, listens: 0 };
+  const get = (id: string) => out.get(id) ?? { score: 0, fires: 0, wins: 0, listens: 0, plays: 0 };
   for (const f of fires) out.set(f.id, { ...get(f.id), fires: f.n });
   for (const x of wins) out.set(x.id, { ...get(x.id), wins: x.n });
   for (const l of listens) out.set(l.id, { ...get(l.id), listens: l.n });
+  for (const p of plays) out.set(p.id, { ...get(p.id), plays: p.n });
   for (const [id, s] of out) out.set(id, { ...s, score: heatScore(s) });
   return out;
 }
 
 /** Highest heat first; ties go to more fires, then more listens. */
 function ranked(stats: Map<string, HeatStats>): [string, HeatStats][] {
-  return [...stats.entries()].filter(([, s]) => s.score > 0).sort(([, a], [, b]) => b.score - a.score || b.fires - a.fires || b.listens - a.listens);
+  return [...stats.entries()].filter(([, s]) => s.score > 0).sort(([, a], [, b]) => b.score - a.score || b.fires - a.fires || (b.plays ?? 0) - (a.plays ?? 0) || b.listens - a.listens);
 }
 
 async function rows(db: Executor, viewer: UserRow | null, list: [string, HeatStats][], limit: number): Promise<HeatRow[]> {
@@ -114,7 +121,7 @@ async function give(deps: BattleDeps, award: DropAwardKind, period: string, w: W
   const [rel] = await deps.db.select().from(schema.release).where(eq(schema.release.id, id));
   if (!rel) return true;
   const a = DROP_AWARDS[award];
-  const line = `${stats.fires} fires · ${stats.wins} This-or-That wins · ${stats.listens} listens`;
+  const line = `${stats.fires} fires · ${stats.wins} This-or-That wins · ${stats.plays ?? 0} Apple Music plays · ${stats.listens} listens`;
   try {
     const bot = await botUser(deps);
     const postId = newId();

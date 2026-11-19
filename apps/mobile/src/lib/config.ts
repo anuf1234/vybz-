@@ -25,3 +25,8 @@ export function useServerConfig(): ConfigResponse | null {
   }, []);
   return config;
 }
+
+/** Spotify buttons show only once the server has Spotify set up. */
+export function useSpotifyEnabled(): boolean {
+  return useServerConfig()?.spotify === true;
+}

@@ -6,6 +6,8 @@ export interface AppleMusicNative {
   authorize(): Promise<"authorized" | "denied" | "restricted" | "notDetermined" | "unknown">;
   authorizationStatus(): Promise<string>;
   canPlayCatalog(): Promise<boolean>;
+  /** Music User Token for the server to read recently played songs (opt-in). */
+  userToken(developerToken: string): Promise<string>;
   play(catalogId: string): Promise<void>;
   resume(): Promise<void>;
   pause(): Promise<void>;

@@ -9,6 +9,7 @@ import { Cover } from "@/components/war-card";
 import { api } from "@/lib/api";
 import { listenOn } from "@/lib/listen";
 import { useResource } from "@/lib/use-resource";
+import { useSpotifyEnabled } from "@/lib/config";
 
 type Race = "songsToday" | "songsWeek" | "albumsWeek";
 
@@ -24,7 +25,7 @@ export default function TopDrops() {
       <Stack.Screen options={{ title: "Top drops" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }} refreshControl={<RefreshControl tintColor={color.violet} refreshing={res.refreshing} onRefresh={() => void res.reload()} />}>
         <Text style={type.small}>
-          Heat = 🔥 fires ×{HEAT.fire} + This-or-That wins ×{HEAT.win} + listens ×{HEAT.listen} (one listen per person). Days and weeks are in UTC; winners are announced when each ends.
+          Heat = 🔥 fires ×{HEAT.fire} + This-or-That wins ×{HEAT.win} + Apple Music plays ×{HEAT.play} + listens ×{HEAT.listen}. Plays come from people who turned on Count my plays; plays and listens count once per person. Days and weeks are in UTC; winners are announced when each ends.
         </Text>
         <Segmented
           value={race}
@@ -68,6 +69,7 @@ export default function TopDrops() {
 }
 
 function Row({ r, onArtist }: { r: HeatRow; onArtist: () => void }) {
+  const spotify = useSpotifyEnabled();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.md, padding: space.sm, borderRadius: radius.md, borderWidth: 1, borderColor: r.rank === 1 ? color.violet : color.line, backgroundColor: color.surface1 }}>
       <Text style={[type.display, { fontSize: 22, width: 30, textAlign: "right" }]}>{r.rank}</Text>
@@ -80,7 +82,7 @@ function Row({ r, onArtist }: { r: HeatRow; onArtist: () => void }) {
           {r.release.artistName}
         </Text>
         <Text style={type.small}>{statLine(r.stats)}</Text>
-        {r.release.kind !== "MIXTAPE" ? (
+        {spotify && r.release.kind !== "MIXTAPE" ? (
           <Text style={[type.small, { color: color.violetSoft }]} onPress={() => void listenOn("spotify", "release", r.release.id)} accessibilityRole="link">
             Spotify ↗
           </Text>
