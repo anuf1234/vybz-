@@ -6,6 +6,8 @@ import { color, radius, space, type } from "./theme";
 import { Pill } from "./ui";
 import { Cover } from "./war-card";
 import { api } from "@/lib/api";
+import { API_URL } from "@/lib/config";
+import { shareMenu } from "@/lib/share-card";
 
 const KIND_ICON = { SINGLE: "🎵", EP: "📀", ALBUM: "💿", MIXTAPE: "📼" } as const;
 export const kindLabel = (k: ReleaseView["kind"]) => RELEASE_KINDS.find((x) => x.key === k)?.label ?? k;
@@ -71,6 +73,7 @@ export function DropCard({ drop, signedIn, onChange }: { drop: ReleaseView; sign
         <Action label={`🔥 ${d.fires}`} on={d.fired} onPress={fire} a11y={d.fired ? "Remove your fire" : "Fire this drop up"} />
         {d.externalUrl ? <Action label={`▶ ${d.host ?? "Listen"}`} onPress={() => void Linking.openURL(d.externalUrl!)} a11y={`Listen on ${d.host ?? "the web"}`} /> : null}
         {d.warId || (d.ref && d.kind !== "MIXTAPE") ? <Action label={d.warId ? "⚔️ In a war" : "⚔️ Start a war"} onPress={war} a11y="Album war" /> : null}
+        {d.status === "LIVE" ? <Action label="↗ Share" onPress={() => shareMenu({ kind: "drop", id: d.id, title: "Share this drop", message: `🆕 ${d.title} by ${d.artistName} is out. 🔥 it on VYBZ.`, url: `${API_URL}/drop/${d.id}` })} a11y="Share this drop" /> : null}
         <Action label={d.following ? "✓ Following" : "+ Follow"} on={d.following} onPress={follow} a11y={d.following ? `Unfollow ${d.artistName}` : `Follow ${d.artistName}`} />
       </View>
     </View>

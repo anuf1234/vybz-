@@ -13,17 +13,17 @@ import { getBattleDeps } from "@/server/context";
  */
 
 
-const INK = "#0A0614";
-const VIOLET = "#8B5CF6";
-const SOFT = "#C4B5FD";
-const MUTED = "#A59CBB";
+export const INK = "#0A0614";
+export const VIOLET = "#8B5CF6";
+export const SOFT = "#C4B5FD";
+export const MUTED = "#A59CBB";
 const SIDES = ["#8B5CF6", "#F472B6", "#22D3EE", "#FBBF24", "#34D399", "#FB7185", "#60A5FA", "#A3E635"];
 
-type Font = { name: string; data: ArrayBuffer; weight: 500 | 800; style: "normal" };
+export type Font = { name: string; data: ArrayBuffer; weight: 500 | 800; style: "normal" };
 let fonts: Promise<Font[]> | null = null;
 
 /** Inter from @fontsource; falls back to the built-in font if it can't be read. */
-function loadFonts(): Promise<Font[]> {
+export function loadFonts(): Promise<Font[]> {
   fonts ??= Promise.all(
     ([500, 800] as const).map(async (weight) => {
       const buf = await readFile(join(process.cwd(), "node_modules/@fontsource/inter/files", `inter-latin-${weight}-normal.woff`));
