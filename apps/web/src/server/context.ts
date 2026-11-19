@@ -1,7 +1,8 @@
 import "server-only";
 import type { MetadataProvider, ProviderRegistry } from "@vybz/providers";
 import { DemoCatalog, MusicBrainzReleaseYears } from "@vybz/providers";
-import { apple, defaultStorefront, registry, youtube } from "@/lib/providers";
+import { apple, appDeveloperToken, defaultStorefront, registry, youtube } from "@/lib/providers";
+import type { MusicDeps } from "./music-plays";
 import { type AiJudge, AnthropicJudge, DemoJudge } from "./ai-judge";
 import { type Auth, createAuth } from "./auth";
 import type { BattleDeps } from "./battles/service";
@@ -33,6 +34,11 @@ export function getCatalogDeps(): CatalogDeps {
   const releaseYears = youtube ? new MusicBrainzReleaseYears({ userAgent: `VYBZ/0.1 ( ${publicOrigin()} )` }) : null;
   g.__vybzCatalog = { metadata, playback, youtube: apple ? youtube : null, releaseYears, storefront: defaultStorefront };
   return g.__vybzCatalog;
+}
+
+/** Reading opted-in people's Apple Music listening ("Count my plays"). */
+export function getMusicDeps(): MusicDeps {
+  return { appDeveloperToken, reader: apple };
 }
 
 /** Claude when a key is set; the demo stand-in only alongside the demo catalog; otherwise none. */

@@ -58,6 +58,9 @@ export default function ModerationQueue() {
       <Link href="/mod/metrics" asChild>
         <Button title="📈 Growth metrics" kind="secondary" />
       </Link>
+      <Link href="/mod/data" asChild>
+        <Button title="🗄️ Partner data" kind="secondary" />
+      </Link>
       <Link href="/mod/artists" asChild>
         <Button title="🎤 Artist profiles" kind="secondary" />
       </Link>

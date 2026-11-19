@@ -175,16 +175,7 @@ export async function artistPage(deps: BattleDeps, viewer: UserRow | null, nameI
       .limit(50),
   ]);
   const ids = releases.map((x) => x.id);
-  const [fires, verdicts] = await Promise.all([
-    ids.length
-      ? deps.db
-          .select({ n: sql<number>`count(*)::int` })
-          .from(schema.releaseFire)
-          .where(inArray(schema.releaseFire.releaseId, ids))
-          .then((x) => x[0]?.n ?? 0)
-      : Promise.resolve(0),
-    verdictStats(deps.db, ids),
-  ]);
+  const verdicts = await verdictStats(deps.db, ids);
   const scored = [...verdicts.values()].filter((v) => v.games >= 5).map((v) => verdictScore(v.wins, v.games));
   const sideOf = (w: (typeof wars)[number]) => (key((w.a as WarSide).artistName) === k ? "A" : "B");
   const record = { won: 0, lost: 0, drawn: 0, open: 0 };
@@ -203,7 +194,6 @@ export async function artistPage(deps: BattleDeps, viewer: UserRow | null, nameI
     followers,
     following: mine,
     releases: await views(deps.db, viewer, releases),
-    fires,
     verdict: scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : null,
     wars: { ...record, recent: recent.slice(0, 10) },
   };

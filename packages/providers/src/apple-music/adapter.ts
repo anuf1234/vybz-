@@ -300,6 +300,27 @@ export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, Br
     return al ? toAlbum(al) : null;
   }
 
+  /**
+   * A person's recently played songs (newest first), read with their Music
+   * User Token. Up to 50, each with the album it's from.
+   */
+  async recentlyPlayed(userToken: string): Promise<{ songId: string; albumId: string | null; title: string; artistName: string }[]> {
+    const out: { songId: string; albumId: string | null; title: string; artistName: string }[] = [];
+    for (let offset = 0; offset < 50; offset += 10) {
+      const json = await this.get(`/me/recent/played/tracks?types=songs&limit=10&offset=${offset}`, false, { "Music-User-Token": userToken });
+      const items = MixedListSchema.parse(json).data;
+      for (const item of items) {
+        if (item.type !== "songs") continue;
+        const parsed = SongSchema.safeParse(item);
+        if (!parsed.success) continue;
+        const a = parsed.data.attributes;
+        out.push({ songId: parsed.data.id, albumId: a.url?.match(/\/album\/(?:[^/]+\/)?(\d+)/)?.[1] ?? null, title: a.name, artistName: a.artistName });
+      }
+      if (items.length < 10) break;
+    }
+    return out;
+  }
+
   /** Items of Apple's own playlist by that name (not user playlists). */
   private async editorialPlaylistItems(sf: string, term: string): Promise<{ type: string }[]> {
     const params = new URLSearchParams({ term, types: "playlists", limit: "10" });
@@ -350,10 +371,10 @@ export class AppleMusicAdapter implements MetadataProvider, PlaybackProvider, Br
   }
 
   /** Returns parsed JSON, or null on 404 when `allowNotFound` is set. */
-  private async get(path: string, allowNotFound = false): Promise<unknown> {
+  private async get(path: string, allowNotFound = false, extraHeaders: Record<string, string> = {}): Promise<unknown> {
     const token = await this.config.developerToken();
     const res = await this.fetchFn(`${API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...extraHeaders },
     });
     if (allowNotFound && res.status === 404) return null;
     if (!res.ok) {

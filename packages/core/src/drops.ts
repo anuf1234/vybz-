@@ -98,7 +98,7 @@ export interface ReleaseView {
   dropDay: string;
   /** Catalog ref usable for wars (`PROVIDER:id`); null for mixtapes. */
   ref: string | null;
-  fires: number;
+  /** You fired it up. (Counts aren't shown in the app; they're kept for partners.) */
   fired: boolean;
   /** Following this release's artist. */
   following: boolean;
@@ -280,8 +280,6 @@ export interface ArtistPage {
   followers: number;
   following: boolean;
   releases: ReleaseView[];
-  /** Fires across their drops. */
-  fires: number;
   /** Average Fan Verdict of their releases that have one. */
   verdict: number | null;
   wars: { won: number; lost: number; drawn: number; open: number; recent: { id: string; title: string; status: "OPEN" | "CLOSED"; result: "WON" | "LOST" | "DRAW" | null; challenge: boolean }[] };
@@ -292,4 +290,84 @@ export interface WarChallenge {
   from: string;
   to: string;
   fromHandle: string | null;
+}
+
+// ── Song of the Day / Week, Album of the Week ──────────────────────────────
+
+/**
+ * How much each signal counts. Fires and This-or-That wins are fans
+ * voting; listens are people tapping out to hear it; plays are real plays
+ * read from a linked Apple Music account (opt-in). Listens and plays count
+ * once per person per release per period, so nobody can spam them.
+ */
+export const HEAT = { fire: 3, win: 2, play: 2, listen: 1 } as const;
+
+export type DropAwardKind = "SONG_DAY" | "SONG_WEEK" | "ALBUM_WEEK";
+
+export const DROP_AWARDS: Record<DropAwardKind, { label: string; icon: string }> = {
+  SONG_DAY: { label: "Song of the Day", icon: "🎵" },
+  SONG_WEEK: { label: "Song of the Week", icon: "🔥" },
+  ALBUM_WEEK: { label: "Album of the Week", icon: "💿" },
+};
+
+export interface HeatStats {
+  score: number;
+  fires: number;
+  wins: number;
+  listens: number;
+  /** Verified plays from linked Apple Music accounts. Older awards don't have it. */
+  plays?: number;
+}
+
+export function heatScore(s: Omit<HeatStats, "score">): number {
+  return s.fires * HEAT.fire + s.wins * HEAT.win + (s.plays ?? 0) * HEAT.play + s.listens * HEAT.listen;
+}
+
+/** "Count my plays": linked Apple Music listening. */
+export interface MusicLinkStatus {
+  /** Server can read Apple Music listening (Apple Music is set up). */
+  available: boolean;
+  linked: boolean;
+}
+
+/** One release's totals for one day (partner data export, staff only). */
+export interface ReleaseDayStatsRow {
+  day: string;
+  releaseId: string;
+  title: string;
+  artistName: string;
+  kind: ReleaseKind;
+  provider: string;
+  externalId: string;
+  fires: number;
+  wins: number;
+  matchups: number;
+  plays: number;
+  listens: number;
+  listensBy: Record<string, number>;
+  heat: number;
+}
+
+/** A chart position, as the app shows it: rank only, no counts (those are kept for partners). */
+export interface HeatRow {
+  rank: number;
+  release: ReleaseView;
+}
+
+export interface DropAwardView {
+  award: DropAwardKind;
+  period: string;
+  release: ReleaseView;
+}
+
+export interface TopDropsResponse {
+  /** UTC day and ISO week being counted. */
+  day: string;
+  week: string;
+  /** Leaders so far (live): songs today, songs this week, albums and EPs this week. */
+  songsToday: HeatRow[];
+  songsWeek: HeatRow[];
+  albumsWeek: HeatRow[];
+  /** Past winners, newest first. */
+  history: DropAwardView[];
 }

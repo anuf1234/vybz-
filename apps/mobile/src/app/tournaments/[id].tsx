@@ -7,7 +7,7 @@ import { Button, Card, ErrorBanner, Loading, SectionTitle } from "@/components/u
 import { Cover } from "@/components/war-card";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
-import { API_URL } from "@/lib/config";
+import { API_URL, useSpotifyEnabled } from "@/lib/config";
 import { listenOn } from "@/lib/listen";
 import { shareMenu } from "@/lib/share-card";
 import { useResource } from "@/lib/use-resource";
@@ -87,6 +87,7 @@ export default function Tournament() {
 }
 
 function Match({ t, m, onVote, disabled }: { t: TournamentView; m: TournamentMatch; onVote: (entry: number) => void; disabled: boolean }) {
+  const spotify = useSpotifyEnabled();
   const total = (m.votesA ?? 0) + (m.votesB ?? 0);
   const side = (e: number, votes: number | null) => {
     const x = t.entries[e]!;
@@ -101,9 +102,11 @@ function Match({ t, m, onVote, disabled }: { t: TournamentView; m: TournamentMat
           #{e + 1} · {x.artistName}
         </Text>
         {votes !== null ? <Text style={[type.small, { fontWeight: "800", color: mine ? color.violetSoft : color.muted }]}>{total ? Math.round((votes * 100) / total) : 0}%</Text> : null}
-        <Text style={[type.small, { color: color.violetSoft }]} onPress={() => void listenOn("spotify", "track", x.trackId)} accessibilityRole="link">
-          Spotify ↗
-        </Text>
+        {spotify ? (
+          <Text style={[type.small, { color: color.violetSoft }]} onPress={() => void listenOn("spotify", "track", x.trackId)} accessibilityRole="link">
+            Spotify ↗
+          </Text>
+        ) : null}
       </Pressable>
     );
   };
