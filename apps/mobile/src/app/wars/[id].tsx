@@ -3,7 +3,7 @@ import type { WarTrack, WarView } from "@vybz/core";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, sideColor, space, type } from "@/components/theme";
 import { Button, Card, ErrorBanner, Loading } from "@/components/ui";
 import { Cover } from "@/components/war-card";
@@ -12,6 +12,7 @@ import { useSession } from "@/lib/auth-client";
 import { useResource } from "@/lib/use-resource";
 import { API_URL } from "@/lib/config";
 import { shareMenu } from "@/lib/share-card";
+import { listenOn } from "@/lib/listen";
 
 /** One war: vote each category, then track by track. Counts show once you've voted in a category. */
 export default function War() {
@@ -114,11 +115,16 @@ export default function War() {
                 {x.artistName}
                 {x.releaseYear ? ` · ${x.releaseYear}` : ""}
               </Text>
-              {x.externalUrl ? (
-                <Pressable onPress={() => void Linking.openURL(x.externalUrl!)} hitSlop={6}>
-                  <Text style={[type.small, { color: color.violetSoft }]}>Listen ↗</Text>
+              <View style={{ flexDirection: "row", gap: space.md }}>
+                {x.externalUrl ? (
+                  <Pressable onPress={() => void listenOn("source", "war", w.id, s)} hitSlop={6} accessibilityRole="link" accessibilityLabel={`Listen to ${x.title}`}>
+                    <Text style={[type.small, { color: color.violetSoft }]}>Listen ↗</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable onPress={() => void listenOn("spotify", "war", w.id, s)} hitSlop={6} accessibilityRole="link" accessibilityLabel={`${x.title} on Spotify`}>
+                  <Text style={[type.small, { color: color.violetSoft }]}>Spotify ↗</Text>
                 </Pressable>
-              ) : null}
+              </View>
             </View>
           );
         })}

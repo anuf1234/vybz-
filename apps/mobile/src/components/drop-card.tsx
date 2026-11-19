@@ -1,11 +1,12 @@
 import { RELEASE_KINDS, type ReleaseView } from "@vybz/core";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { color, radius, space, type } from "./theme";
 import { Pill } from "./ui";
 import { Cover } from "./war-card";
 import { api } from "@/lib/api";
+import { listenOn } from "@/lib/listen";
 import { API_URL } from "@/lib/config";
 import { shareMenu } from "@/lib/share-card";
 
@@ -71,7 +72,8 @@ export function DropCard({ drop, signedIn, onChange }: { drop: ReleaseView; sign
       </View>
       <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
         <Action label={`🔥 ${d.fires}`} on={d.fired} onPress={fire} a11y={d.fired ? "Remove your fire" : "Fire this drop up"} />
-        {d.externalUrl ? <Action label={`▶ ${d.host ?? "Listen"}`} onPress={() => void Linking.openURL(d.externalUrl!)} a11y={`Listen on ${d.host ?? "the web"}`} /> : null}
+        {d.externalUrl ? <Action label={`▶ ${d.host ?? "Listen"}`} onPress={() => void listenOn("source", "release", d.id)} a11y={`Listen on ${d.host ?? "the web"}`} /> : null}
+        {d.kind !== "MIXTAPE" ? <Action label="Spotify" onPress={() => void listenOn("spotify", "release", d.id)} a11y="Open in Spotify" /> : null}
         {d.warId || (d.ref && d.kind !== "MIXTAPE") ? <Action label={d.warId ? "⚔️ In a war" : "⚔️ Start a war"} onPress={war} a11y="Album war" /> : null}
         {d.status === "LIVE" ? <Action label="↗ Share" onPress={() => shareMenu({ kind: "drop", id: d.id, title: "Share this drop", message: `🆕 ${d.title} by ${d.artistName} is out. 🔥 it on VYBZ.`, url: `${API_URL}/drop/${d.id}` })} a11y="Share this drop" /> : null}
         <Action label={d.following ? "✓ Following" : "+ Follow"} on={d.following} onPress={follow} a11y={d.following ? `Unfollow ${d.artistName}` : `Follow ${d.artistName}`} />

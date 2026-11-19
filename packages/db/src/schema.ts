@@ -1241,3 +1241,28 @@ export const activityDay = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 );
+
+// ── Outbound plays ─────────────────────────────────────────────────────────
+
+/** Taps out to a streaming service (Spotify, Apple Music, YouTube, a mixtape's host). Counted for the analytics. */
+export const outboundClick = pgTable(
+  "outbound_click",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    /** Anonymous viewer key for guests. */
+    viewerKey: text("viewer_key"),
+    service: text("service").notNull(),
+    kind: text("kind").notNull(),
+    ref: text("ref").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("outbound_created_idx").on(t.createdAt), index("outbound_service_idx").on(t.service, t.createdAt)],
+);
+
+/** Resolved links (e.g. a release's Spotify page), so each is looked up once. */
+export const linkCache = pgTable("link_cache", {
+  key: text("key").primaryKey(),
+  url: text("url"),
+  createdAt: createdAt(),
+});

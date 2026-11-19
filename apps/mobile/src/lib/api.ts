@@ -389,6 +389,8 @@ export const api = {
   unfollowArtist: (body: { externalId: string } | { name: string }) => request<{ items: FollowedArtist[] }>("DELETE", "/api/v1/me/artists", body),
   modMixtapes: () => request<{ items: (ReleaseView & { note: string | null })[] }>("GET", "/api/v1/mod/mixtapes"),
   modReviewMixtape: (id: string, action: "approve" | "reject") => request<{ ok: true }>("POST", `/api/v1/mod/mixtapes/${id}`, { action }),
+  out: (service: "spotify" | "apple" | "youtube" | "source", kind: "release" | "war" | "track", id: string, side?: "A" | "B") =>
+    request<{ url: string }>("POST", "/api/v1/out", { service, kind, id, ...(side ? { side } : {}) }),
   modRunDrops: () => request<{ ran: boolean; added: number; note: string }>("POST", "/api/v1/mod/drops/run", {}),
   updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>
