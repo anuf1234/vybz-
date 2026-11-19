@@ -1437,3 +1437,22 @@ export const subscription = pgTable(
     updatedAt: updatedAt(),
   },
 );
+
+/** Song of the Day, Song of the Week and Album of the Week, frozen when each period ends. */
+export const dropAward = pgTable(
+  "drop_award",
+  {
+    /** "SONG_DAY" | "SONG_WEEK" | "ALBUM_WEEK" */
+    award: text("award").notNull(),
+    /** "2026-11-19" for days, "2026-W47" for weeks. */
+    period: text("period").notNull(),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    /** { score, fires, wins, listens } at the time. */
+    stats: jsonb("stats").notNull(),
+    postId: text("post_id").references(() => post.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.award, t.period] }), index("drop_award_release_idx").on(t.releaseId)],
+);

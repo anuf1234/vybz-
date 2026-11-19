@@ -293,3 +293,56 @@ export interface WarChallenge {
   to: string;
   fromHandle: string | null;
 }
+
+// ── Song of the Day / Week, Album of the Week ──────────────────────────────
+
+/**
+ * How much each signal counts. Fires and This-or-That wins are fans
+ * voting; listens are people tapping out to hear it (one per person per
+ * release per period, so nobody can spam it).
+ */
+export const HEAT = { fire: 3, win: 2, listen: 1 } as const;
+
+export type DropAwardKind = "SONG_DAY" | "SONG_WEEK" | "ALBUM_WEEK";
+
+export const DROP_AWARDS: Record<DropAwardKind, { label: string; icon: string }> = {
+  SONG_DAY: { label: "Song of the Day", icon: "🎵" },
+  SONG_WEEK: { label: "Song of the Week", icon: "🔥" },
+  ALBUM_WEEK: { label: "Album of the Week", icon: "💿" },
+};
+
+export interface HeatStats {
+  score: number;
+  fires: number;
+  wins: number;
+  listens: number;
+}
+
+export function heatScore(s: Omit<HeatStats, "score">): number {
+  return s.fires * HEAT.fire + s.wins * HEAT.win + s.listens * HEAT.listen;
+}
+
+export interface HeatRow {
+  rank: number;
+  release: ReleaseView;
+  stats: HeatStats;
+}
+
+export interface DropAwardView {
+  award: DropAwardKind;
+  period: string;
+  release: ReleaseView;
+  stats: HeatStats;
+}
+
+export interface TopDropsResponse {
+  /** UTC day and ISO week being counted. */
+  day: string;
+  week: string;
+  /** Leaders so far (live): songs today, songs this week, albums and EPs this week. */
+  songsToday: HeatRow[];
+  songsWeek: HeatRow[];
+  albumsWeek: HeatRow[];
+  /** Past winners, newest first. */
+  history: DropAwardView[];
+}

@@ -1,5 +1,6 @@
 import type {
   ArtistFollowHit,
+  TopDropsResponse,
   DjLesson,
   ProStatus,
   RankedResponse,
@@ -436,6 +437,7 @@ export const api = {
   pro: () => request<ProStatus>("GET", "/api/v1/me/pro"),
   claimPro: (transactionId: string) => request<ProStatus>("POST", "/api/v1/me/pro/claim", { transactionId }),
   djLesson: (id: string) => request<DjLesson>("GET", `/api/v1/dj/lessons/${encodeURIComponent(id)}`),
+  topDrops: () => request<TopDropsResponse>("GET", "/api/v1/drops/top"),
   modRunDrops: () => request<{ ran: boolean; added: number; note: string }>("POST", "/api/v1/mod/drops/run", {}),
   updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>
