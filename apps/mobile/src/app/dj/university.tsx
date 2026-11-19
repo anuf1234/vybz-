@@ -22,6 +22,12 @@ export default function University() {
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }} refreshControl={<RefreshControl tintColor={color.violet} refreshing={uni.refreshing} onRefresh={() => void uni.reload()} />}>
       <Text style={type.small}>Each lesson: learn it, watch a demo, practise it in the studio, pass a quick quiz, earn XP.</Text>
+      {!u.pro ? (
+        <Pressable onPress={() => router.push("/pro")} style={({ pressed }) => [{ gap: 4, padding: space.md, borderRadius: radius.lg, borderWidth: 1, borderColor: color.violet, backgroundColor: color.surface2 }, pressed && { opacity: 0.85 }]} accessibilityRole="button" accessibilityLabel="Unlock every course with VYBZ Pro">
+          <Text style={[type.body, { fontWeight: "800" }]}>✨ Unlock every course with VYBZ Pro</Text>
+          <Text style={type.small}>The first two courses are free. Pro opens all {u.total}.</Text>
+        </Pressable>
+      ) : null}
       <View style={{ height: 8, borderRadius: 4, backgroundColor: color.surface3, overflow: "hidden" }} accessibilityLabel={`${u.completed} of ${u.total} courses complete`}>
         <View style={{ height: 8, width: `${(100 * u.completed) / u.total}%`, backgroundColor: color.win }} />
       </View>
@@ -31,10 +37,10 @@ export default function University() {
         return (
           <Pressable
             key={l.id}
-            onPress={() => router.push({ pathname: "/dj/lesson/[id]", params: { id: l.id } })}
+            onPress={() => (l.locked ? router.push("/pro") : router.push({ pathname: "/dj/lesson/[id]", params: { id: l.id } }))}
             style={({ pressed }) => [{ flexDirection: "row", gap: space.md, alignItems: "center", padding: space.md, borderRadius: radius.lg, borderWidth: 1, borderColor: p.completed ? color.win : color.line, backgroundColor: color.surface1 }, pressed && { opacity: 0.8 }]}
             accessibilityRole="button"
-            accessibilityLabel={`${l.order}. ${l.course}: ${l.title}${p.completed ? ", complete" : ""}`}
+            accessibilityLabel={`${l.order}. ${l.course}: ${l.title}${p.completed ? ", complete" : ""}${l.locked ? ", VYBZ Pro" : ""}`}
           >
             <Text style={{ fontSize: 28 }}>{l.icon}</Text>
             <View style={{ flex: 1, gap: 2 }}>
@@ -51,7 +57,7 @@ export default function University() {
                 ))}
               </View>
             </View>
-            <Text style={[type.small, { color: p.completed ? color.win : color.violetSoft, fontWeight: "700" }]}>{p.completed ? "✓" : `+${l.xp} XP`}</Text>
+            <Text style={[type.small, { color: p.completed ? color.win : color.violetSoft, fontWeight: "700" }]}>{l.locked ? "🔒 Pro" : p.completed ? "✓" : `+${l.xp} XP`}</Text>
           </Pressable>
         );
       })}

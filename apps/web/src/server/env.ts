@@ -36,6 +36,13 @@ const ServerEnvSchema = z.object({
   /** Spotify Web API app (developer.spotify.com): exact "Open in Spotify" links, and Spotify sign-in to save playlists. */
   SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
   SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),
+  /** App Store Server API key (App Store Connect → Users and Access → Integrations → In-App Purchase) to verify VYBZ Pro. */
+  APPLE_IAP_KEY_ID: z.string().min(1).optional(),
+  APPLE_IAP_ISSUER_ID: z.string().min(1).optional(),
+  /** The .p8 key's contents; `\n` escapes are accepted. */
+  APPLE_IAP_PRIVATE_KEY: z.string().min(1).optional(),
+  /** Comma-separated product ids for VYBZ Pro. */
+  PRO_PRODUCT_IDS: z.string().default("com.urexp.vybz.pro.monthly"),
   /** Enables the AI judge (Claude). */
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   AI_JUDGE_MODEL: z.string().min(1).default("claude-sonnet-5-5"),

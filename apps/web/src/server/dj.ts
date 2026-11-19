@@ -1,6 +1,8 @@
 import {
   DJ_BATTLE,
   DJ_LESSONS,
+  type DjLesson,
+  lessonIsFree,
   DJ_LIMITS,
   DJ_QUIZ_PASS,
   type DjBattleView,
@@ -17,6 +19,7 @@ import {
 } from "@vybz/core";
 import { type Database, type Executor, and, desc, eq, inArray, isNull, lte, newId, or, schema, sql } from "@vybz/db";
 import { checkAchievements } from "./achievements";
+import { isPro } from "./pro";
 import { type BattleDeps, ServiceError, type UserRow, usersById } from "./battles/service";
 import { createNotifications } from "./notifications";
 import { grant, systemIds } from "./progression";
@@ -200,14 +203,32 @@ function progressOf(r: ProgressRow | undefined): DjLessonProgress {
   };
 }
 
+/** Free lessons, or any lesson with VYBZ Pro. */
+export async function canTakeLesson(db: Executor, user: UserRow | null, lessonId: string): Promise<boolean> {
+  const lesson = djLesson(lessonId);
+  if (!lesson) return false;
+  if (lessonIsFree(lesson.order, DJ_LESSONS.map((l) => l.order))) return true;
+  return isPro(db, user);
+}
+
 export async function djUniversity(deps: BattleDeps, viewer: UserRow | null): Promise<DjUniversityResponse> {
   const user = requireUser(viewer);
-  const rows = await deps.db.select().from(schema.djLessonProgress).where(eq(schema.djLessonProgress.userId, user.id));
+  const [rows, pro] = await Promise.all([deps.db.select().from(schema.djLessonProgress).where(eq(schema.djLessonProgress.userId, user.id)), isPro(deps.db, user)]);
   const by = new Map(rows.map((r) => [r.lessonId, r]));
+  const orders = DJ_LESSONS.map((l) => l.order);
   const lessons = [...DJ_LESSONS]
     .sort((a, b) => a.order - b.order)
-    .map((l) => ({ id: l.id, course: l.course, order: l.order, title: l.title, icon: l.icon, summary: l.summary, xp: l.xp, coins: l.coins, progress: progressOf(by.get(l.id)) }));
-  return { lessons, completed: lessons.filter((l) => l.progress.completed).length, total: lessons.length };
+    .map((l) => ({ id: l.id, course: l.course, order: l.order, title: l.title, icon: l.icon, summary: l.summary, xp: l.xp, coins: l.coins, progress: progressOf(by.get(l.id)), locked: !pro && !lessonIsFree(l.order, orders) }));
+  return { lessons, completed: lessons.filter((l) => l.progress.completed).length, total: lessons.length, pro };
+}
+
+/** A lesson's full content (learn, demo, practice, quiz). Lessons past the free ones need VYBZ Pro. */
+export async function djLessonContent(deps: BattleDeps, viewer: UserRow | null, lessonId: string): Promise<DjLesson> {
+  const user = requireUser(viewer);
+  const lesson = djLesson(lessonId);
+  if (!lesson) throw new ServiceError(404, "NOT_FOUND");
+  if (!(await canTakeLesson(deps.db, user, lessonId))) throw new ServiceError(402, "PRO_REQUIRED", "This course is part of VYBZ Pro.");
+  return lesson;
 }
 
 /** Marks a step done; the lesson completes (and pays once) when all four are done and the quiz is passed. */
@@ -215,6 +236,7 @@ export async function djLessonStep(deps: BattleDeps, viewer: UserRow | null, les
   const user = requireUser(viewer);
   const lesson = djLesson(lessonId);
   if (!lesson) throw new ServiceError(404, "NOT_FOUND");
+  if (!(await canTakeLesson(deps.db, user, lessonId))) throw new ServiceError(402, "PRO_REQUIRED", "This course is part of VYBZ Pro.");
   const b = (body ?? {}) as { step?: unknown; answers?: unknown; check?: unknown };
   const now = new Date();
   const set: Partial<typeof schema.djLessonProgress.$inferInsert> = {};

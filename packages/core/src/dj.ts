@@ -715,9 +715,11 @@ export interface DjLessonProgress {
 }
 
 export interface DjUniversityResponse {
-  lessons: (Pick<DjLesson, "id" | "course" | "order" | "title" | "icon" | "summary" | "xp" | "coins"> & { progress: DjLessonProgress })[];
+  lessons: (Pick<DjLesson, "id" | "course" | "order" | "title" | "icon" | "summary" | "xp" | "coins"> & { progress: DjLessonProgress; locked: boolean })[];
   completed: number;
   total: number;
+  /** You have VYBZ Pro (all lessons unlocked). */
+  pro: boolean;
 }
 
 export interface DjLessonStepResult {

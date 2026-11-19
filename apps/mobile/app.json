@@ -45,6 +45,7 @@
       ],
       "expo-image",
       "expo-notifications",
+      "expo-iap",
       "./plugins/apple-sign-in-gate"
     ],
     "experiments": {

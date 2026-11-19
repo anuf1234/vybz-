@@ -74,6 +74,7 @@ export default function RootLayout() {
         <Stack.Screen name="drops/artists" options={{ title: "Artists" }} />
         <Stack.Screen name="verdict" options={{ title: "This or That" }} />
         <Stack.Screen name="ranked" options={{ title: "Ranked" }} />
+        <Stack.Screen name="pro" options={{ title: "VYBZ Pro", presentation: "modal" }} />
         <Stack.Screen name="tournaments/index" options={{ title: "Tournaments" }} />
         <Stack.Screen name="tournaments/[id]" options={{ title: "Tournament" }} />
         <Stack.Screen name="tournaments/new" options={{ title: "New tournament", presentation: "modal" }} />
