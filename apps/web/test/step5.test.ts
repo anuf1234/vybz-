@@ -80,7 +80,8 @@ describe.skipIf(!TEST_DB_URL)("step 5", () => {
       const bea = await h.db.select({ id: schema.battle.id }).from(schema.battle).where(and(eq(schema.battle.creatorId, u.bea!.id), eq(schema.battle.status, "OPEN_CHALLENGE")));
       expect(bea).toHaveLength(1);
       expect(await botTakeStaleQuick(deps)).toBe(0); // too soon
-      tick(BOT_AFTER_MS + 1000);
+      // Battles are stamped by the database clock, so leave room for setup time.
+      tick(BOT_AFTER_MS + 60_000);
       expect(await botTakeStaleQuick(noAi)).toBe(0); // no AI judge, no bot
       expect(await botTakeStaleQuick(deps)).toBe(1);
       const v = await getBattleView(deps, u.bea!, bea[0]!.id);

@@ -48,6 +48,20 @@ Sign up (email/password or Google), challenge someone (or post an open challenge
 
 **Onboarding.** New players get one clear path: pick up to three genres, play a first quick battle (against the VYBZ bot when the AI judge is set up, so it starts right away), then do today's trivia. Home shows a "Start here" card and hides the other modes until both are done; finishing pays a one-time welcome bonus (50 XP, 25 coins). Anyone can skip. People who joined before onboarding existed aren't sent through it.
 
+**Daily Drops, the daily push and the VYBZ streak.** Every day after 13:00 UTC the scheduler gathers new singles, EPs and albums from Apple Music (the album and song charts, Apple's editorial new-music playlists, and the latest release of artists people follow), keeps the ones released in the last two weeks, posts the day's biggest from the VYBZ account, opens an album war and a single war between the two biggest of each, and notifies people who follow those artists. Mixtapes are links people share (SoundCloud, Audiomack, YouTube, Bandcamp, Apple Music, Spotify, TIDAL…); moderators approve them under **Moderation → Mixtapes and drops**, which can also gather the day's drops on demand. VYBZ links out to listen and never hosts audio. Users can 🔥 drops (a little XP), follow artists, and start a war from any drop. **VYBZ streak:** one day for any battle pick, vote, war vote, trivia game or 🔥; held streak freezes cover missed days. Home's "Today on VYBZ" card shows the streak, today's drops and today's trivia. **Daily push:** one notification around lunchtime local time (12:00–14:00) for people active in the last two weeks.
+
+**Sharing.** Story (9:16) and wide cards for battles, wars, drops, the weekly chart, tournaments and ranks at `/card/<kind>/<id>`, plus landing pages with link previews for shared wars (`/war/<id>`), drops (`/drop/<id>`) and the chart (`/chart`). Cards fetch artwork server-side (https only) and draw no emoji.
+
+**Listening links and outbound plays.** Every "Listen" and "Spotify" tap goes through `/api/v1/out`, which resolves the URL from VYBZ's own records and counts the play by service. With `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` set, Spotify opens the exact release (otherwise a Spotify search), and people can link Spotify (link only, never a sign-up) to save the weekly chart as a private playlist. Add the redirect URL `https://<your domain>/api/auth/callback/spotify` in the Spotify developer dashboard.
+
+**Fan Verdict and the VYBZ Chart.** This or That pits two recent drops of the same kind; a release's Fan Verdict is its smoothed share of matchups won. The weekly chart ranks releases with 5+ matchups; on Monday last week's chart is frozen and posted.
+
+**Artists.** Artists claim their name by posting a one-time code from an official account; moderators verify under **Moderation → Artist profiles**. Every artist has a page (drops, followers, fires, Fan Verdict, war record); verified artists can challenge another artist to a war.
+
+**Ranked and tournaments.** Ranked quick battles match people by rating (never the bot), with Elo, placement games, six divisions and quarterly seasons. Staff build 8- or 16-song tournaments that run round by round (42 hours each).
+
+**Growth metrics.** **Moderation → Growth metrics**: daily/weekly/monthly active people, DAU/MAU, Day-1/7/30 retention by signup week, last week's activity, and plays sent to each streaming service.
+
 ### Music rules this code enforces
 
 - Metadata (what a song is) is kept separate from playback (how a given viewer may hear it). Playback is resolved per request and never stored.

@@ -168,6 +168,8 @@ export interface Streaks {
   play: Streak;
   /** Consecutive days with a finished daily trivia. */
   trivia: Streak;
+  /** Consecutive days with any battle pick, vote, war vote, trivia game or fired-up drop (freezes count). */
+  vybz: Streak;
 }
 
 /** Longest and trailing runs of consecutive YYYY-MM-DD days; the trailing run only counts if it reaches yesterday or today. */
@@ -269,7 +271,7 @@ export function battleReward(o: { won: boolean; roundsWon: number }): Reward {
   };
 }
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA" | "DJ_LESSON" | "DJ_BATTLE" | "PARTY" | "WAR_VOTE" | "ONBOARDING";
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA" | "DJ_LESSON" | "DJ_BATTLE" | "PARTY" | "WAR_VOTE" | "ONBOARDING" | "DROP_FIRE" | "VERDICT" | "TOURNAMENT_VOTE";
 
 export interface WalletEntry {
   id: string;

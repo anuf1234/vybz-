@@ -1,3 +1,4 @@
+import { recordActivity } from "./vybz-streak";
 import {
   GENRE_KEYS,
   TRIVIA,
@@ -441,6 +442,7 @@ async function recordAnswer(deps: BattleDeps, opts: TriviaOptions, user: UserRow
 /** XP and coins for a finished game, then badge checks. Daily pays once per day; practice pays for a few games a day. */
 async function payOut(deps: BattleDeps, user: UserRow, play: PlayRow, set: SetRow): Promise<TriviaResult["badges"]> {
   if ((await systemIds(deps.db, [user.id])).size) return [];
+  await recordActivity(deps.db, user.id);
   try {
     if (set.mode === "DAILY") {
       await grant(deps.db, user.id, "TRIVIA", `daily:${set.day}`, triviaReward("DAILY", play.correct, play.total));

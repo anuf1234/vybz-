@@ -17,6 +17,18 @@ export function ProfileBody({ profile, now, actions }: { profile: ProfileView; n
         <Avatar name={user.displayName} image={user.image} size={72} ring={frameColor(user.frame) ?? color.violet} />
         <Text style={type.title}>{user.displayName}</Text>
         <Text style={type.small}>@{user.handle}</Text>
+        {profile.artist ? (
+          <Pressable onPress={() => router.push({ pathname: "/artist/[name]", params: { name: profile.artist!.name } })} accessibilityRole="link" accessibilityLabel={`Verified artist ${profile.artist.name}. Open artist page.`}>
+            <Text style={[type.small, { color: color.violetSoft, fontWeight: "800" }]}>✓ Verified artist: {profile.artist.name} ›</Text>
+          </Pressable>
+        ) : null}
+        {profile.rank ? (
+          <Pressable onPress={() => router.push("/ranked")} accessibilityRole="link" accessibilityLabel={`Ranked ${profile.rank.divisionLabel}, ${profile.rank.rating}`}>
+            <Text style={[type.small, { fontWeight: "800", color: color.text }]}>
+              {profile.rank.icon} {profile.rank.placement ? "Placement" : profile.rank.divisionLabel} · {profile.rank.rating}
+            </Text>
+          </Pressable>
+        ) : null}
         <View style={styles.counts}>
           <Count label="Followers" value={profile.social.followers} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "followers" } })} />
           <Count label="Following" value={profile.social.following} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "following" } })} />

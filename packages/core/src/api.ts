@@ -302,6 +302,8 @@ export interface ConfigResponse {
   giphy: { apiKey: string } | null;
   /** Social sign-in providers set up on this server. */
   signIn: { google: boolean; facebook: boolean; tiktok: boolean; apple: boolean };
+  /** Spotify is set up: exact links, and saving playlists to a linked Spotify. Optional for older servers. */
+  spotify?: boolean;
 }
 
 export interface ListenRequest {
@@ -338,6 +340,10 @@ export interface ProfileView {
     /** Null when signed out or it's you. */
     viewer: { follows: boolean; followedBy: boolean; blocked: boolean; canMessage: boolean } | null;
   };
+  /** Verified artist behind this account. */
+  artist?: { name: string } | null;
+  /** This season's ranked standing, once they've played a ranked battle. */
+  rank?: { rating: number; divisionLabel: string; icon: string; placement: boolean } | null;
 }
 
 export interface ApiError {
@@ -406,7 +412,11 @@ export type NotificationType =
   | "STREAK_REMINDER"
   | "COMMENT_LIKED"
   | "DJ_BATTLE"
-  | "WAR_RESULT";
+  | "WAR_RESULT"
+  | "ARTIST_DROP"
+  | "RANKED"
+  | "TOURNAMENT"
+  | "DAILY_DIGEST";
 
 export interface NotificationView {
   id: string;
@@ -638,6 +648,8 @@ export interface QuickBattleRequest {
   decade?: number | null;
   /** Skip the wait and play the VYBZ bot (only when the AI judge is set up). */
   vsBot?: boolean;
+  /** Ranked: matched by rating, result moves both ratings, never the bot. */
+  ranked?: boolean;
 }
 
 export interface QuickBattleResponse {

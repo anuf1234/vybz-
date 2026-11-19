@@ -4,6 +4,7 @@ import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { BattleCard } from "@/components/battle-card";
 import { DailyReward } from "@/components/daily-reward";
 import { StartHere } from "@/components/start-here";
+import { TodayCard } from "@/components/today-card";
 import { color, space, type } from "@/components/theme";
 import { Button, EmptyState, ErrorBanner, Loading, SectionTitle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -62,8 +63,14 @@ export default function Home() {
           </Link>
         </View>
       ) : null}
+      {signedIn && !onboarding ? <TodayCard key={`today-${session.data?.user.id}`} /> : null}
       {!onboarding ? (
         <>
+          {!signedIn ? (
+            <Link href="/drops" asChild>
+              <Button title="🆕 Daily Drops: new music today" kind="secondary" />
+            </Link>
+          ) : null}
           <View style={{ flexDirection: "row", gap: space.sm }}>
             <Link href="/dj" asChild>
               <Button title="🎧 DJ Vybz" kind="secondary" style={{ flex: 1 }} />
@@ -75,6 +82,22 @@ export default function Home() {
           <Link href="/wars" asChild>
             <Button title="💿 Album & Single Wars" kind="secondary" />
           </Link>
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <Link href="/ranked" asChild>
+              <Button title="🏆 Ranked" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+            <Link href="/tournaments" asChild>
+              <Button title="🗂️ Tournaments" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+          </View>
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <Link href="/verdict" asChild>
+              <Button title="🆚 This or That" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+            <Link href="/chart" asChild>
+              <Button title="📊 VYBZ Chart" kind="secondary" style={{ flex: 1 }} />
+            </Link>
+          </View>
         </>
       ) : null}
       {signedIn && !onboarding ? <DailyReward key={session.data?.user.id} /> : null}

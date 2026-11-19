@@ -3,13 +3,16 @@ import type { WarTrack, WarView } from "@vybz/core";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, sideColor, space, type } from "@/components/theme";
 import { Button, Card, ErrorBanner, Loading } from "@/components/ui";
 import { Cover } from "@/components/war-card";
 import { ApiRequestError, api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 import { useResource } from "@/lib/use-resource";
+import { API_URL } from "@/lib/config";
+import { shareMenu } from "@/lib/share-card";
+import { listenOn } from "@/lib/listen";
 
 /** One war: vote each category, then track by track. Counts show once you've voted in a category. */
 export default function War() {
@@ -97,7 +100,13 @@ export default function War() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }} refreshControl={<RefreshControl tintColor={color.violet} refreshing={res.refreshing} onRefresh={() => void res.reload()} />}>
-      <Stack.Screen options={{ title: w.kind === "ALBUM" ? "Album war" : "Single war" }} />
+      <Stack.Screen options={{ title: w.challenge ? "Artist challenge" : w.kind === "ALBUM" ? "Album war" : "Single war" }} />
+      {w.challenge ? (
+        <Card style={{ borderColor: color.violet }}>
+          <Text style={[type.body, { fontWeight: "800", textAlign: "center" }]}>⚔️ {w.challenge.from} called out {w.challenge.to}</Text>
+          <Text style={[type.small, { textAlign: "center" }]}>An artist challenge. The fans decide.</Text>
+        </Card>
+      ) : null}
       <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
         {(["A", "B"] as const).map((s) => {
           const x = s === "A" ? w.a : w.b;
@@ -112,11 +121,16 @@ export default function War() {
                 {x.artistName}
                 {x.releaseYear ? ` · ${x.releaseYear}` : ""}
               </Text>
-              {x.externalUrl ? (
-                <Pressable onPress={() => void Linking.openURL(x.externalUrl!)} hitSlop={6}>
-                  <Text style={[type.small, { color: color.violetSoft }]}>Listen ↗</Text>
+              <View style={{ flexDirection: "row", gap: space.md }}>
+                {x.externalUrl ? (
+                  <Pressable onPress={() => void listenOn("source", "war", w.id, s)} hitSlop={6} accessibilityRole="link" accessibilityLabel={`Listen to ${x.title}`}>
+                    <Text style={[type.small, { color: color.violetSoft }]}>Listen ↗</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable onPress={() => void listenOn("spotify", "war", w.id, s)} hitSlop={6} accessibilityRole="link" accessibilityLabel={`${x.title} on Spotify`}>
+                  <Text style={[type.small, { color: color.violetSoft }]}>Spotify ↗</Text>
                 </Pressable>
-              ) : null}
+              </View>
             </View>
           );
         })}
@@ -179,7 +193,19 @@ export default function War() {
         </View>
       ) : null}
 
-      <Button title="Share this war" kind="secondary" onPress={() => void Share.share({ message: `${w.title}: which wins? Vote on VYBZ.` })} />
+      <Button
+        title="Share this war"
+        kind="secondary"
+        onPress={() =>
+          shareMenu({
+            kind: "war",
+            id: w.id,
+            title: "Share this war",
+            message: w.status === "CLOSED" ? (w.winner === "DRAW" ? `${w.title} ended dead even on VYBZ.` : `${(w.winner === "A" ? w.a : w.b).title} won "${w.title}" on VYBZ.`) : `${w.title}: which wins? Vote on VYBZ.`,
+            url: `${API_URL}/war/${w.id}`,
+          })
+        }
+      />
     </ScrollView>
   );
 }

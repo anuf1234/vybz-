@@ -182,6 +182,8 @@ export const battle = pgTable(
     dailyDate: text("daily_date").unique(),
     /** An open challenge from Quick Battle: anyone may take it, and the VYBZ bot does if nobody does. */
     quickMatch: boolean("quick_match").notNull().default(false),
+    /** Ranked quick battle: players are matched by rating and the result moves their ratings. Never the bot. */
+    ranked: boolean("ranked").notNull().default(false),
     /** When the scheduler next needs to look at this battle. */
     nextDeadlineAt: ts("next_deadline_at"),
     /** Optimistic lock for state transitions. */
@@ -1122,6 +1124,8 @@ export const war = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     closesAt: ts("closes_at").notNull(),
     winner: text("winner", { enum: ["A", "B", "DRAW"] }),
+    /** Artist challenge: the challenging artist (side A) and who they called out (side B). */
+    challenge: jsonb("challenge"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1148,4 +1152,262 @@ export const warVote = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.warId, t.voterId, t.category] }), index("war_vote_created_idx").on(t.category, t.createdAt)],
+);
+
+// ── Daily Drops ────────────────────────────────────────────────────────────
+
+/** A new single, EP, album or mixtape. Provider releases are snapshots; mixtapes are submitted links. VYBZ never hosts audio. */
+export const release = pgTable(
+  "release",
+  {
+    id: text("id").primaryKey(),
+    /** APPLE_MUSIC, VYBZ_DEMO, … or SUBMISSION for mixtape links. */
+    provider: text("provider").notNull(),
+    /** The provider's album id; for submissions, the normalized link. */
+    externalId: text("external_id").notNull(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    artistName: text("artist_name").notNull(),
+    artworkUrl: text("artwork_url"),
+    externalUrl: text("external_url"),
+    releaseDate: text("release_date"),
+    genres: text("genres").array().notNull().default(sql`'{}'::text[]`),
+    trackCount: integer("track_count"),
+    source: text("source").notNull(),
+    status: text("status").notNull().default("LIVE"),
+    /** UTC day (YYYY-MM-DD) it became a drop. */
+    dropDay: text("drop_day").notNull(),
+    /** How high it ranked when found (lower is bigger); orders the daily post. */
+    rank: integer("rank").notNull().default(1000),
+    submittedById: text("submitted_by_id").references(() => user.id, { onDelete: "set null" }),
+    note: text("note"),
+    warId: text("war_id").references(() => war.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("release_provider_uq").on(t.provider, t.externalId),
+    index("release_drop_idx").on(t.status, t.dropDay, t.rank),
+    index("release_artist_idx").on(t.artistName),
+  ],
+);
+
+/** 🔥 on a drop. */
+export const releaseFire = pgTable(
+  "release_fire",
+  {
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.releaseId, t.userId] }), index("release_fire_user_idx").on(t.userId, t.createdAt)],
+);
+
+/** Artists someone follows for new-release alerts. */
+export const artistFollow = pgTable(
+  "artist_follow",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    artworkUrl: text("artwork_url"),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.provider, t.externalId] }), index("artist_follow_artist_idx").on(t.provider, t.externalId)],
+);
+
+/** The day's drops run (once per UTC day). */
+export const dropRun = pgTable("drop_run", {
+  day: text("day").primaryKey(),
+  postId: text("post_id").references(() => post.id, { onDelete: "set null" }),
+  found: integer("found").notNull().default(0),
+  note: text("note"),
+  createdAt: createdAt(),
+});
+
+/** Days someone did something that counts for the VYBZ streak, in their time zone. */
+export const activityDay = pgTable(
+  "activity_day",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    /** A missed day covered by a streak freeze. */
+    frozen: boolean("frozen").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+// ── Outbound plays ─────────────────────────────────────────────────────────
+
+/** Taps out to a streaming service (Spotify, Apple Music, YouTube, a mixtape's host). Counted for the analytics. */
+export const outboundClick = pgTable(
+  "outbound_click",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    /** Anonymous viewer key for guests. */
+    viewerKey: text("viewer_key"),
+    service: text("service").notNull(),
+    kind: text("kind").notNull(),
+    ref: text("ref").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("outbound_created_idx").on(t.createdAt), index("outbound_service_idx").on(t.service, t.createdAt)],
+);
+
+/** Resolved links (e.g. a release's Spotify page), so each is looked up once. */
+export const linkCache = pgTable("link_cache", {
+  key: text("key").primaryKey(),
+  url: text("url"),
+  createdAt: createdAt(),
+});
+
+// ── Fan Verdict ────────────────────────────────────────────────────────────
+
+/** One "this or that" pick between two drops. a/b are stored in id order so a pair is judged once per person. */
+export const releaseDuel = pgTable(
+  "release_duel",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    aId: text("a_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    bId: text("b_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    winnerId: text("winner_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.aId, t.bId] }), index("release_duel_a_idx").on(t.aId), index("release_duel_b_idx").on(t.bId), index("release_duel_created_idx").on(t.createdAt)],
+);
+
+/** Published weekly charts (frozen on Monday), so "last week's #1" never changes. */
+export const chartWeek = pgTable("chart_week", {
+  week: text("week").primaryKey(),
+  /** Ranked rows: [{ releaseId, rank, wins, games, fires }]. */
+  rows: jsonb("rows").notNull(),
+  postId: text("post_id").references(() => post.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+});
+
+// ── Artists ────────────────────────────────────────────────────────────────
+
+/** An artist's claimed VYBZ profile. Verified by a moderator from a proof link (an official post showing the code). */
+export const artistProfile = pgTable(
+  "artist_profile",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** As it appears on releases. */
+    name: text("name").notNull(),
+    /** lower-cased name, one verified profile per artist name. */
+    nameKey: text("name_key").notNull(),
+    provider: text("provider"),
+    externalId: text("external_id"),
+    bio: text("bio"),
+    /** { instagram?, tiktok?, x?, youtube?, website? } as https URLs. */
+    links: jsonb("links").notNull().default(sql`'{}'::jsonb`),
+    status: text("status").notNull().default("PENDING"),
+    /** The code the artist posts from an official account. */
+    code: text("code").notNull(),
+    proofUrl: text("proof_url").notNull(),
+    reviewedById: text("reviewed_by_id").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: ts("reviewed_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("artist_profile_verified_uq").on(t.nameKey).where(sql`${t.status} = 'VERIFIED'`), index("artist_profile_status_idx").on(t.status)],
+);
+
+// ── Ranked and tournaments ─────────────────────────────────────────────────
+
+/** Ranked rating for the current season (soft-reset each quarter). */
+export const userRating = pgTable(
+  "user_rating",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    season: text("season").notNull(),
+    rating: integer("rating").notNull().default(1000),
+    peak: integer("peak").notNull().default(1000),
+    games: integer("games").notNull().default(0),
+    wins: integer("wins").notNull().default(0),
+    losses: integer("losses").notNull().default(0),
+    draws: integer("draws").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("user_rating_board_idx").on(t.season, t.rating)],
+);
+
+/** Ranked battles already applied to ratings (so a result counts once). */
+export const ratedBattle = pgTable("rated_battle", {
+  battleId: text("battle_id")
+    .primaryKey()
+    .references(() => battle.id, { onDelete: "cascade" }),
+  /** { [userId]: { before, after } } */
+  changes: jsonb("changes").notNull(),
+  createdAt: createdAt(),
+});
+
+/** A song bracket (8 or 16 songs) voted through round by round over about a week. */
+export const tournament = pgTable(
+  "tournament",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    description: text("description"),
+    creatorId: text("creator_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Seeded entries: [{ catalogId, trackId, title, artistName, artworkUrl, previewUrl, externalUrl }]. */
+    entries: jsonb("entries").notNull(),
+    /** Index of the current round (0 = first). */
+    round: integer("round").notNull().default(0),
+    /** Entry indexes still in, in bracket order. */
+    alive: jsonb("alive").notNull(),
+    /** Finished rounds: [[{ a, b, votesA, votesB, winner }]]. */
+    results: jsonb("results").notNull().default(sql`'[]'::jsonb`),
+    status: text("status").notNull().default("LIVE"),
+    roundEndsAt: ts("round_ends_at").notNull(),
+    champion: integer("champion"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("tournament_status_idx").on(t.status, t.roundEndsAt)],
+);
+
+export const tournamentVote = pgTable(
+  "tournament_vote",
+  {
+    tournamentId: text("tournament_id")
+      .notNull()
+      .references(() => tournament.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    round: integer("round").notNull(),
+    /** Match index within the round. */
+    match: integer("match").notNull(),
+    /** Entry index voted for. */
+    entry: integer("entry").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.tournamentId, t.userId, t.round, t.match] })],
 );

@@ -113,6 +113,41 @@
       "when": 1795044951774,
       "tag": "0015_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795046072861,
+      "tag": "0016_daily_drops",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795048116484,
+      "tag": "0017_outbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795048173989,
+      "tag": "0018_fan_verdict",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795048686621,
+      "tag": "0019_artists",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1795049001419,
+      "tag": "0020_ranked_tournaments",
+      "breakpoints": true
     }
   ]
 }

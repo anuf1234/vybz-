@@ -18,6 +18,7 @@ import { type BattleDeps, ServiceError, type UserRow, usersById } from "./battle
 import { CatalogError, ensureTrack, parseCatalogId } from "./catalog";
 import { createNotifications } from "./notifications";
 import { grant, systemIds } from "./progression";
+import { recordActivity } from "./vybz-streak";
 
 /**
  * Album and Single Wars. Sides are snapshots of the provider's album (with
@@ -115,7 +116,7 @@ async function resolveSide(db: Executor, deps: BattleDeps, kind: WarKind, ref: u
   }
 }
 
-export async function createWar(deps: BattleDeps, viewer: UserRow | null, body: unknown): Promise<WarView> {
+export async function createWar(deps: BattleDeps, viewer: UserRow | null, body: unknown, opts: { challenge?: WarView["challenge"] } = {}): Promise<WarView> {
   const user = requireUser(viewer);
   const b = (body ?? {}) as { kind?: unknown; a?: unknown; b?: unknown };
   if (b.kind !== undefined && b.kind !== "ALBUM" && b.kind !== "SINGLE") throw new ServiceError(400, "INVALID_KIND");
@@ -142,6 +143,7 @@ export async function createWar(deps: BattleDeps, viewer: UserRow | null, body: 
       aRef: a.ref,
       bRef: bb.ref,
       creatorId: user.id,
+      challenge: opts.challenge ?? null,
       closesAt: new Date(Date.now() + WARS.durationDays * 86_400_000),
     })
     .onConflictDoNothing()
@@ -196,6 +198,7 @@ async function warView(deps: BattleDeps, viewer: UserRow | null, w: WarRow): Pro
       return { index: i, a: a.tracks[i]!, b: b.tracks[i]!, votes: show(cat) ? { a: count(cat, "A"), b: count(cat, "B") } : null, mine: myVote(cat) };
     }),
     winner: (w.winner as WarView["winner"]) ?? null,
+    challenge: (w.challenge as WarView["challenge"]) ?? null,
     createdAt: w.createdAt.toISOString(),
   };
 }
@@ -234,6 +237,7 @@ export async function voteWar(deps: BattleDeps, viewer: UserRow | null, id: stri
       .from(l)
       .where(and(eq(l.userId, user.id), eq(l.reason, "WAR_VOTE"), gte(l.createdAt, new Date(Date.now() - 86_400_000))))) as [{ today: number }];
     if (today < WARS.voteXpPerDay) await grant(deps.db, user.id, "WAR_VOTE", id, { xp: WARS.voteXp, coins: 0 });
+    await recordActivity(deps.db, user.id);
   }
   return warView(deps, user, w);
 }
@@ -265,6 +269,7 @@ export async function listWars(deps: BattleDeps, viewer: UserRow | null, sp: URL
     closesAt: r.closesAt.toISOString(),
     winner: (r.winner as WarListItem["winner"]) ?? null,
     voted: voted.has(r.id),
+    challenge: (r.challenge as WarListItem["challenge"]) ?? null,
   }));
   // Live wars: busiest first.
   if (status === "OPEN") items.sort((x, y) => y.voters - x.voters || (x.closesAt < y.closesAt ? 1 : -1));

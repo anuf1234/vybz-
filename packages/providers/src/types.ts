@@ -181,6 +181,8 @@ export interface AlbumCandidate {
   externalUrl?: string;
   trackCount?: number;
   isSingle?: boolean;
+  /** Release format when the provider says (Apple's " - Single" / " - EP" suffixes). */
+  format?: "SINGLE" | "EP" | "ALBUM";
   tracks?: TrackCandidate[];
 }
 
@@ -190,6 +192,21 @@ export interface AlbumProvider {
   searchAlbums(query: string, opts: SearchOptions): Promise<AlbumCandidate[]>;
   getAlbum(externalId: string, opts: SearchOptions): Promise<AlbumCandidate | null>;
   topAlbums(opts: SearchOptions): Promise<AlbumCandidate[]>;
+}
+
+/**
+ * New releases. Results are ordered by prominence (biggest first) and may
+ * include older records that are still charting; callers filter by date.
+ */
+export interface ReleaseProvider {
+  readonly kind: ProviderKind;
+  newReleases(opts: SearchOptions): Promise<AlbumCandidate[]>;
+  /** The artist's most recent release, or null. */
+  latestRelease(artistId: string, opts: SearchOptions): Promise<AlbumCandidate | null>;
+}
+
+export function isReleaseProvider(p: unknown): p is ReleaseProvider {
+  return typeof p === "object" && p !== null && "newReleases" in p && "latestRelease" in p;
 }
 
 export function isAlbumProvider(p: unknown): p is AlbumProvider {

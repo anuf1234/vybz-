@@ -33,6 +33,9 @@ const ServerEnvSchema = z.object({
   VYBZ_DEMO_CATALOG: bool(false),
   /** Guess the song plays official provider previews. Off until you've confirmed your provider terms allow it in a game. */
   TRIVIA_AUDIO_PREVIEWS: bool(false),
+  /** Spotify Web API app (developer.spotify.com): exact "Open in Spotify" links, and Spotify sign-in to save playlists. */
+  SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
+  SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),
   /** Enables the AI judge (Claude). */
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   AI_JUDGE_MODEL: z.string().min(1).default("claude-sonnet-5-5"),
@@ -74,4 +77,9 @@ function isProductionDeployment(env: ServerEnv): boolean {
   if (process.env.VERCEL_ENV === "production") return true;
   const host = env.BETTER_AUTH_URL ? new URL(env.BETTER_AUTH_URL).hostname : "";
   return host === "urexp.com" || host === "www.urexp.com";
+}
+
+/** For tests that change the environment. */
+export function resetServerEnv(): void {
+  cached = null;
 }

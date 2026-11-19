@@ -40,7 +40,7 @@ export function WarCard({ w }: { w: WarListItem }) {
         {side("B")}
       </View>
       <Text style={[type.small, { textAlign: "center" }]}>
-        {w.kind === "ALBUM" ? "💿 Album war" : "🎵 Single war"} · {w.voters} voter{w.voters === 1 ? "" : "s"}
+        {w.challenge ? `⚔️ ${w.challenge.from} called out ${w.challenge.to}` : w.kind === "ALBUM" ? "💿 Album war" : "🎵 Single war"} · {w.voters} voter{w.voters === 1 ? "" : "s"}
         {w.status === "OPEN" ? (w.voted ? " · you voted" : " · vote now") : w.winner === "DRAW" ? " · draw" : ""}
       </Text>
     </Pressable>
