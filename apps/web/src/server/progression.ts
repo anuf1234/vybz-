@@ -260,6 +260,8 @@ export async function wallet(db: Executor, user: UserRow | null, cursor?: string
         const item = shopItem(r.ref.split(":")[0]);
         return { label: `Bought ${item ? `${item.icon} ${item.title}` : "an item"}`, link: "/shop" };
       }
+      case "VERDICT":
+        return { label: "Picked in This or That", link: "/verdict" };
       case "DROP_FIRE":
         return { label: "🔥 Fired up a drop", link: "/drops" };
       case "ONBOARDING":

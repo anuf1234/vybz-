@@ -68,6 +68,7 @@ export function DropCard({ drop, signedIn, onChange }: { drop: ReleaseView; sign
             {d.releaseDate ? ` · ${d.releaseDate}` : ""}
           </Text>
           {d.submittedBy ? <Text style={type.small}>Shared by @{d.submittedBy.handle}</Text> : null}
+          {d.verdict.score !== null ? <Text style={[type.small, { color: color.violetSoft, fontWeight: "700" }]}>Fan Verdict {d.verdict.score}% · {d.verdict.games} matchups</Text> : null}
         </View>
       </View>
       <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>

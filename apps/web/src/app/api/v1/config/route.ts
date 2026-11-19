@@ -29,6 +29,7 @@ export const GET = route(async () => {
       tiktok: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET),
       apple: env.APPLE_SIGN_IN,
     },
+    spotify: Boolean(env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET),
   };
   return NextResponse.json(body, { headers: { "Cache-Control": "public, max-age=300" } });
 });

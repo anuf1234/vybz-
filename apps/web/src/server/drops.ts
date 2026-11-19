@@ -7,11 +7,13 @@ import {
   type ReleaseSource,
   type ReleaseView,
   type TodayView,
+  VERDICT,
   isFresh,
+  verdictScore,
   mixtapeHost,
   releaseKind,
 } from "@vybz/core";
-import { type Executor, and, asc, desc, eq, gte, inArray, isNotNull, newId, or, schema, sql } from "@vybz/db";
+import { type Executor, and, asc, desc, eq, gte, inArray, isNotNull, lt, newId, or, schema, sql } from "@vybz/db";
 import { type AlbumCandidate, type AlbumProvider, type BrowseProvider, type ReleaseProvider, isAlbumProvider, isBrowseProvider, isReleaseProvider } from "@vybz/providers";
 import { isStaff } from "./battles/access";
 import { type BattleDeps, ServiceError, type UserRow } from "./battles/service";
@@ -31,7 +33,7 @@ import { createWar } from "./wars";
  * approve them. VYBZ only links out; it never hosts audio.
  */
 
-type ReleaseRow = typeof schema.release.$inferSelect;
+export type ReleaseRow = typeof schema.release.$inferSelect;
 
 const utcDay = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -54,6 +56,7 @@ function providerOf<T extends { kind: string }>(deps: BattleDeps, test: (p: unkn
 const releaseProvider = (deps: BattleDeps) => providerOf<ReleaseProvider>(deps, isReleaseProvider);
 const browseProvider = (deps: BattleDeps) => providerOf<BrowseProvider>(deps, isBrowseProvider);
 
+export const utcDayOf = (d: Date) => d.toISOString().slice(0, 10);
 const kindOf = (a: AlbumCandidate): ReleaseKind => a.format ?? releaseKind(a);
 const norm = (s: string) => s.trim().toLowerCase();
 
@@ -244,10 +247,32 @@ async function latestDropDay(db: Executor): Promise<string | null> {
   return row?.day ?? null;
 }
 
-async function views(db: Executor, viewer: UserRow | null, rows: ReleaseRow[]): Promise<ReleaseView[]> {
+/** Wins and games per release from this-or-that matchups (all time). */
+export async function verdictStats(db: Executor, ids: string[], since?: Date, until?: Date): Promise<Map<string, { wins: number; games: number }>> {
+  const out = new Map<string, { wins: number; games: number }>();
+  if (!ids.length) return out;
+  const d = schema.releaseDuel;
+  const conds = [or(inArray(d.aId, ids), inArray(d.bId, ids))];
+  if (since) conds.push(gte(d.createdAt, since));
+  if (until) conds.push(lt(d.createdAt, until));
+  const rows = await db.select({ a: d.aId, b: d.bId, w: d.winnerId }).from(d).where(and(...conds));
+  const want = new Set(ids);
+  for (const r of rows) {
+    for (const id of [r.a, r.b]) {
+      if (!want.has(id)) continue;
+      const v = out.get(id) ?? { wins: 0, games: 0 };
+      v.games++;
+      if (r.w === id) v.wins++;
+      out.set(id, v);
+    }
+  }
+  return out;
+}
+
+export async function views(db: Executor, viewer: UserRow | null, rows: ReleaseRow[]): Promise<ReleaseView[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
-  const [fires, mine, follows, submitters, openWars] = await Promise.all([
+  const [fires, mine, follows, submitters, openWars, verdicts] = await Promise.all([
     db
       .select({ id: schema.releaseFire.releaseId, n: sql<number>`count(*)::int` })
       .from(schema.releaseFire)
@@ -268,6 +293,7 @@ async function views(db: Executor, viewer: UserRow | null, rows: ReleaseRow[]): 
       const w = [...new Set(rows.flatMap((r) => (r.warId ? [r.warId] : [])))];
       return w.length ? db.select({ id: schema.war.id }).from(schema.war).where(and(inArray(schema.war.id, w), eq(schema.war.status, "OPEN"))) : Promise.resolve([]);
     })(),
+    verdictStats(db, ids),
   ]);
   const followed = new Set(follows.map((f) => norm(f.name)));
   const open = new Set(openWars.map((w) => w.id));
@@ -291,6 +317,10 @@ async function views(db: Executor, viewer: UserRow | null, rows: ReleaseRow[]): 
       warId: r.warId && open.has(r.warId) ? r.warId : null,
       submittedBy: by?.handle ? { handle: by.handle, displayName: by.name } : null,
       status: r.status as ReleaseView["status"],
+      verdict: (() => {
+        const v = verdicts.get(r.id) ?? { wins: 0, games: 0 };
+        return { score: v.games >= VERDICT.minGames ? verdictScore(v.wins, v.games) : null, games: v.games };
+      })(),
     };
   });
 }

@@ -127,6 +127,13 @@
       "when": 1795048116484,
       "tag": "0017_outbound",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795048173989,
+      "tag": "0018_fan_verdict",
+      "breakpoints": true
     }
   ]
 }

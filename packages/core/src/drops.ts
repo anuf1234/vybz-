@@ -106,6 +106,8 @@ export interface ReleaseView {
   warId: string | null;
   submittedBy: { handle: string; displayName: string } | null;
   status: ReleaseStatus;
+  /** Fan Verdict from this-or-that matchups. */
+  verdict: VerdictView;
 }
 
 export interface DropsResponse {
@@ -146,4 +148,78 @@ export interface TodayView {
   drops: { today: number; week: number; top: ReleaseView[] };
   trivia: { done: boolean };
   streak: VybzStreak;
+}
+
+// ── Fan Verdict and the weekly chart ───────────────────────────────────────
+
+export const VERDICT = {
+  /** Matchups before a release shows a verdict or makes the chart. */
+  minGames: 5,
+  /** Smoothing: the score starts at 50% and moves with evidence. */
+  prior: 2,
+  xp: 1,
+  xpPerDay: 20,
+  /** Drops from this many days back can be matched up. */
+  poolDays: 14,
+  chartSize: 25,
+} as const;
+
+/** Smoothed win share, 0–100 (starts at 50, moves with evidence). */
+export function verdictScore(wins: number, games: number): number {
+  return Math.round(((wins + VERDICT.prior) / (games + 2 * VERDICT.prior)) * 100);
+}
+
+/** ISO week like "2026-W47" for a date (UTC). */
+export function isoWeek(d: Date): string {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const y = t.getUTCFullYear();
+  const week = Math.ceil(((t.getTime() - Date.UTC(y, 0, 1)) / 86_400_000 + 1) / 7);
+  return `${y}-W${String(week).padStart(2, "0")}`;
+}
+
+/** Monday 00:00 UTC of an ISO week. */
+export function weekStart(week: string): Date {
+  const m = /^(\d{4})-W(\d{2})$/.exec(week);
+  if (!m) throw new Error("bad week");
+  const y = Number(m[1]);
+  const w = Number(m[2]);
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const monday = new Date(jan4.getTime() - ((jan4.getUTCDay() || 7) - 1) * 86_400_000);
+  return new Date(monday.getTime() + (w - 1) * 7 * 86_400_000);
+}
+
+export interface VerdictView {
+  /** Smoothed share of matchups won (0–100); null until minGames. */
+  score: number | null;
+  games: number;
+}
+
+export interface VerdictPair {
+  a: ReleaseView;
+  b: ReleaseView;
+  /** Pairs judged today, for the progress line. */
+  judgedToday: number;
+}
+
+export interface ChartRow {
+  rank: number;
+  /** Last week's rank, null if new. */
+  lastRank: number | null;
+  release: ReleaseView;
+  score: number;
+  wins: number;
+  games: number;
+}
+
+export interface ChartResponse {
+  week: string;
+  /** "Nov 16 – 22". */
+  label: string;
+  /** Frozen (a past week) or still moving (this week). */
+  final: boolean;
+  rows: ChartRow[];
+  prevWeek: string | null;
+  nextWeek: string | null;
 }

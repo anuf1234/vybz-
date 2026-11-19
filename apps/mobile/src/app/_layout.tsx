@@ -72,6 +72,8 @@ export default function RootLayout() {
         <Stack.Screen name="drops/index" options={{ title: "Daily Drops" }} />
         <Stack.Screen name="drops/submit" options={{ title: "Share a mixtape", presentation: "modal" }} />
         <Stack.Screen name="drops/artists" options={{ title: "Artists" }} />
+        <Stack.Screen name="verdict" options={{ title: "This or That" }} />
+        <Stack.Screen name="chart/index" options={{ title: "The VYBZ Chart" }} />
         <Stack.Screen name="party/index" options={{ title: "Party Mode" }} />
         <Stack.Screen name="party/play" options={{ title: "Party" }} />
         <Stack.Screen name="dj/index" options={{ title: "DJ Vybz" }} />

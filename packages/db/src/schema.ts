@@ -1266,3 +1266,35 @@ export const linkCache = pgTable("link_cache", {
   url: text("url"),
   createdAt: createdAt(),
 });
+
+// ── Fan Verdict ────────────────────────────────────────────────────────────
+
+/** One "this or that" pick between two drops. a/b are stored in id order so a pair is judged once per person. */
+export const releaseDuel = pgTable(
+  "release_duel",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    aId: text("a_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    bId: text("b_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    winnerId: text("winner_id")
+      .notNull()
+      .references(() => release.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.aId, t.bId] }), index("release_duel_a_idx").on(t.aId), index("release_duel_b_idx").on(t.bId), index("release_duel_created_idx").on(t.createdAt)],
+);
+
+/** Published weekly charts (frozen on Monday), so "last week's #1" never changes. */
+export const chartWeek = pgTable("chart_week", {
+  week: text("week").primaryKey(),
+  /** Ranked rows: [{ releaseId, rank, wins, games, fires }]. */
+  rows: jsonb("rows").notNull(),
+  postId: text("post_id").references(() => post.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+});

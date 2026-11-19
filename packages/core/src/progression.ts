@@ -271,7 +271,7 @@ export function battleReward(o: { won: boolean; roundsWon: number }): Reward {
   };
 }
 
-export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA" | "DJ_LESSON" | "DJ_BATTLE" | "PARTY" | "WAR_VOTE" | "ONBOARDING" | "DROP_FIRE";
+export type LedgerReason = "DAILY" | "ACHIEVEMENT" | "LEVEL_UP" | "BATTLE" | "VOTE" | "POST" | "PURCHASE" | "TRIVIA" | "DJ_LESSON" | "DJ_BATTLE" | "PARTY" | "WAR_VOTE" | "ONBOARDING" | "DROP_FIRE" | "VERDICT";
 
 export interface WalletEntry {
   id: string;

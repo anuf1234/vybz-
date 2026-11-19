@@ -1,5 +1,7 @@
 import type {
   ArtistFollowHit,
+  ChartResponse,
+  VerdictPair,
   DropsResponse,
   FollowedArtist,
   ReleaseKind,
@@ -180,6 +182,10 @@ const MESSAGES: Record<string, string> = {
   IS_SINGLE: "That's a single. Start a Single War for songs.",
   INVALID_GENRES: "Pick one to three genres.",
   UNSUPPORTED_LINK: "Use an https link from SoundCloud, Audiomack, YouTube, Bandcamp, Apple Music, Spotify or TIDAL.",
+  SPOTIFY_NOT_LINKED: "Connect Spotify first.",
+  SPOTIFY_UNAVAILABLE: "Saving to Spotify isn't set up yet.",
+  CHART_EMPTY: "Nothing has charted this week yet.",
+  INVALID_PAIR: "Those two can't be matched up.",
   MIXTAPE_EXISTS: "That mixtape has already been submitted.",
   INVALID_MIXTAPE: "Add the mixtape's title and artist.",
   TOO_MANY_ARTISTS: "You're following the most artists you can.",
@@ -391,6 +397,10 @@ export const api = {
   modReviewMixtape: (id: string, action: "approve" | "reject") => request<{ ok: true }>("POST", `/api/v1/mod/mixtapes/${id}`, { action }),
   out: (service: "spotify" | "apple" | "youtube" | "source", kind: "release" | "war" | "track", id: string, side?: "A" | "B") =>
     request<{ url: string }>("POST", "/api/v1/out", { service, kind, id, ...(side ? { side } : {}) }),
+  verdictPair: () => request<{ pair: VerdictPair | null }>("GET", "/api/v1/verdict"),
+  judge: (a: string, b: string, winner: string) => request<{ next: VerdictPair | null }>("POST", "/api/v1/verdict", { a, b, winner }),
+  chart: (week?: string | null) => request<ChartResponse>("GET", `/api/v1/chart${week ? `?week=${encodeURIComponent(week)}` : ""}`),
+  chartToSpotify: (week: string) => request<{ url: string; added: number }>("POST", "/api/v1/chart/spotify", { week }),
   modRunDrops: () => request<{ ran: boolean; added: number; note: string }>("POST", "/api/v1/mod/drops/run", {}),
   updateOnboarding: (body: { genres: string[] } | { action: "skip" }) => request<OnboardingState>("POST", "/api/v1/me/onboarding", body),
   modTriviaDraft: (category: "GENRE" | "ARTIST" | "HISTORY", genre: string | null, count: number) =>

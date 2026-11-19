@@ -3,6 +3,7 @@ import { ImageResponse } from "next/og";
 import { eq, schema, sql } from "@vybz/db";
 import { getBattleDeps } from "@/server/context";
 import { getWar } from "@/server/wars";
+import { chart } from "@/server/verdict";
 import { INK, MUTED, SOFT, STORY, VIOLET, WIDE, type Font, loadFonts } from "@/server/share-card";
 
 /**
@@ -148,6 +149,40 @@ export async function dropCard(id: string, format: CardFormat): Promise<ImageRes
       </div>
     </div>,
     "Fire it up on VYBZ.",
+  );
+}
+
+// ── The weekly chart ───────────────────────────────────────────────────────
+
+export async function chartCard(week: string, format: CardFormat): Promise<ImageResponse> {
+  const f = await loadFonts();
+  const c = await chart(getBattleDeps(), null, week === "current" ? null : week).catch(() => null);
+  if (!c || !c.rows.length) return plain(format, f);
+  const story = format === "story";
+  const top = c.rows.slice(0, story ? 8 : 5);
+  const arts = await Promise.all(top.map((r) => artData(r.release.artworkUrl)));
+  const size = story ? 120 : 64;
+  return frame(
+    format,
+    f,
+    <div style={{ display: "flex", flexDirection: "column", gap: story ? 26 : 10, width: "100%" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: story ? "center" : "flex-start", marginBottom: story ? 30 : 6 }}>
+        <div style={{ display: "flex", fontSize: story ? 72 : 44, fontWeight: 800 }}>THE VYBZ CHART</div>
+        <div style={{ display: "flex", fontSize: story ? 36 : 24, color: SOFT, fontWeight: 800 }}>{c.label}</div>
+      </div>
+      {top.map((r, i) => (
+        <div key={r.release.id} style={{ display: "flex", alignItems: "center", gap: story ? 28 : 18 }}>
+          <div style={{ display: "flex", width: story ? 80 : 48, fontSize: story ? 56 : 34, fontWeight: 800, color: i === 0 ? SOFT : "white", justifyContent: "flex-end" }}>{String(r.rank)}</div>
+          <Cover url={arts[i] ?? null} size={size} />
+          <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+            <div style={{ display: "flex", fontSize: story ? 40 : 26, fontWeight: 800 }}>{r.release.title.slice(0, 32)}</div>
+            <div style={{ display: "flex", fontSize: story ? 30 : 20, color: MUTED }}>{r.release.artistName.slice(0, 36)}</div>
+          </div>
+          <div style={{ display: "flex", fontSize: story ? 40 : 26, fontWeight: 800, color: SOFT }}>{`${r.score}%`}</div>
+        </div>
+      ))}
+    </div>,
+    "Ranked by fans in This or That.",
   );
 }
 

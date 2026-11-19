@@ -59,6 +59,10 @@ export default function Drops() {
           ]}
         />
         <Chips value={kind} options={KIND_OPTIONS} onChange={(v) => (reset(), setKind(v))} anyLabel="All" />
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          {signedIn ? <Button title="🆚 This or That" style={{ flex: 1 }} onPress={() => router.push("/verdict")} /> : null}
+          <Button title="📊 Chart" kind="secondary" style={{ flex: 1 }} onPress={() => router.push("/chart")} />
+        </View>
         {signedIn ? (
           <View style={{ flexDirection: "row", gap: space.sm }}>
             <Button title="📼 Add a mixtape" kind="secondary" style={{ flex: 1 }} onPress={() => router.push("/drops/submit")} />

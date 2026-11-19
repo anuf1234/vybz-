@@ -16,6 +16,8 @@ export interface AuthConfig {
   google?: { clientId: string; clientSecret: string };
   facebook?: { clientId: string; clientSecret: string };
   tiktok?: { clientKey: string; clientSecret: string };
+  /** Spotify, link-only (never a way to sign up): lets people save VYBZ playlists to their Spotify. */
+  spotify?: { clientId: string; clientSecret: string };
   /** Native Sign in with Apple: ID tokens from the app, checked against this bundle ID. */
   apple?: { bundleId: string };
   /** Extra trusted origins (e.g. Expo dev servers). */
@@ -68,12 +70,14 @@ export function createAuth(cfg: AuthConfig) {
       ...(cfg.google ? { google: { clientId: cfg.google.clientId, clientSecret: cfg.google.clientSecret } } : {}),
       ...(cfg.facebook ? { facebook: { clientId: cfg.facebook.clientId, clientSecret: cfg.facebook.clientSecret } } : {}),
       ...(cfg.tiktok ? { tiktok: { clientKey: cfg.tiktok.clientKey, clientSecret: cfg.tiktok.clientSecret } } : {}),
+      ...(cfg.spotify ? { spotify: { clientId: cfg.spotify.clientId, clientSecret: cfg.spotify.clientSecret, scope: ["playlist-modify-private"], disableSignUp: true, disableImplicitSignUp: true } } : {}),
       // Only the app's native sheet is used, which sends an ID token; the web redirect flow
       // (which would need an Apple client secret) isn't offered.
       ...(cfg.apple ? { apple: { clientId: cfg.apple.bundleId, appBundleIdentifier: cfg.apple.bundleId, clientSecret: "native-id-token-only" } } : {}),
     },
     // Emails Google and Apple have verified can join an existing VYBZ account with the same email.
-    account: { accountLinking: { enabled: true, trustedProviders: ["google", "apple"] } },
+    // Linking Spotify (from Settings, while signed in) is allowed even when its email differs.
+    account: { accountLinking: { enabled: true, trustedProviders: ["google", "apple"], allowDifferentEmails: true } },
     session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: true, maxAge: 5 * 60 } },
     user: {
       additionalFields: {

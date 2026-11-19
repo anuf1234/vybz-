@@ -302,6 +302,8 @@ export interface ConfigResponse {
   giphy: { apiKey: string } | null;
   /** Social sign-in providers set up on this server. */
   signIn: { google: boolean; facebook: boolean; tiktok: boolean; apple: boolean };
+  /** Spotify is set up: exact links, and saving playlists to a linked Spotify. Optional for older servers. */
+  spotify?: boolean;
 }
 
 export interface ListenRequest {
