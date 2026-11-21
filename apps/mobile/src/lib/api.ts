@@ -85,6 +85,7 @@ import type {
   CreateBattleRequest,
   ListenRequest,
   MeView,
+  FeedHighlightsResponse,
   ProfileView,
   RankingsResponse,
 } from "@vybz/core";
@@ -329,7 +330,9 @@ export const api = {
   importPlaylist: (url: string) => request<ImportPlaylistResponse>("POST", "/api/v1/playlists/import", { url }),
   quickBattle: (body: QuickBattleRequest) => request<QuickBattleResponse>("POST", "/api/v1/quick-battle", body),
   cancel: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/cancel`),
-  rematch: (id: string) => request<{ id: string }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rematch`),
+  /** `against`: challenge the player who shared a result you weren't in. */
+  rematch: (id: string, opts: { against?: string | null; code?: string | null } = {}) =>
+    request<{ id: string }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rematch`, { ...(opts.against ? { against: opts.against } : {}), ...(opts.code ? { code: opts.code } : {}) }),
   submit: (id: string, round: number, catalogIds: string[]) =>
     request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rounds/${round}/submit`, { catalogIds }),
   counter: (id: string, rules: BattleRulesInput) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/counter`, { rules }),
@@ -361,6 +364,7 @@ export const api = {
   reorderPlaylist: (id: string, trackIds: string[]) => request<null>("PUT", `/api/v1/playlists/${encodeURIComponent(id)}/order`, { trackIds }),
   addCollaborator: (id: string, handle: string) => request<null>("POST", `/api/v1/playlists/${encodeURIComponent(id)}/collaborators`, { handle }),
   removeCollaborator: (id: string, userId: string) => request<null>("DELETE", `/api/v1/playlists/${encodeURIComponent(id)}/collaborators/${encodeURIComponent(userId)}`),
+  feedHighlights: () => request<FeedHighlightsResponse>("GET", "/api/v1/feed/highlights"),
   feed: (kind: "following" | "for_you" | { handle: string }, before?: string | null) =>
     request<FeedResponse>(
       "GET",

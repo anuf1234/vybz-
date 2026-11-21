@@ -675,3 +675,27 @@ export interface ImportPlaylistResponse {
   /** Videos that couldn't be added (removed, private, not music…). */
   skipped: number;
 }
+
+/** Who made a feed highlight: real players, or VYBZ itself (featured picks, the daily battle, staff tournaments, auto-opened wars). */
+export type HighlightSource = "COMMUNITY" | "EDITORIAL";
+export type HighlightKind = "RESULT" | "LIVE" | "WAR" | "FEATURED" | "TOURNAMENT";
+
+/** Something worth a look on VYBZ right now, shown in the Feed even before you follow anyone. */
+export interface FeedHighlight {
+  id: string;
+  kind: HighlightKind;
+  source: HighlightSource;
+  /** Short label for the card's corner: "Battle result", "Live now", "Album vote", "Featured", "Tournament". */
+  label: string;
+  title: string;
+  subtitle: string;
+  /** Up to two covers. */
+  artwork: string[];
+  /** App path to open. */
+  href: string;
+  at: string;
+}
+
+export interface FeedHighlightsResponse {
+  items: FeedHighlight[];
+}

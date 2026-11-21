@@ -70,6 +70,8 @@ function AppStack() {
         <Stack.Screen name="wallet" options={{ title: "XP & coins" }} />
         <Stack.Screen name="shop" options={{ title: "Shop" }} />
         <Stack.Screen name="quick" options={{ title: "Quick battle", presentation: "modal" }} />
+        <Stack.Screen name="challenge" options={{ title: "Battle a friend" }} />
+        <Stack.Screen name="rematch/[id]" options={{ title: "Rematch" }} />
         <Stack.Screen name="playlist/[id]/index" options={{ title: "Playlist" }} />
         <Stack.Screen name="playlist/[id]/add" options={{ title: "Add songs", presentation: "modal" }} />
         <Stack.Screen name="playlist/new" options={{ title: "New playlist", presentation: "modal" }} />

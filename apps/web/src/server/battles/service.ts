@@ -45,7 +45,7 @@ import { type Database, type Executor, newId, schema, and, desc, eq, inArray, is
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
 import type { AiJudge, JudgeInput } from "../ai-judge";
 import { z } from "zod";
-import { socialFor } from "../social";
+import { isBlockedBetween, socialFor } from "../social";
 import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, ensureYouTubeMatch, guestViewer, refsForTracks, toTrackView, viewerContext } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
 import { voterFacts } from "./eligibility";
@@ -569,32 +569,67 @@ export async function castVote(deps: BattleDeps, actor: UserRow | null, id: stri
   await afterVote(deps, actor!, id, roundIndex);
 }
 
-export async function rematch(deps: BattleDeps, actorIn: UserRow | null, id: string): Promise<{ id: string }> {
+/**
+ * Runs a finished battle back with the same rules.
+ *
+ * - A player in it: a new duel against the other player (or a new lobby for
+ *   group battles), as before.
+ * - Anyone else, from a shared result card (`against` = the sharer's handle):
+ *   a new duel challenging that player, same theme and rules. "Think you can
+ *   beat me?" made real.
+ */
+export async function rematch(deps: BattleDeps, actorIn: UserRow | null, id: string, opts: { against?: string | null; code?: string | null } = {}): Promise<{ id: string }> {
   const actor = requireBattler(deps, actorIn);
+  await viewableRow(deps, id, actor, opts.code);
   const loaded = await loadBattle(deps.db, id);
   if (!loaded) throw notFound();
   const { aggregate: agg, row } = loaded;
   if (agg.status !== "COMPLETE") throw new ServiceError(409, "NOT_COMPLETE");
   const me = participantFor(agg, actor.id);
-  if (!me) throw new ServiceError(403, "NOT_PARTICIPANT");
-  const others = agg.participants.filter((p) => p.id !== me.id);
   const duel = isDuel(agg.rules);
-  // Multi-entry rematch: a new lobby the other players are invited to, with the requester playing.
-  const rules = duel ? agg.rules : { ...agg.rules, creatorPlays: true };
-  const { battle } = engineCreate({ creatorId: actor.id, invitedUserId: duel ? others[0]!.userId : null, rules }, ctx(deps));
-  const title = row.title.startsWith("Rematch: ") ? row.title : `Rematch: ${row.title}`.slice(0, 80);
+  const { BOT_HANDLE, botUser } = await import("../bot");
+
+  let invitedUserId: string | null;
+  let others: { userId: string }[];
+  if (me) {
+    others = agg.participants.filter((p) => p.id !== me.id);
+    invitedUserId = duel ? (others[0]?.userId ?? null) : null;
+  } else {
+    // A challenge from a shared result: take on the player who shared it.
+    const handle = (opts.against ?? "").replace(/^@/, "").toLowerCase();
+    if (!handle) throw new ServiceError(403, "NOT_PARTICIPANT");
+    const [opp] = await deps.db.select().from(schema.user).where(eq(schema.user.handle, handle));
+    if (!opp || opp.status !== "ACTIVE" || !agg.participants.some((p) => p.userId === opp.id)) throw new ServiceError(404, "OPPONENT_NOT_FOUND", `@${handle} didn't play in this battle.`);
+    if (opp.handle === BOT_HANDLE) throw new ServiceError(409, "OPPONENT_NOT_FOUND", "Challenge a player, not the bot.");
+    others = [{ userId: opp.id }];
+    invitedUserId = opp.id;
+  }
+  if (invitedUserId && (await isBlockedBetween(deps.db, actor.id, invitedUserId))) throw new ServiceError(403, "BLOCKED", "You can't challenge this player.");
+
+  // A challenger from a shared card plays a fresh duel; group battles become a duel too.
+  const rules = me ? (duel ? agg.rules : { ...agg.rules, creatorPlays: true }) : duel ? agg.rules : { ...agg.rules, entrants: { min: 2, max: 2 }, creatorPlays: true };
+  const { battle } = engineCreate({ creatorId: actor.id, invitedUserId, rules }, ctx(deps));
+  const base = row.title.replace(/^(Rematch|Challenge): /, "");
+  const title = (me ? `Rematch: ${base}` : `Challenge: ${base}`).slice(0, 80);
   await deps.db.transaction(async (tx) => {
     await insertBattle(tx, battle, { title, theme: row.theme, rematchOfId: row.id, visibility: row.visibility, inviteCode: newInviteCode() });
-    if (!duel && others.length) await tx.insert(schema.battleInvite).values(others.map((p) => ({ battleId: battle.id, userId: p.userId })));
+    if (!invitedUserId && others.length) await tx.insert(schema.battleInvite).values(others.map((p) => ({ battleId: battle.id, userId: p.userId })));
   });
+
+  // The bot always takes a rematch.
+  const bot = invitedUserId ? await botUser(deps).catch(() => null) : null;
+  if (bot && bot.id === invitedUserId) {
+    await acceptBattle(deps, bot, battle.id);
+    return { id: battle.id };
+  }
   await createNotifications(
     deps.db,
     deps.push,
     others.map((p) => ({
       userId: p.userId,
-      type: duel ? ("CHALLENGED" as const) : ("INVITED" as const),
-      title: "Rematch?",
-      body: `@${actor.handle} wants to run "${row.title}" back.`,
+      type: invitedUserId ? ("CHALLENGED" as const) : ("INVITED" as const),
+      title: me ? "Rematch?" : "New challenger",
+      body: me ? `@${actor.handle} wants to run "${row.title}" back.` : `@${actor.handle} saw your result and wants a shot: "${base}".`,
       battleId: battle.id,
     })),
   ).catch((err) => console.error("notify failed", err));

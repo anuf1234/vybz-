@@ -1,9 +1,10 @@
-import type { BattleView, EntryView, RoundView, TrackView } from "@vybz/core";
+import { type BattleView, type EntryView, type RoundView, type TrackView, battleResultSummary } from "@vybz/core";
+import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
-import { shareStoryCard } from "@/lib/share-card";
+import { resultCardUrl, shareResult, shareStoryCard } from "@/lib/share-card";
 import * as WebBrowser from "expo-web-browser";
 import { EntryPlayer } from "@/components/entry-player";
 import { LiveStrip } from "@/components/live-strip";
@@ -139,6 +140,12 @@ function shareMenu(b: BattleView) {
     void shareStoryCard(b.id)
       .then((ok) => (ok ? undefined : shareBattle(b)))
       .catch(() => Alert.alert("Couldn't make the card", "Try sharing the link instead."));
+  if (b.status === "COMPLETE") {
+    const me = b.participants.find((p) => p.id === b.viewer.participantId) ?? null;
+    const s = battleResultSummary(b, me?.user.handle ?? null);
+    void shareResult({ battleId: b.id, as: me?.user.handle ?? null, code: b.visibility === "PRIVATE" ? b.inviteCode : null, message: `${s.headline} ${s.callToAction}` });
+    return;
+  }
   if (Platform.OS === "web" || b.visibility !== "PUBLIC") return shareBattle(b);
   if (Platform.OS === "ios") {
     ActionSheetIOS.showActionSheetWithOptions(
@@ -650,12 +657,38 @@ function AiVerdictCard({ b, ai }: { b: BattleView; ai: NonNullable<RoundView["ai
 function ResultPanel({ b, busy, act }: { b: BattleView; busy: string | null; act: Act }) {
   const winner = b.winnerParticipantId ? b.participants.find((p) => p.id === b.winnerParticipantId) : null;
   const iWon = winner && winner.id === b.viewer.participantId;
+  const me = b.participants.find((p) => p.id === b.viewer.participantId) ?? null;
+  const summary = battleResultSummary(b, me?.user.handle ?? null);
+  const code = b.visibility === "PRIVATE" ? b.inviteCode : null;
+  // Anyone can share a public result; private ones need the invite code (players have it).
+  const shareable = b.visibility === "PUBLIC" || Boolean(code);
+  const [sharing, setSharing] = useState(false);
+  const share = () => {
+    setSharing(true);
+    void shareResult({ battleId: b.id, as: me?.user.handle ?? null, code, message: `${summary.headline} ${summary.callToAction}` })
+      .catch(() => Alert.alert("Couldn't share", "Try again in a moment."))
+      .finally(() => setSharing(false));
+  };
   return (
     <Card style={{ alignItems: "center", borderColor: winner ? color.win : color.line }}>
       <Text style={type.label}>Final</Text>
       <Text style={[type.display, { fontSize: 32, color: winner ? color.win : color.text, textAlign: "center" }]}>
         {winner ? (iWon ? "YOU WIN" : `@${winner.user.handle.toUpperCase()} WINS`) : "DEAD EVEN"}
       </Text>
+      <Text style={[type.body, { textAlign: "center", fontWeight: "700" }]}>{summary.headline}</Text>
+      {shareable ? (
+        <Pressable onPress={share} accessibilityRole="button" accessibilityLabel="Share your result card" style={{ alignItems: "center", gap: space.sm, marginTop: space.sm }}>
+          <Image source={{ uri: resultCardUrl(b.id, me?.user.handle ?? null, code) }} style={styles.resultCard} contentFit="cover" transition={200} accessibilityIgnoresInvertColors />
+        </Pressable>
+      ) : null}
+      {shareable ? <Button title={me ? "Share your result" : "Share this result"} onPress={share} loading={sharing} style={{ alignSelf: "stretch" }} /> : null}
+      {shareable && me ? <Text style={[type.small, { textAlign: "center" }]}>Your friends get the card and a link to take you on.</Text> : null}
+      {b.viewer.canRematch && me ? (
+        <Button title="Run it back" kind="secondary" onPress={() => void act("rematch", () => api.rematch(b.id))} loading={busy === "rematch"} style={{ alignSelf: "stretch" }} />
+      ) : null}
+      {b.viewer.userId && !me && summary.challengeHandle ? (
+        <Button title={`Take on @${summary.challengeHandle}`} kind="secondary" onPress={() => void act("rematch", () => api.rematch(b.id, { against: summary.challengeHandle, code }))} loading={busy === "rematch"} style={{ alignSelf: "stretch" }} />
+      ) : null}
       {b.aiScorecard ? (
         <Text style={type.small}>
           AI's card: {b.participants.map((p) => `@${p.user.handle} ${b.aiScorecard![p.id] ?? 0}`).join(" – ")}
@@ -664,9 +697,6 @@ function ResultPanel({ b, busy, act }: { b: BattleView; busy: string | null; act
       ) : null}
       <Text style={type.small}>Judged by: {judgingSummary(b.rules)}</Text>
       {b.stats ? <StatsGrid b={b} /> : null}
-      {b.viewer.canRematch ? (
-        <Button title="Run it back" onPress={() => void act("rematch", () => api.rematch(b.id))} loading={busy === "rematch"} style={{ alignSelf: "stretch" }} />
-      ) : null}
     </Card>
   );
 }
@@ -744,6 +774,7 @@ const styles = StyleSheet.create({
   entry: { backgroundColor: color.surface1, borderRadius: radius.lg, borderWidth: 1, padding: space.lg, gap: space.md },
   entryTag: { position: "absolute", top: -1, right: -1, borderTopRightRadius: radius.lg, borderBottomLeftRadius: radius.md, paddingHorizontal: 12, paddingVertical: 4 },
   entryTagText: { ...type.display, fontSize: 16, color: color.ink },
+  resultCard: { width: 216, height: 384, borderRadius: radius.lg, backgroundColor: color.surface2 },
   shareTrack: { height: 6, borderRadius: 3, backgroundColor: color.surface3, overflow: "hidden" },
   shareFill: { height: 6 },
   terms: { borderRadius: radius.md, borderWidth: 1, borderColor: color.line, paddingHorizontal: space.md },

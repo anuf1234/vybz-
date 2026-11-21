@@ -14,8 +14,10 @@ export default function Quick() {
   const session = useSession();
   const config = useServerConfig();
   const botAvailable = Boolean(config?.aiJudge.available);
-  const params = useLocalSearchParams<{ genre?: string; ranked?: string }>();
+  const params = useLocalSearchParams<{ genre?: string; ranked?: string; solo?: string }>();
   const ranked = params.ranked === "1";
+  // Play solo: straight to the bot, no matchmaking.
+  const solo = params.solo === "1" && botAvailable;
   const [genre, setGenre] = useState<string | null>(params.genre && GENRES.some((g) => g.key === params.genre) ? params.genre : null);
   const [decade, setDecade] = useState<number | null>(null);
   const [busy, setBusy] = useState<"find" | "bot" | null>(null);
@@ -96,9 +98,18 @@ export default function Quick() {
           ))}
         </View>
       </Card>
-      <Button title={ranked ? "🏆 Find a ranked battle" : "⚡ Find a battle"} loading={busy === "find"} onPress={() => void go(false)} />
-      {botAvailable && !ranked ? <Button title="🤖 Play the VYBZ bot" kind="secondary" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
-      {ranked ? <Text style={[type.small, { textAlign: "center" }]}>Ranked battles are against people near your rating. Wins move you up the divisions.</Text> : (
+      {solo ? (
+        <>
+          <Button title="🤖 Battle the VYBZ bot" loading={busy === "bot"} onPress={() => void go(true)} />
+          <Button title="⚡ Find a real opponent instead" kind="ghost" onPress={() => router.setParams({ solo: undefined })} />
+        </>
+      ) : (
+        <>
+          <Button title={ranked ? "🏆 Find a ranked battle" : "⚡ Find a battle"} loading={busy === "find"} onPress={() => void go(false)} />
+          {botAvailable && !ranked ? <Button title="🤖 Play the VYBZ bot" kind="secondary" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
+        </>
+      )}
+      {solo ? null : ranked ? <Text style={[type.small, { textAlign: "center" }]}>Ranked battles are against people near your rating. Wins move you up the divisions.</Text> : (
         <Button title="🏆 Play ranked instead" kind="ghost" onPress={() => router.setParams({ ranked: "1" })} />
       )}
       {error ? <Text style={[type.small, { color: color.danger, textAlign: "center" }]}>{error}</Text> : null}

@@ -200,11 +200,29 @@ describe.skipIf(!TEST_DB_URL)("battle service on Postgres", () => {
     expect(p.recent[0]!.id).toBe(battleId);
   });
 
+  it("shows public results in the feed highlights, labeled as community activity", async () => {
+    const { feedHighlights } = await import("../src/server/highlights");
+    const items = await feedHighlights(deps, null);
+    const result = items.find((i) => i.id === `result:${battleId}`);
+    expect(result).toMatchObject({ kind: "RESULT", source: "COMMUNITY", label: "Battle result", href: `/battle/${battleId}` });
+    expect(result!.title).toMatch(/^@alice beat @bob 2–\d$/);
+    // No counts of votes or plays leak into highlights.
+    expect(JSON.stringify(items)).not.toMatch(/"(votes|voters|plays|count)":/);
+  });
+
   it("creates a rematch as a direct challenge to the same opponent", async () => {
     await expect(rematch(deps, users.carol!, battleId)).rejects.toMatchObject({ code: "NOT_PARTICIPANT" });
     const { id } = await rematch(deps, users.bob!, battleId);
     const v = await getBattleView(deps, users.alice!, id);
     expect(v).toMatchObject({ status: "PENDING_ACCEPT", title: "Rematch: 2000s R&B", rematchOfId: battleId, invited: { handle: "alice" } });
+    expect(v.rules.constraints).toEqual({ eraFrom: 2000, eraTo: 2009 });
+  });
+
+  it("lets someone who saw a shared result challenge the player who shared it", async () => {
+    await expect(rematch(deps, users.carol!, battleId, { against: "carol" })).rejects.toMatchObject({ code: "OPPONENT_NOT_FOUND" });
+    const { id } = await rematch(deps, users.carol!, battleId, { against: "@Alice" });
+    const v = await getBattleView(deps, users.alice!, id);
+    expect(v).toMatchObject({ status: "PENDING_ACCEPT", title: "Challenge: 2000s R&B", rematchOfId: battleId, creator: { handle: "carol" }, invited: { handle: "alice" } });
     expect(v.rules.constraints).toEqual({ eraFrom: 2000, eraTo: 2009 });
   });
 
