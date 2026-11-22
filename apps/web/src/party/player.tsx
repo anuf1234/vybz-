@@ -137,6 +137,7 @@ function PlayerStage({ v, code, playerKey, onUpdate }: { v: PartyPlayerSelfView;
         </div>
         {live && left !== null ? <div className="font-mono text-3xl font-black tabular-nums">{left}</div> : null}
       </header>
+      {live && v.paused ? <p className="rounded-xl border border-violet-soft p-3 text-center font-bold text-violet-soft">❚❚ The host paused the game. Hang tight.</p> : null}
 
       {v.phase === "LOBBY" ? (
         <Waiting title="You're in! 🎉" body={`Watch the big screen. ${v.title} starts when the host picks a game.`} />

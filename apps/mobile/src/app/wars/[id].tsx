@@ -196,6 +196,27 @@ export default function War() {
         </View>
       ) : null}
 
+      {(() => {
+        const myPick = w.categories.find((c) => c.key === "overall")?.mine ?? null;
+        if (!myPick) return null;
+        const mine = myPick === "A" ? w.a : w.b;
+        const other = myPick === "A" ? w.b : w.a;
+        return (
+          <Button
+            title="Share my pick"
+            onPress={() =>
+              shareMenu({
+                kind: "war",
+                id: w.id,
+                query: `pick=${myPick}`,
+                title: "Share my pick",
+                message: `I picked ${mine.title} over ${other.title}. Which side are you on?`,
+                url: `${API_URL}/war/${w.id}`,
+              })
+            }
+          />
+        );
+      })()}
       <Button
         title="Share this war"
         kind="secondary"

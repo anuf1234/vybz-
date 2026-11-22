@@ -58,12 +58,15 @@ function Side({ name, handle, ring }: { name: string; handle: string; ring: stri
       <Text style={[type.body, { fontWeight: "700" }]} numberOfLines={1}>
         @{handle}
       </Text>
+      {/* Bot matches are always labeled. */}
+      {handle === "vybz_bot" ? <Text style={styles.bot}>AI BOT</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { gap: space.md, paddingVertical: space.md },
+  bot: { fontSize: 10, fontWeight: "800", letterSpacing: 1, color: color.ink, backgroundColor: color.violetSoft, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   side: { flex: 1, alignItems: "center", gap: space.xs },
   score: { flexDirection: "row", alignItems: "center", gap: space.sm },

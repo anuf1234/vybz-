@@ -65,10 +65,12 @@ describe.skipIf(!TEST_DB_URL)("Song of the Day / Week and Album of the Week", ()
     const hot = items.find((x) => x.kind === "SINGLE")!;
     await followArtist(deps, fans[3]!, { releaseId: hot.id });
     const tomorrow = new Date(Date.now() + 86_400_000);
-    expect(await giveDropAwards(deps, tomorrow)).toBe(1);
+    // On a Sunday (UTC) tomorrow is already next week, so the week's awards come due too.
+    const newWeek = isoWeek(tomorrow) !== isoWeek(new Date());
+    expect(await giveDropAwards(deps, tomorrow)).toBe(newWeek ? 3 : 1);
     expect(await giveDropAwards(deps, tomorrow)).toBe(0);
     const nextWeek = new Date(Date.now() + 7 * 86_400_000);
-    expect(await giveDropAwards(deps, nextWeek)).toBe(2);
+    expect(await giveDropAwards(deps, nextWeek)).toBe(newWeek ? 0 : 2);
     const awards = await h.db.select().from(schema.dropAward);
     expect(awards.map((a) => a.award).sort()).toEqual(["ALBUM_WEEK", "SONG_DAY", "SONG_WEEK"]);
     expect(awards.find((a) => a.award === "SONG_WEEK")!.period).toBe(isoWeek(new Date()));

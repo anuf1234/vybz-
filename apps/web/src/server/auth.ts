@@ -3,6 +3,8 @@ import { HandleSchema, suggestHandle } from "@vybz/core";
 import { type Database, newId, schema, eq } from "@vybz/db";
 import { betterAuth } from "better-auth";
 import { oneTimeToken } from "better-auth/plugins/one-time-token";
+import { anonymous } from "better-auth/plugins/anonymous";
+import { GUEST_EMAIL_DOMAIN, guestHandleSeed, mergeGuestInto } from "./guests";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import type { Mailer } from "./mailer";
 
@@ -91,6 +93,12 @@ export function createAuth(cfg: AuthConfig) {
       user: {
         create: {
           before: async (user) => {
+            // Guests get "guest_123456" until they pick one.
+            if ((user as { isAnonymous?: boolean }).isAnonymous) {
+              const handle = await uniqueHandle(cfg.db, guestHandleSeed(), false);
+              if (!handle) return false;
+              return { data: { ...user, handle, role: "USER", status: "ACTIVE" } };
+            }
             const requested = typeof user.handle === "string" && user.handle ? HandleSchema.safeParse(user.handle) : null;
             if (requested && !requested.success) return false;
             const handle = await uniqueHandle(cfg.db, requested?.data ?? suggestHandle(user.email), Boolean(requested));
@@ -112,7 +120,7 @@ export function createAuth(cfg: AuthConfig) {
         },
       },
     },
-    rateLimit: { enabled: !cfg.disableRateLimit, window: 60, max: 100, customRules: { "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 3600, max: 10 } } },
+    rateLimit: { enabled: !cfg.disableRateLimit, window: 60, max: 100, customRules: { "/sign-in/email": { window: 60, max: 5 }, "/sign-up/email": { window: 3600, max: 10 }, "/sign-in/anonymous": { window: 3600, max: 10 } } },
     advanced: {
       database: { generateId: () => newId() },
       cookiePrefix: "vybz",
@@ -122,7 +130,20 @@ export function createAuth(cfg: AuthConfig) {
       ...(process.env.RENDER ? { ipAddress: { ipAddressHeaders: ["cf-connecting-ip", "true-client-ip", "x-forwarded-for"] } } : {}),
     },
     // One-time tokens hand the app's session to DJ Studio in the in-app browser (single use, 1 minute, stored hashed).
-    plugins: [expo(), oneTimeToken({ expiresIn: 1, storeToken: "hashed" })],
+    plugins: [
+      expo(),
+      oneTimeToken({ expiresIn: 1, storeToken: "hashed" }),
+      // Guests: play a friend's challenge right away, save the account later.
+      anonymous({
+        emailDomainName: GUEST_EMAIL_DOMAIN,
+        generateName: () => "Guest",
+        // Guests who sign in to a real account bring their battles; we retire the guest ourselves.
+        disableDeleteAnonymousUser: true,
+        onLinkAccount: async ({ anonymousUser, newUser }) => {
+          await mergeGuestInto(cfg.db, anonymousUser.user.id, newUser.user.id);
+        },
+      }),
+    ],
   });
 }
 

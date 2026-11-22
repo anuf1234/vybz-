@@ -33,6 +33,8 @@ type WarRow = typeof schema.war.$inferSelect;
 function requireUser(user: UserRow | null): UserRow {
   if (!user) throw new ServiceError(401, "SIGN_IN_REQUIRED");
   if (user.status !== "ACTIVE") throw new ServiceError(403, "ACCOUNT_RESTRICTED");
+  // Guests can play battles they were invited to; voting, posting and the rest need a saved account.
+  if (user.isAnonymous) throw new ServiceError(403, "GUEST_ACCOUNT", "Save your account to do that.");
   return user;
 }
 

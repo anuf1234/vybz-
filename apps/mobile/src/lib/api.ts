@@ -86,6 +86,7 @@ import type {
   ListenRequest,
   MeView,
   FeedHighlightsResponse,
+  LeagueView,
   ProfileView,
   RankingsResponse,
 } from "@vybz/core";
@@ -253,6 +254,10 @@ const MESSAGES: Record<string, string> = {
   NOT_ENOUGH_ENTRANTS: "Not enough players have joined yet.",
   NOT_A_CONTENDER: "This sudden-death round is for the tied leaders.",
   SLOW_DOWN: "Slow down a little.",
+  GUEST_ACCOUNT: "Save your account to do that.",
+  GUEST_LIMIT: "Save your account to send more challenges.",
+  BATTLE_CODE_NOT_FOUND: "No open challenge with that code.",
+  EMAIL_TAKEN: "That email already has a VYBZ account. Sign in to it instead.",
   MESSAGE_BLOCKED: "That message breaks the chat rules.",
   CHAT_CLOSED: "Chat is closed for this battle.",
   NOT_FOUND: "This battle doesn't exist or is private.",
@@ -298,6 +303,12 @@ export function describeError(code: string, status = 0): string {
 
 export const api = {
   me: () => request<MeView>("GET", "/api/v1/me"),
+  /** Guests: keep the account with email and password. */
+  saveAccount: (body: { email: string; password: string; displayName?: string }) => request<{ ok: true }>("POST", "/api/v1/me/save-account", body),
+  leagues: () => request<LeagueView>("GET", "/api/v1/leagues"),
+  genreRanks: () => request<{ items: { genre: string; label: string; rank: number; wins: number }[] }>("GET", "/api/v1/me/genre-ranks"),
+  /** A private challenge by its six-letter code. */
+  battleByCode: (code: string) => request<{ id: string; code: string; title: string }>("GET", `/api/v1/battles/code/${encodeURIComponent(code)}`),
   updateMe: (body: { handle?: string; displayName?: string }) => request<MeView>("PATCH", "/api/v1/me", body),
   battles: (feed: BattleFeed) => request<BattleListResponse>("GET", `/api/v1/battles?feed=${feed}`),
   battle: (id: string, code?: string | null) =>

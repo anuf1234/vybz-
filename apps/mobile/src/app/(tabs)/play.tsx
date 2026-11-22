@@ -18,7 +18,8 @@ const MORE: { title: string; modes: Mode[] }[] = [
     title: "Compete",
     modes: [
       { icon: "⚡", title: "Quick battle", blurb: "Matched with anyone in seconds", href: "/quick" },
-      { icon: "🏆", title: "Ranked", blurb: "Climb Bronze to Legend", href: "/ranked" },
+      { icon: "📈", title: "Weekly league", blurb: "Earn XP, climb from Opening Act to Diamond", href: "/leagues" },
+      { icon: "🏆", title: "Ranked", blurb: "Seasons, divisions, Bronze to Legend", href: "/ranked" },
       { icon: "🗂️", title: "Tournaments", blurb: "Vote the bracket", href: "/tournaments" },
       { icon: "➕", title: "Custom battle", blurb: "Your theme, rounds and rules", href: "/create" },
     ],

@@ -12,6 +12,7 @@ import { sendStreakReminders } from "@/server/reminders";
 import { runDailyDrops, sendDailyDigest } from "@/server/drops";
 import { publishWeeklyChart } from "@/server/verdict";
 import { advanceTournaments } from "@/server/tournaments";
+import { assignLeagues, closeLeagueWeeks } from "@/server/leagues";
 import { giveDropAwards } from "@/server/drop-awards";
 import { syncPlays } from "@/server/music-plays";
 import { snapshotRecent } from "@/server/partner-data";
@@ -49,7 +50,10 @@ async function handle(req: Request) {
   // Partner totals: hourly is plenty (exports refresh today on demand).
   const stats = new Date().getUTCMinutes() >= 5 ? 0 : await snapshotRecent(deps.db).catch((err) => (console.error("stats snapshot failed", err), 0));
   const awards = await giveDropAwards(deps).catch((err) => (console.error("drop awards failed", err), 0));
-  return NextResponse.json({ chart, tournaments, awards, plays, stats, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
+  // Weekly leagues: close last week (Monday), then put this week's players in groups.
+  const leaguesClosed = await closeLeagueWeeks(deps).catch((err) => (console.error("league close failed", err), 0));
+  const leaguesJoined = await assignLeagues(deps).catch((err) => (console.error("league assign failed", err), 0));
+  return NextResponse.json({ leaguesClosed, leaguesJoined, chart, tournaments, awards, plays, stats, advanced, judged, daily, quick, botPicks, reminders, djBattles, parties, wars, drops: drops?.ran ? drops : null, digest });
 }
 
 export { handle as GET, handle as POST };

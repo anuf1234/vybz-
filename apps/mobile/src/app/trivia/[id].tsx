@@ -3,6 +3,8 @@ import { TRIVIA_CATEGORY_INFO, type TriviaAnswerResult, type TriviaPlayView, typ
 import { useAudioPlayer } from "expo-audio";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { shareMenu } from "@/lib/share-card";
+import { API_URL } from "@/lib/config";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
@@ -254,6 +256,20 @@ function Results({ result: r }: { result: TriviaResult }) {
           </View>
         </Card>
       ) : null}
+
+      <Button
+        title="Share my score"
+        kind="secondary"
+        onPress={() =>
+          shareMenu({
+            kind: "trivia",
+            id: r.playId,
+            title: "Share your score",
+            message: `I got ${r.correct}/${r.total} on ${r.mode === "DAILY" ? "today's" : "a"} VYBZ music trivia (${r.score} points). Beat my score?`,
+            url: API_URL,
+          })
+        }
+      />
 
       {r.mode === "DAILY" ? <OnboardingNext when="bonus" /> : null}
 

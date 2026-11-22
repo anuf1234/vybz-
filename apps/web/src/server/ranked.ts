@@ -35,6 +35,10 @@ export async function ratingFor(db: Executor, userId: string, now = new Date()):
   const season = seasonOf(now);
   const [row] = await db.select().from(schema.userRating).where(eq(schema.userRating.userId, userId));
   if (row?.season === season) return row;
+  // The old season ends: its peak division becomes a badge.
+  if (row && row.games > 0) {
+    await db.insert(schema.seasonBadge).values({ userId, season: row.season, division: divisionOf(row.peak).key, peak: row.peak, games: row.games }).onConflictDoNothing();
+  }
   const rating = row ? softReset(row.rating) : RANKED.start;
   const values = { userId, season, rating, peak: rating, games: 0, wins: 0, losses: 0, draws: 0 };
   const [out] = await db.insert(schema.userRating).values(values).onConflictDoUpdate({ target: schema.userRating.userId, set: values }).returning();

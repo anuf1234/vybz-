@@ -35,6 +35,7 @@ const ICON: Record<NotificationType, string> = {
   RANKED: "🏆",
   TOURNAMENT: "🗂️",
   DAILY_DIGEST: "🎧",
+  LEAGUE: "📈",
 };
 
 export default function NotificationsScreen() {

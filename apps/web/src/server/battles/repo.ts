@@ -105,6 +105,8 @@ export interface NewBattleFields {
   dailyDate?: string | null;
   quickMatch?: boolean;
   ranked?: boolean;
+  botFallback?: boolean;
+  joinCode?: string | null;
 }
 
 export async function insertBattle(db: Executor, agg: BattleAggregate, fields: NewBattleFields): Promise<void> {
@@ -125,6 +127,8 @@ export async function insertBattle(db: Executor, agg: BattleAggregate, fields: N
     dailyDate: fields.dailyDate ?? null,
     quickMatch: fields.quickMatch ?? false,
     ranked: fields.ranked ?? false,
+    botFallback: fields.botFallback ?? true,
+    joinCode: fields.joinCode ?? null,
     nextDeadlineAt: nextDeadline(agg),
     version: 0,
   });

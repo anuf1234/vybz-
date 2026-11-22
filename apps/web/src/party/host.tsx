@@ -126,7 +126,10 @@ export function PartyHost({ code }: { code: string }) {
               {v.genre ? ` · ${genreLabel(v.genre)}` : ""}
             </div>
           </div>
-          {live ? <span className="ml-auto rounded-full border border-live px-3 py-1 text-sm font-black text-live">● LIVE</span> : null}
+          {live ? (
+            <span className={`ml-auto rounded-full border px-3 py-1 text-sm font-black ${v.paused ? "border-violet-soft text-violet-soft" : "border-live text-live"}`}>{v.paused ? "❚❚ PAUSED" : "● LIVE"}</span>
+          ) : null}
+          {v.locked ? <span className="rounded-full border border-line px-3 py-1 text-sm font-bold text-muted">🔒 Locked</span> : null}
           {live && left !== null ? (
             <span className="font-mono text-5xl font-black tabular-nums" aria-label={`${left} seconds left`}>
               {left}
@@ -145,6 +148,31 @@ export function PartyHost({ code }: { code: string }) {
             <button type="button" onClick={() => void act({ action: "next" })} disabled={busy} className="rounded-xl border border-line bg-surface-2 px-4 py-2 font-bold">
               Next ▶ <span className="text-xs text-muted">(N)</span>
             </button>
+          ) : null}
+          {live ? (
+            <button type="button" onClick={() => void act({ action: v.paused ? "resume" : "pause" })} disabled={busy} className="rounded-xl border border-line bg-surface-2 px-4 py-2 font-bold">
+              {v.paused ? "Resume ▶" : "Pause ❚❚"}
+            </button>
+          ) : null}
+          {v.phase !== "FINAL" ? (
+            <button type="button" onClick={() => void act({ action: v.locked ? "unlock" : "lock" })} disabled={busy} className="rounded-xl border border-line px-4 py-2 font-bold" aria-pressed={v.locked}>
+              {v.locked ? "🔓 Let people join" : "🔒 Lock the room"}
+            </button>
+          ) : null}
+          {v.phase === "LOBBY" || v.phase === "SCORES" ? (
+            <label className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm">
+              Pace
+              <select value={v.pace} onChange={(e) => void act({ action: "pace", pace: e.target.value })} disabled={busy} className="rounded bg-surface-2 px-2 py-1 font-bold">
+                <option value="RELAXED">Relaxed</option>
+                <option value="NORMAL">Normal</option>
+                <option value="FAST">Fast</option>
+              </select>
+            </label>
+          ) : null}
+          {(v.phase === "SCORES" || v.phase === "FINAL") && v.standings.length ? (
+            <a href={`/card/party/${v.code}?format=story`} target="_blank" rel="noreferrer" className="rounded-xl border border-violet px-4 py-2 font-bold text-violet-soft">
+              Share the leaderboard
+            </a>
           ) : null}
           {v.phase !== "FINAL" ? (
             <button type="button" onClick={() => confirm("End the party for everyone?") && void act({ action: "end" })} disabled={busy} className="rounded-xl border border-line px-4 py-2 text-muted">

@@ -20,22 +20,22 @@ export async function shareStoryCard(battleId: string): Promise<boolean> {
 }
 
 /** Any card (war, drop, chart, rank, tournament): `/card/<kind>/<id>?format=story`. */
-export async function shareCardImage(kind: string, id: string, title = "Share"): Promise<boolean> {
+export async function shareCardImage(kind: string, id: string, title = "Share", query = ""): Promise<boolean> {
   if (Platform.OS === "web" || !(await Sharing.isAvailableAsync())) return false;
   const dir = new Directory(Paths.cache, "share");
   if (!dir.exists) dir.create({ intermediates: true });
   const target = new File(dir, `vybz-${kind}-${id.replace(/[^\w-]/g, "_")}.png`);
   if (target.exists) target.delete();
-  const file = await File.downloadFileAsync(`${API_URL}/card/${encodeURIComponent(kind)}/${encodeURIComponent(id)}?format=story&t=${Date.now()}`, target);
+  const file = await File.downloadFileAsync(`${API_URL}/card/${encodeURIComponent(kind)}/${encodeURIComponent(id)}?format=story${query ? `&${query}` : ""}&t=${Date.now()}`, target);
   await Sharing.shareAsync(file.uri, { mimeType: "image/png", UTI: "public.png", dialogTitle: title });
   return true;
 }
 
 /** "Share story card" or "Share link", like battles. Falls back to the link where images can't be shared. */
-export function shareMenu(opts: { kind: string; id: string; message: string; url: string; title?: string }) {
+export function shareMenu(opts: { kind: string; id: string; message: string; url: string; title?: string; query?: string }) {
   const link = () => void Share.share({ message: `${opts.message} ${opts.url}` });
   const card = () =>
-    void shareCardImage(opts.kind, opts.id, opts.title)
+    void shareCardImage(opts.kind, opts.id, opts.title, opts.query)
       .then((ok) => (ok ? undefined : link()))
       .catch(() => Alert.alert("Couldn't make the card", "Try sharing the link instead."));
   if (Platform.OS === "web") return link();

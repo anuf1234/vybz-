@@ -4,6 +4,7 @@ import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
+import { GuestOrSignIn } from "@/components/guest";
 import { Button, ErrorBanner, Loading } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
@@ -44,8 +45,8 @@ export default function Rematch() {
   const opponent = iPlayed ? (b.participants.find((p) => p.id !== myId)?.user.handle ?? null) : (sharer ?? summary.challengeHandle);
   const finished = b.status === "COMPLETE";
 
-  const go = async () => {
-    if (!signedIn) return router.push("/sign-in");
+  const go = async (asGuest = false) => {
+    if (!signedIn && !asGuest) return router.push("/sign-in");
     setBusy(true);
     setError(null);
     try {
@@ -77,14 +78,7 @@ export default function Rematch() {
       ) : signedIn ? (
         <Button title={iPlayed ? "Run it back" : `Take on @${opponent ?? "them"}`} onPress={() => void go()} loading={busy} disabled={!iPlayed && !opponent} style={{ alignSelf: "stretch" }} />
       ) : (
-        <>
-          <Link href="/sign-up" asChild>
-            <Button title="Create an account to battle" style={{ alignSelf: "stretch" }} />
-          </Link>
-          <Link href="/sign-in" asChild>
-            <Button title="I have an account" kind="ghost" style={{ alignSelf: "stretch" }} />
-          </Link>
-        </>
+        <GuestOrSignIn action={`Take on @${opponent ?? "them"}`} onGuest={() => void go(true)} />
       )}
       <Link href={{ pathname: "/battle/[id]", params: { id: b.id, ...(code ? { code } : {}) } }} asChild>
         <Button title="See every round" kind="ghost" style={{ alignSelf: "stretch" }} />

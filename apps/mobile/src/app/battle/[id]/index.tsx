@@ -1,4 +1,5 @@
-import { type BattleView, type EntryView, type RoundView, type TrackView, battleResultSummary } from "@vybz/core";
+import { type BattleView, type EntryView, type RoundView, type TrackView, battleCodeLabel, battleResultSummary } from "@vybz/core";
+import { GuestOrSignIn, SaveAccountBanner } from "@/components/guest";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -274,7 +275,7 @@ function ChallengePanel({ b, now, busy, act, code }: { b: BattleView; now: numbe
   const iProposed = me !== null && b.terms.proposedBy.id === me;
   const share = () =>
     void Share.share({
-      message: `I'm calling you out on VYBZ: "${b.title}". ${b.rounds.length} rounds, the crowd decides. ${inviteLink(b)}`,
+      message: `I'm calling you out on VYBZ: "${b.title}". ${b.rounds.length} rounds, the crowd decides. ${inviteLink(b)}${b.joinCode ? ` (code ${battleCodeLabel(b.joinCode)})` : ""}`,
     });
   const heading =
     b.status === "OPEN_CHALLENGE"
@@ -303,10 +304,18 @@ function ChallengePanel({ b, now, busy, act, code }: { b: BattleView; now: numbe
           <Button title="Cancel challenge" kind="danger" onPress={() => void act("cancel", () => api.cancel(b.id))} loading={busy === "cancel"} />
         </>
       ) : null}
-      {!b.viewer.userId && b.status === "OPEN_CHALLENGE" ? (
+      {!b.viewer.userId && b.status === "OPEN_CHALLENGE" && b.format === "DUEL" ? <GuestOrSignIn action="Accept" /> : null}
+      {!b.viewer.userId && b.status === "OPEN_CHALLENGE" && b.format !== "DUEL" ? (
         <Link href="/sign-in" asChild>
           <Button title="Sign in to accept" />
         </Link>
+      ) : null}
+      {b.joinCode && b.viewer.canCancel ? (
+        <View style={{ alignItems: "center", gap: 2 }}>
+          <Text style={type.small}>Or tell them the code</Text>
+          <Text style={[type.display, { fontSize: 30, letterSpacing: 4 }]} selectable>{battleCodeLabel(b.joinCode)}</Text>
+          <Text style={type.small}>Play → Battle a friend → Enter a code</Text>
+        </View>
       ) : null}
     </Card>
   );
@@ -697,6 +706,7 @@ function ResultPanel({ b, busy, act }: { b: BattleView; busy: string | null; act
       ) : null}
       <Text style={type.small}>Judged by: {judgingSummary(b.rules)}</Text>
       {b.stats ? <StatsGrid b={b} /> : null}
+      {me ? <SaveAccountBanner note="Save your account to keep this win, run it back and start your own challenges." /> : null}
     </Card>
   );
 }

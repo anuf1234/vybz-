@@ -1,10 +1,11 @@
-import { DECADES, GENRES, decadeLabel, themeLabel } from "@vybz/core";
-import { Link, useRouter } from "expo-router";
+import { DECADES, GENRES, battleCodeLabel, decadeLabel, normalizeBattleCode, themeLabel } from "@vybz/core";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { DEFAULT_TERMS, termsToRules } from "@/components/terms-form";
 import { color, radius, space, type } from "@/components/theme";
-import { Avatar, Button, Card, EmptyState, ErrorBanner } from "@/components/ui";
+import { GuestOrSignIn, SaveAccountBanner, useIsGuest } from "@/components/guest";
+import { Avatar, Button, Card, ErrorBanner, Field } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 import { API_URL, useServerConfig } from "@/lib/config";
@@ -26,17 +27,17 @@ export default function Challenge() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const guest = useIsGuest();
+
   if (!session.data && !session.isPending) {
     return (
-      <EmptyState
-        title="Sign in to battle a friend"
-        body="Pick a vibe, send the challenge, and let the crowd decide whose taste wins."
-        action={
-          <Link href="/sign-in" asChild>
-            <Button title="Sign in" />
-          </Link>
-        }
-      />
+      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }} keyboardShouldPersistTaps="handled">
+        <View style={{ gap: space.xs }}>
+          <Text style={type.title}>Got a code from a friend?</Text>
+          <Text style={type.small}>Play as a guest to enter it, or sign in to send your own challenges.</Text>
+        </View>
+        <GuestOrSignIn action="Continue" />
+      </ScrollView>
     );
   }
 
@@ -66,7 +67,7 @@ export default function Challenge() {
       const { id } = await api.createBattle({ title, visibility: "PRIVATE", rules });
       const b = await api.battle(id);
       const link = `${API_URL}/battle/${id}${b.inviteCode ? `?code=${b.inviteCode}` : ""}`;
-      await Share.share({ message: `I'm calling you out on VYBZ: ${title}, 3 rounds. Think your taste beats mine? ${link}` });
+      await Share.share({ message: `I'm calling you out on VYBZ: ${title}, 3 rounds. Think your taste beats mine? ${link}${b.joinCode ? ` (or enter code ${battleCodeLabel(b.joinCode)} in VYBZ)` : ""}` });
       router.replace({ pathname: "/battle/[id]", params: { id } });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Couldn't make the challenge.");
@@ -79,11 +80,13 @@ export default function Challenge() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }} keyboardShouldPersistTaps="handled">
-      <View style={{ gap: space.xs }}>
+      <CodeEntry />
+      {guest ? <SaveAccountBanner note="Save your account to send your own challenges. You can still take a friend's with their code or link." /> : null}
+      <View style={{ gap: space.xs, opacity: guest ? 0.5 : 1 }} pointerEvents={guest ? "none" : "auto"}>
         <Text style={type.title}>Pick the vibe</Text>
         <Text style={type.small}>3 rounds, one song each. {ai ? "The crowd and the AI judge decide." : "The crowd decides."}</Text>
       </View>
-      <Card style={{ gap: space.sm }}>
+      <Card style={{ gap: space.sm, ...(guest ? { opacity: 0.5 } : {}) }}>
         <Text style={type.label}>Genre</Text>
         <View style={styles.wrap}>
           <Chip label="Any" active={genre === null} onPress={() => setGenre(null)} />
@@ -102,8 +105,8 @@ export default function Challenge() {
 
       <View style={{ gap: space.sm }}>
         <Text style={type.title}>Who are you calling out?</Text>
-        <Button title="Send a challenge link" onPress={() => void sendLink()} loading={busy === "link"} disabled={busy !== null} />
-        <Text style={type.small}>Text it to anyone. Whoever opens it first takes you on.</Text>
+        <Button title="Send a challenge link" onPress={() => void sendLink()} loading={busy === "link"} disabled={busy !== null || guest} />
+        <Text style={type.small}>Text it to anyone, or read them the code. Whoever opens it first takes you on, no account needed.</Text>
       </View>
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -114,7 +117,7 @@ export default function Challenge() {
             <Pressable
               key={u.id}
               onPress={() => void challenge(u.handle)}
-              disabled={busy !== null}
+              disabled={busy !== null || guest}
               accessibilityRole="button"
               accessibilityLabel={`Challenge @${u.handle}`}
               style={({ pressed }) => [styles.person, pressed && { opacity: 0.85 }]}
@@ -132,6 +135,40 @@ export default function Challenge() {
         <Text style={type.small}>Follow people to challenge them straight from here.</Text>
       ) : null}
     </ScrollView>
+  );
+}
+
+/** Type a friend's six-letter code to open their challenge. */
+function CodeEntry() {
+  const router = useRouter();
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const valid = normalizeBattleCode(code);
+  const open = async () => {
+    if (!valid) return setError("Codes are six letters, like ABC-DEF.");
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.battleByCode(valid);
+      router.push({ pathname: "/battle/[id]", params: { id: r.id, code: r.code } });
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't find that challenge.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card style={{ gap: space.sm }}>
+      <Text style={type.label}>GOT A CODE?</Text>
+      <View style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-end" }}>
+        <View style={{ flex: 1 }}>
+          <Field label="Battle code" placeholder="ABC-DEF" value={code} onChangeText={(t) => setCode(t.toUpperCase())} autoCapitalize="characters" autoCorrect={false} maxLength={7} onSubmitEditing={() => void open()} />
+        </View>
+        <Button title="Open" onPress={() => void open()} loading={busy} disabled={!code} />
+      </View>
+      {error ? <Text style={[type.small, { color: color.danger }]}>{error}</Text> : null}
+    </Card>
   );
 }
 
