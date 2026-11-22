@@ -22,6 +22,8 @@ export interface MeView extends UserSummary {
   emailVerified: boolean;
   role: Role;
   createdAt: string;
+  /** A guest account: can play battles it was invited to; saves with email, Apple or Google. */
+  guest: boolean;
 }
 
 export interface TrackView {
@@ -192,6 +194,8 @@ export interface BattleView {
   visibility: BattleVisibility;
   /** Shown to people who can invite (participants, host): append `?code=` to share a private battle. */
   inviteCode: string | null;
+  /** Private open challenges: a six-letter code friends can type instead of opening a link. Players only. */
+  joinCode: string | null;
   featured: boolean;
   /** "2026-11-16" for the daily battle of that day. */
   dailyDate: string | null;
@@ -346,6 +350,10 @@ export interface ProfileView {
   pro?: boolean;
   /** This season's ranked standing, once they've played a ranked battle. */
   rank?: { rating: number; divisionLabel: string; icon: string; placement: boolean } | null;
+  /** Weekly league they're in (or were in last). */
+  league?: { label: string; icon: string } | null;
+  /** Past ranked seasons: peak division badges, newest first. */
+  seasonBadges?: { season: string; label: string; icon: string }[];
 }
 
 export interface ApiError {
@@ -419,7 +427,8 @@ export type NotificationType =
   | "DROP_AWARD"
   | "RANKED"
   | "TOURNAMENT"
-  | "DAILY_DIGEST";
+  | "DAILY_DIGEST"
+  | "LEAGUE";
 
 export interface NotificationView {
   id: string;
@@ -653,6 +662,10 @@ export interface QuickBattleRequest {
   vsBot?: boolean;
   /** Ranked: matched by rating, result moves both ratings, never the bot. */
   ranked?: boolean;
+  /** Let the VYBZ bot take it if nobody does in time (default yes). */
+  botFallback?: boolean;
+  /** IANA time zone, to match people nearby first. */
+  timeZone?: string;
 }
 
 export interface QuickBattleResponse {
@@ -674,4 +687,28 @@ export interface ImportPlaylistResponse {
   imported: number;
   /** Videos that couldn't be added (removed, private, not music…). */
   skipped: number;
+}
+
+/** Who made a feed highlight: real players, or VYBZ itself (featured picks, the daily battle, staff tournaments, auto-opened wars). */
+export type HighlightSource = "COMMUNITY" | "EDITORIAL";
+export type HighlightKind = "RESULT" | "LIVE" | "WAR" | "FEATURED" | "TOURNAMENT";
+
+/** Something worth a look on VYBZ right now, shown in the Feed even before you follow anyone. */
+export interface FeedHighlight {
+  id: string;
+  kind: HighlightKind;
+  source: HighlightSource;
+  /** Short label for the card's corner: "Battle result", "Live now", "Album vote", "Featured", "Tournament". */
+  label: string;
+  title: string;
+  subtitle: string;
+  /** Up to two covers. */
+  artwork: string[];
+  /** App path to open. */
+  href: string;
+  at: string;
+}
+
+export interface FeedHighlightsResponse {
+  items: FeedHighlight[];
 }

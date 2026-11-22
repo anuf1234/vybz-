@@ -47,6 +47,8 @@ export const user = pgTable(
       .default("ACTIVE"),
     /** VYBZ's own accounts (the daily host, the bot): kept off leaderboards and out of rewards. */
     isSystem: boolean("is_system").notNull().default(false),
+    /** A guest account (Better Auth's anonymous sign-in): can take invites and play, until they save it with Apple, Google or email. */
+    isAnonymous: boolean("is_anonymous").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -184,6 +186,10 @@ export const battle = pgTable(
     quickMatch: boolean("quick_match").notNull().default(false),
     /** Ranked quick battle: players are matched by rating and the result moves their ratings. Never the bot. */
     ranked: boolean("ranked").notNull().default(false),
+    /** Quick battles: the player agreed up front that the VYBZ bot may take it if nobody does. */
+    botFallback: boolean("bot_fallback").notNull().default(true),
+    /** A short code friends can type to find a private challenge (like a party code). */
+    joinCode: text("join_code").unique(),
     /** When the scheduler next needs to look at this battle. */
     nextDeadlineAt: ts("next_deadline_at"),
     /** Optimistic lock for state transitions. */
@@ -1059,6 +1065,10 @@ export const party = pgTable(
     deadline: ts("deadline"),
     /** Game state: question ids, playlist matchups and picks. */
     data: jsonb("data").notNull().default(sql`'{}'::jsonb`),
+    /** Host controls: no new players; round length; a paused clock keeps the time that was left. */
+    locked: boolean("locked").notNull().default(false),
+    pace: text("pace", { enum: ["RELAXED", "NORMAL", "FAST"] }).notNull().default("NORMAL"),
+    pausedLeftMs: integer("paused_left_ms"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     endedAt: ts("ended_at"),
@@ -1354,6 +1364,47 @@ export const userRating = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("user_rating_board_idx").on(t.season, t.rating)],
+);
+
+/** Where each player finished a ranked season: their peak division becomes a badge. */
+export const seasonBadge = pgTable(
+  "season_badge",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    season: text("season").notNull(),
+    division: text("division").notNull(),
+    peak: integer("peak").notNull(),
+    games: integer("games").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.season] })],
+);
+
+/**
+ * Weekly leagues: each week players are grouped (up to 30) with others in
+ * the same league tier and ranked by the XP they earn that week. When the
+ * week ends the top of each group moves up a tier and the bottom moves down.
+ */
+export const leagueMember = pgTable(
+  "league_member",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** ISO week, "2026-W47". */
+    week: text("week").notNull(),
+    tier: integer("tier").notNull(),
+    groupId: text("group_id").notNull(),
+    /** Set when the week is closed. */
+    finalRank: integer("final_rank"),
+    finalXp: integer("final_xp"),
+    /** PROMOTED, DEMOTED or STAYED. */
+    outcome: text("outcome"),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.week] }), index("league_group_idx").on(t.week, t.groupId)],
 );
 
 /** Ranked battles already applied to ratings (so a result counts once). */

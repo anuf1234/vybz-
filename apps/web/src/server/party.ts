@@ -4,6 +4,8 @@ import {
   type CatalogHit,
   PARTY,
   PARTY_GAMES,
+  PARTY_PACES,
+  type PartyPace,
   PLAYLIST_PROMPTS,
   type PartyCreated,
   type PartyGame,
@@ -136,6 +138,7 @@ export async function joinParty(deps: PartyDeps, viewer: UserRow | null, code: s
       .returning();
     if (mine) return { code: p.code, playerId: mine.id, playerKey };
   }
+  if (p.locked) throw new ServiceError(409, "PARTY_LOCKED", "The host closed this party to new players.");
   const [{ n }] = (await deps.db
     .select({ n: sql<number>`count(*)::int` })
     .from(schema.partyPlayer)
@@ -243,20 +246,21 @@ export async function hostAction(deps: PartyDeps, viewer: UserRow | null, code: 
           data.matchup = nextMatchup(players, data, 0);
           await tx
             .update(schema.party)
-            .set({ game, gameNo, round: 1, rounds: want, phase: "PICKING", deadline: new Date(now.getTime() + PARTY.pickMs), data })
+            .set({ game, gameNo, round: 1, rounds: want, phase: "PICKING", deadline: new Date(now.getTime() + paced(p, PARTY.pickMs)), pausedLeftMs: null, data })
             .where(eq(schema.party.id, p.id));
         } else {
           const questions = await pickQuestions(deps, p.genre, game === "NAME_THAT_SONG", want);
           if (questions.length < 3) throw new ServiceError(409, "GAME_UNAVAILABLE", "Not enough questions for that yet.");
           await tx
             .update(schema.party)
-            .set({ game, gameNo, round: 1, rounds: questions.length, phase: "QUESTION", deadline: new Date(now.getTime() + PARTY.questionMs), data: { questions } })
+            .set({ game, gameNo, round: 1, rounds: questions.length, phase: "QUESTION", deadline: new Date(now.getTime() + paced(p, PARTY.questionMs)), pausedLeftMs: null, data: { questions } })
             .where(eq(schema.party.id, p.id));
         }
         return;
       }
       case "next": {
-        const r = await step(tx, deps, p, players, now, true);
+        if (p.pausedLeftMs !== null) await tx.update(schema.party).set({ pausedLeftMs: null }).where(eq(schema.party.id, p.id));
+        const r = await step(tx, deps, { ...p, pausedLeftMs: null }, players, now, true);
         if (r) finished = r;
         return;
       }
@@ -267,6 +271,26 @@ export async function hostAction(deps: PartyDeps, viewer: UserRow | null, code: 
       case "end": {
         if (p.phase !== "LOBBY" && p.phase !== "SCORES") finished = { gameNo: p.gameNo };
         await tx.update(schema.party).set({ phase: "FINAL", deadline: null, endedAt: now }).where(eq(schema.party.id, p.id));
+        return;
+      }
+      case "pause": {
+        if (!p.deadline || p.pausedLeftMs !== null) throw new ServiceError(409, "NOT_NOW", "Nothing's running to pause.");
+        await tx.update(schema.party).set({ pausedLeftMs: Math.max(1000, p.deadline.getTime() - now.getTime()), deadline: null }).where(eq(schema.party.id, p.id));
+        return;
+      }
+      case "resume": {
+        if (p.pausedLeftMs === null) throw new ServiceError(409, "NOT_NOW");
+        await tx.update(schema.party).set({ deadline: new Date(now.getTime() + p.pausedLeftMs), pausedLeftMs: null }).where(eq(schema.party.id, p.id));
+        return;
+      }
+      case "lock":
+      case "unlock":
+        await tx.update(schema.party).set({ locked: b.action === "lock" }).where(eq(schema.party.id, p.id));
+        return;
+      case "pace": {
+        const pace = (b as { pace?: unknown }).pace;
+        if (typeof pace !== "string" || !(pace in PARTY_PACES)) throw new ServiceError(400, "INVALID_PACE");
+        await tx.update(schema.party).set({ pace: pace as PartyPace }).where(eq(schema.party.id, p.id));
         return;
       }
       case "kick": {
@@ -295,6 +319,9 @@ function nextMatchup(players: PlayerRow[], data: PartyData, index: number): Part
   return { prompt: data.prompts?.[index] ?? PLAYLIST_PROMPTS[index % PLAYLIST_PROMPTS.length]!, a: a.id, b: b.id };
 }
 
+/** A phase's length at this party's pace. */
+const paced = (p: Pick<PartyRow, "pace">, ms: number) => Math.round(ms * (PARTY_PACES[p.pace as PartyPace] ?? 1));
+
 const stepKey = (p: PartyRow, kind: "q" | "pick" | "vote") => `${p.gameNo}:${p.round}:${kind}`;
 
 /**
@@ -307,7 +334,9 @@ async function step(tx: Executor, deps: PartyDeps, p: PartyRow, players: PlayerR
   const data = (p.data ?? {}) as PartyData;
   const set = (v: Partial<typeof schema.party.$inferInsert>) => tx.update(schema.party).set(v).where(eq(schema.party.id, p.id));
   const answersFor = (kind: "q" | "pick" | "vote") => tx.select().from(schema.partyAnswer).where(and(eq(schema.partyAnswer.partyId, p.id), eq(schema.partyAnswer.step, stepKey(p, kind))));
-  const after = (ms: number) => new Date(now.getTime() + ms);
+  const after = (ms: number) => new Date(now.getTime() + paced(p, ms));
+  // Paused: nothing moves on its own; the host's Next still does.
+  if (p.pausedLeftMs !== null && !force) return null;
 
   switch (p.phase as PartyPhase) {
     case "QUESTION": {
@@ -448,9 +477,11 @@ export async function partyAnswer(deps: PartyDeps, code: string, key: unknown, b
     const qid = data.questions?.[cur!.round - 1];
     if (!qid || !Number.isInteger(choice) || choice < 0 || choice > 5) throw new ServiceError(400, "INVALID_ANSWER");
     const [q] = await deps.db.select().from(schema.triviaQuestion).where(eq(schema.triviaQuestion.id, qid));
-    const ms = Math.max(0, PARTY.questionMs - (cur!.deadline!.getTime() - now.getTime()));
+    if (!cur!.deadline) throw new ServiceError(409, "PAUSED", "The host paused the game.");
+    const ms = Math.max(0, paced(cur!, PARTY.questionMs) - (cur!.deadline.getTime() - now.getTime()));
     const correct = choice === q!.answerIndex;
-    const points = triviaPoints(correct, ms);
+    // Speed points scale with the pace, so a relaxed party isn't a low-scoring one.
+    const points = triviaPoints(correct, ms / (PARTY_PACES[cur!.pace as PartyPace] ?? 1));
     await deps.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(schema.partyAnswer)
@@ -578,6 +609,9 @@ export async function hostView(deps: PartyDeps, viewer: UserRow | null, code: st
     deadline: p.deadline?.toISOString() ?? null,
     serverNow: new Date(now).toISOString(),
     standings: st,
+    paused: p.pausedLeftMs !== null,
+    locked: p.locked,
+    pace: p.pace as PartyPace,
     joinUrl,
     qrSvg: await QRCode.toString(joinUrl, { type: "svg", margin: 1, color: { dark: "#0A0614", light: "#FFFFFF" } }),
     players: st,
@@ -634,6 +668,9 @@ export async function playerView(deps: PartyDeps, code: string, key: unknown): P
     deadline: p.deadline?.toISOString() ?? null,
     serverNow: new Date(now).toISOString(),
     standings: st.slice(0, 10),
+    paused: p.pausedLeftMs !== null,
+    locked: p.locked,
+    pace: p.pace as PartyPace,
     me: { id: me.id, name: me.name, score: meRow.score, rank: st.findIndex((s) => s.id === me.id) + 1 },
     question: r.question ? { prompt: r.question.prompt, choices: r.question.choices, imageUrl: r.question.imageUrl, category: r.question.category } : null,
     myAnswer,

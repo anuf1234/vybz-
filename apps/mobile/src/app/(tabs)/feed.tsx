@@ -2,6 +2,7 @@ import type { PeopleSuggestion, PostView } from "@vybz/core";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FeedHighlights } from "@/components/feed-highlights";
 import { FollowButton } from "@/components/follow-button";
 import { PostCard } from "@/components/post-card";
 import { usePreviewPlayer } from "@/components/preview-player";
@@ -21,6 +22,8 @@ export default function Feed() {
   const active: Kind = signedIn ? kind : "for_you";
   const first = useResource(() => api.feed(active), [active, signedIn]);
   const people = useResource(signedIn && active === "following" ? () => api.peopleSuggestions() : null, [signedIn, active]);
+  // Results, live battles, trending votes and featured picks: the feed is never a blank page.
+  const highlights = useResource(() => api.feedHighlights(), [signedIn], { pollMs: 60_000 });
   const [older, setOlder] = useState<PostView[]>([]);
   const [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -76,7 +79,7 @@ export default function Feed() {
           onRefresh={() => {
             setOlder([]);
             setCursor(undefined);
-            void Promise.all([first.reload(), people.reload()]);
+            void Promise.all([first.reload(), people.reload(), highlights.reload()]);
           }}
         />
       }
@@ -105,12 +108,15 @@ export default function Feed() {
           )}
           {error ? <ErrorBanner message={error} /> : null}
           {first.error ? <ErrorBanner message={first.error.message} onRetry={() => void first.reload()} /> : null}
+          {items.length && highlights.data?.items.length ? <FeedHighlights items={highlights.data.items} layout="row" /> : null}
           {people.data?.items.length ? <People items={people.data.items} /> : null}
         </View>
       }
       ListEmptyComponent={
         first.loading && !first.data ? (
           <Loading />
+        ) : highlights.data?.items.length ? (
+          <FeedHighlights items={highlights.data.items} layout="list" />
         ) : active === "following" ? (
           <EmptyState title="Nothing here yet" body="Follow people to see their posts, or check For you." />
         ) : (

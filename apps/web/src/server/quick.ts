@@ -1,20 +1,22 @@
 import { ratingFor } from "./ranked";
-import { type BattleRulesInput, DECADES, GENRE_KEYS, type QuickBattleResponse, decadeLabel, genreLabel, matchWindow } from "@vybz/core";
-import { and, asc, eq, lte, ne, schema, sql } from "@vybz/db";
+import { type BattleRulesInput, DECADES, GENRE_KEYS, MATCHMAKING, type QuickBattleResponse, RANKED, decadeLabel, genreLabel, rankMatches, regionOf, themeLabel } from "@vybz/core";
+import { and, asc, eq, inArray, lte, schema, sql } from "@vybz/db";
 import { z } from "zod";
 import { type BattleDeps, ServiceError, type UserRow, acceptBattle, createBattle } from "./battles/service";
 import { botUser } from "./bot";
 import { isBlockedBetween } from "./social";
 
 /**
- * Quick Battle: one tap to a duel. Takes the oldest waiting quick battle that
- * fits (someone else's), or opens one of yours. With the AI judge set up, the
- * VYBZ bot takes a quick battle nobody has taken within BOT_AFTER_MS, or
- * straight away if you ask for it. Quick battles are AI-judged when the judge
- * is available, so nobody waits on a crowd: 3 rounds, 30 minutes to pick.
+ * Quick Battle: one tap to a duel. Smart matchmaking picks the best waiting
+ * battle for you (vibe, skill, region, how long they've waited; see
+ * rankMatches), or opens one of yours. Waiting battles accept a wider vibe
+ * as time passes. With the AI judge set up, the VYBZ bot takes a quick
+ * battle nobody has taken within BOT_AFTER_MS, but only if the player said
+ * yes to that up front, or straight away if they ask for it. Quick battles
+ * are AI-judged when the judge is available: 3 rounds, 30 minutes to pick.
  */
 
-export const BOT_AFTER_MS = 2 * 60_000;
+export const BOT_AFTER_MS = MATCHMAKING.botAfterMs;
 
 const QuickSchema = z
   .object({
@@ -27,6 +29,10 @@ const QuickSchema = z
     vsBot: z.boolean().optional(),
     /** Matched by rating; the result moves both ratings. Never against the bot. */
     ranked: z.boolean().optional(),
+    /** Let the VYBZ bot take it if nobody does in time (default yes; ranked never). */
+    botFallback: z.boolean().optional(),
+    /** The phone's IANA time zone, for matching people in the same part of the world. */
+    timeZone: z.string().max(64).optional(),
   })
   .strict();
 
@@ -49,14 +55,52 @@ function title(genre?: string | null, decade?: number | null): string {
   return `Quick battle${label ? `: ${label}` : ""}`;
 }
 
-/** Waiting quick battles that fit, oldest first. */
-async function waiting(deps: BattleDeps, genre: string | null, decade: number | null, notBy?: string, ranked = false) {
+interface Waiting {
+  id: string;
+  creatorId: string;
+  createdAt: Date;
+  genre: string | null;
+  decade: number | null;
+}
+
+/** Every waiting quick battle of this kind, oldest first, with its vibe. */
+async function waiting(deps: BattleDeps, ranked: boolean): Promise<Waiting[]> {
   const b = schema.battle;
-  const conds = [eq(b.quickMatch, true), eq(b.status, "OPEN_CHALLENGE"), eq(b.visibility, "PUBLIC"), eq(b.ranked, ranked)];
-  if (notBy) conds.push(ne(b.creatorId, notBy));
-  conds.push(genre ? sql`(${b.rules} -> 'constraints' -> 'genres') = ${JSON.stringify([genre])}::jsonb` : sql`(${b.rules} -> 'constraints' -> 'genres') is null`);
-  conds.push(decade ? sql`(${b.rules} -> 'constraints' ->> 'eraFrom')::int = ${decade}` : sql`(${b.rules} -> 'constraints' -> 'eraFrom') is null`);
-  return deps.db.select({ id: b.id, creatorId: b.creatorId, createdAt: b.createdAt }).from(b).where(and(...conds)).orderBy(asc(b.createdAt)).limit(ranked ? 30 : 10);
+  const rows = await deps.db
+    .select({ id: b.id, creatorId: b.creatorId, createdAt: b.createdAt, rules: b.rules })
+    .from(b)
+    .where(and(eq(b.quickMatch, true), eq(b.status, "OPEN_CHALLENGE"), eq(b.visibility, "PUBLIC"), eq(b.ranked, ranked)))
+    .orderBy(asc(b.createdAt))
+    .limit(60);
+  return rows.map((r) => {
+    const c = (r.rules as { constraints?: { genres?: string[]; eraFrom?: number } }).constraints;
+    return { id: r.id, creatorId: r.creatorId, createdAt: r.createdAt, genre: c?.genres?.length === 1 ? c.genres[0]! : null, decade: c?.eraFrom ?? null };
+  });
+}
+
+/** Skill and region for matchmaking: ranked rating (start rating if none) and time-zone region. */
+async function profiles(deps: BattleDeps, ids: string[]): Promise<Map<string, { rating: number; region: string | null }>> {
+  const out = new Map<string, { rating: number; region: string | null }>();
+  if (!ids.length) return out;
+  const [ratings, zones] = await Promise.all([
+    deps.db.select({ id: schema.userRating.userId, rating: schema.userRating.rating }).from(schema.userRating).where(inArray(schema.userRating.userId, ids)),
+    deps.db.select({ id: schema.userProgress.userId, tz: schema.userProgress.timeZone }).from(schema.userProgress).where(inArray(schema.userProgress.userId, ids)),
+  ]);
+  for (const id of ids) out.set(id, { rating: ratings.find((r) => r.id === id)?.rating ?? RANKED.start, region: regionOf(zones.find((z) => z.id === id)?.tz) });
+  return out;
+}
+
+/** A waiting battle that widened to fit the person taking it gets the new vibe (title, theme and rules). */
+async function retheme(deps: BattleDeps, id: string, genre: string | null, decade: number | null, ranked: boolean): Promise<void> {
+  const [row] = await deps.db.select({ rules: schema.battle.rules }).from(schema.battle).where(eq(schema.battle.id, id));
+  if (!row) return;
+  const rules = row.rules as Record<string, unknown>;
+  const constraints = { ...(genre ? { genres: [genre] } : {}), ...(decade ? { eraFrom: decade, eraTo: decade + 9 } : {}) };
+  const next = { ...rules, constraints: Object.keys(constraints).length ? constraints : undefined };
+  await deps.db
+    .update(schema.battle)
+    .set({ rules: next, title: `${ranked ? "Ranked: " : ""}${title(genre, decade)}`, theme: themeLabel(constraints) })
+    .where(and(eq(schema.battle.id, id), eq(schema.battle.status, "OPEN_CHALLENGE")));
 }
 
 export async function quickBattle(deps: BattleDeps, user: UserRow | null, body: unknown): Promise<QuickBattleResponse> {
@@ -73,20 +117,23 @@ export async function quickBattle(deps: BattleDeps, user: UserRow | null, body: 
   const myRating = ranked ? (await ratingFor(deps.db, user.id, now)).rating : 0;
 
   if (!parsed.data.vsBot) {
-    // Someone's already waiting: take their battle (ranked: within the rating window, closest first).
-    let candidates = await waiting(deps, genre, decade, user.id, ranked);
-    if (ranked) {
-      const rated = await Promise.all(candidates.map(async (w) => ({ w, r: (await ratingFor(deps.db, w.creatorId, now)).rating })));
-      candidates = rated
-        .filter(({ w, r }) => Math.abs(r - myRating) <= matchWindow(now.getTime() - w.createdAt.getTime()))
-        .sort((x, y) => Math.abs(x.r - myRating) - Math.abs(y.r - myRating))
-        .map((x) => x.w);
-    }
-    for (const w of candidates) {
+    // Smart matchmaking: the best waiting battle for you, not just the oldest exact match.
+    const all = (await waiting(deps, ranked)).filter((w) => w.creatorId !== user.id);
+    const people = await profiles(deps, [user.id, ...new Set(all.map((w) => w.creatorId))]);
+    const meP = people.get(user.id)!;
+    const region = regionOf(parsed.data.timeZone) ?? meP.region;
+    const options = rankMatches(
+      { genre, decade, rating: ranked ? myRating : meP.rating, region },
+      all.map((w) => ({ id: w.id, genre: w.genre, decade: w.decade, rating: people.get(w.creatorId)!.rating, region: people.get(w.creatorId)!.region, waitingMs: now.getTime() - w.createdAt.getTime() })),
+      { ranked },
+    );
+    for (const o of options) {
+      const w = all.find((x) => x.id === o.id)!;
       if (await isBlockedBetween(deps.db, user.id, w.creatorId)) continue;
       try {
-        await acceptBattle(deps, user, w.id);
-        return { id: w.id, matched: "player" };
+        if (o.widened) await retheme(deps, o.id, o.genre, o.decade, ranked);
+        await acceptBattle(deps, user, o.id);
+        return { id: o.id, matched: "player" };
       } catch (err) {
         if (err instanceof ServiceError && err.status === 409) continue; // taken a moment ago
         throw err;
@@ -95,8 +142,12 @@ export async function quickBattle(deps: BattleDeps, user: UserRow | null, body: 
   }
 
   // Reuse your own waiting quick battle for this theme rather than opening another.
-  const mine = (await waiting(deps, genre, decade, undefined, ranked)).find((w) => w.creatorId === user.id);
-  const id = mine?.id ?? (await createBattle(deps, user, { title: `${ranked ? "Ranked: " : ""}${title(genre, decade)}`, rules: quickRules({ genre, decade, ai }) }, { quickMatch: true, ranked })).id;
+  const mine = (await waiting(deps, ranked)).find((w) => w.creatorId === user.id && w.genre === genre && w.decade === decade);
+  const botFallback = !ranked && parsed.data.botFallback !== false;
+  const id =
+    mine?.id ??
+    (await createBattle(deps, user, { title: `${ranked ? "Ranked: " : ""}${title(genre, decade)}`, rules: quickRules({ genre, decade, ai }) }, { quickMatch: true, ranked, botFallback })).id;
+  if (mine) await deps.db.update(schema.battle).set({ botFallback }).where(eq(schema.battle.id, mine.id));
 
   if (parsed.data.vsBot) {
     await acceptBattle(deps, await botUser(deps), id);
@@ -113,7 +164,7 @@ export async function botTakeStaleQuick(deps: BattleDeps): Promise<number> {
   const stale = await deps.db
     .select({ id: b.id })
     .from(b)
-    .where(and(eq(b.quickMatch, true), eq(b.ranked, false), eq(b.status, "OPEN_CHALLENGE"), lte(b.createdAt, new Date(now.getTime() - BOT_AFTER_MS))))
+    .where(and(eq(b.quickMatch, true), eq(b.ranked, false), eq(b.botFallback, true), eq(b.status, "OPEN_CHALLENGE"), lte(b.createdAt, new Date(now.getTime() - BOT_AFTER_MS))))
     .limit(20);
   const bot = await botUser(deps);
   let n = 0;

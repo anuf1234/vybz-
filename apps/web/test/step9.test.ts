@@ -161,6 +161,33 @@ describe.skipIf(!TEST_DB_URL)("step 9: party mode", () => {
     expect(await sweepParties(deps)).toBe(1);
   });
 
+  it("gives the host pause, lock and pace controls", async () => {
+    const c = await createParty(deps, null, { title: "Lounge night" }, "5.5.5.5");
+    const k = (await joinParty(deps, null, c.code, { name: "Dee" })).playerKey;
+    await joinParty(deps, null, c.code, { name: "Eli" });
+    let v = await hostAction(deps, null, c.code, c.hostKey, { action: "pace", pace: "RELAXED" });
+    expect(v.pace).toBe("RELAXED");
+    await expect(hostAction(deps, null, c.code, c.hostKey, { action: "pace", pace: "LUDICROUS" })).rejects.toMatchObject({ code: "INVALID_PACE" });
+    v = await hostAction(deps, null, c.code, c.hostKey, { action: "start", game: "TRIVIA", rounds: 5 });
+    // Relaxed: 1.5x the question time.
+    const left = new Date(v.deadline!).getTime() - new Date(v.serverNow).getTime();
+    expect(left).toBeGreaterThan(PARTY.questionMs * 1.4);
+    // Locked: new phones are turned away.
+    v = await hostAction(deps, null, c.code, c.hostKey, { action: "lock" });
+    expect(v.locked).toBe(true);
+    await expect(joinParty(deps, null, c.code, { name: "Fay" })).rejects.toMatchObject({ code: "PARTY_LOCKED" });
+    // Paused: the clock stops, even when time would have run out, and answers wait.
+    v = await hostAction(deps, null, c.code, c.hostKey, { action: "pause" });
+    expect(v).toMatchObject({ paused: true, deadline: null, phase: "QUESTION" });
+    expect((await playerView(deps, c.code, k)).paused).toBe(true);
+    await expect(partyAnswer(deps, c.code, k, { choice: 0 })).rejects.toMatchObject({ code: "PAUSED" });
+    v = await hostAction(deps, null, c.code, c.hostKey, { action: "resume" });
+    expect(v.paused).toBe(false);
+    expect(new Date(v.deadline!).getTime() - new Date(v.serverNow).getTime()).toBeGreaterThan(PARTY.questionMs);
+    await hostAction(deps, null, c.code, c.hostKey, { action: "unlock" });
+    expect((await joinParty(deps, null, c.code, { name: "Fay" })).playerKey).toBeTruthy();
+  });
+
   it("slows down mass party creation from one address", async () => {
     for (let i = 0; i < 9; i++) await createParty(deps, null, {}, "9.9.9.9");
     await createParty(deps, null, {}, "9.9.9.9");

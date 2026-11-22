@@ -217,6 +217,7 @@ export function buildBattleView(d: ViewData): BattleView {
     format: duel ? "DUEL" : "MULTI",
     visibility: row.visibility,
     inviteCode: canInvite ? row.inviteCode : null,
+    joinCode: canInvite && row.status === "OPEN_CHALLENGE" ? row.joinCode : null,
     featured: row.featured,
     dailyDate: row.dailyDate,
     entrants: { min: agg.rules.entrants.min, max: agg.rules.entrants.max, joined: agg.participants.length },

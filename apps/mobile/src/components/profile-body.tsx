@@ -32,6 +32,13 @@ export function ProfileBody({ profile, now, actions }: { profile: ProfileView; n
             </Text>
           </Pressable>
         ) : null}
+        {profile.league || profile.seasonBadges?.length ? (
+          <Text style={[type.small, { fontWeight: "700" }]}>
+            {profile.league ? `${profile.league.icon} ${profile.league.label} league` : ""}
+            {profile.league && profile.seasonBadges?.length ? "  ·  " : ""}
+            {profile.seasonBadges?.map((b) => `${b.icon} ${b.season.replace("-", " ")}`).join("  ")}
+          </Text>
+        ) : null}
         <View style={styles.counts}>
           <Count label="Followers" value={profile.social.followers} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "followers" } })} />
           <Count label="Following" value={profile.social.following} onPress={() => router.push({ pathname: "/user/[handle]/follows", params: { handle: user.handle, which: "following" } })} />

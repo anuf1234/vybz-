@@ -85,6 +85,8 @@ import type {
   CreateBattleRequest,
   ListenRequest,
   MeView,
+  FeedHighlightsResponse,
+  LeagueView,
   ProfileView,
   RankingsResponse,
 } from "@vybz/core";
@@ -252,6 +254,10 @@ const MESSAGES: Record<string, string> = {
   NOT_ENOUGH_ENTRANTS: "Not enough players have joined yet.",
   NOT_A_CONTENDER: "This sudden-death round is for the tied leaders.",
   SLOW_DOWN: "Slow down a little.",
+  GUEST_ACCOUNT: "Save your account to do that.",
+  GUEST_LIMIT: "Save your account to send more challenges.",
+  BATTLE_CODE_NOT_FOUND: "No open challenge with that code.",
+  EMAIL_TAKEN: "That email already has a VYBZ account. Sign in to it instead.",
   MESSAGE_BLOCKED: "That message breaks the chat rules.",
   CHAT_CLOSED: "Chat is closed for this battle.",
   NOT_FOUND: "This battle doesn't exist or is private.",
@@ -297,6 +303,12 @@ export function describeError(code: string, status = 0): string {
 
 export const api = {
   me: () => request<MeView>("GET", "/api/v1/me"),
+  /** Guests: keep the account with email and password. */
+  saveAccount: (body: { email: string; password: string; displayName?: string }) => request<{ ok: true }>("POST", "/api/v1/me/save-account", body),
+  leagues: () => request<LeagueView>("GET", "/api/v1/leagues"),
+  genreRanks: () => request<{ items: { genre: string; label: string; rank: number; wins: number }[] }>("GET", "/api/v1/me/genre-ranks"),
+  /** A private challenge by its six-letter code. */
+  battleByCode: (code: string) => request<{ id: string; code: string; title: string }>("GET", `/api/v1/battles/code/${encodeURIComponent(code)}`),
   updateMe: (body: { handle?: string; displayName?: string }) => request<MeView>("PATCH", "/api/v1/me", body),
   battles: (feed: BattleFeed) => request<BattleListResponse>("GET", `/api/v1/battles?feed=${feed}`),
   battle: (id: string, code?: string | null) =>
@@ -329,7 +341,9 @@ export const api = {
   importPlaylist: (url: string) => request<ImportPlaylistResponse>("POST", "/api/v1/playlists/import", { url }),
   quickBattle: (body: QuickBattleRequest) => request<QuickBattleResponse>("POST", "/api/v1/quick-battle", body),
   cancel: (id: string) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/cancel`),
-  rematch: (id: string) => request<{ id: string }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rematch`),
+  /** `against`: challenge the player who shared a result you weren't in. */
+  rematch: (id: string, opts: { against?: string | null; code?: string | null } = {}) =>
+    request<{ id: string }>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rematch`, { ...(opts.against ? { against: opts.against } : {}), ...(opts.code ? { code: opts.code } : {}) }),
   submit: (id: string, round: number, catalogIds: string[]) =>
     request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/rounds/${round}/submit`, { catalogIds }),
   counter: (id: string, rules: BattleRulesInput) => request<BattleView>("POST", `/api/v1/battles/${encodeURIComponent(id)}/counter`, { rules }),
@@ -361,6 +375,7 @@ export const api = {
   reorderPlaylist: (id: string, trackIds: string[]) => request<null>("PUT", `/api/v1/playlists/${encodeURIComponent(id)}/order`, { trackIds }),
   addCollaborator: (id: string, handle: string) => request<null>("POST", `/api/v1/playlists/${encodeURIComponent(id)}/collaborators`, { handle }),
   removeCollaborator: (id: string, userId: string) => request<null>("DELETE", `/api/v1/playlists/${encodeURIComponent(id)}/collaborators/${encodeURIComponent(userId)}`),
+  feedHighlights: () => request<FeedHighlightsResponse>("GET", "/api/v1/feed/highlights"),
   feed: (kind: "following" | "for_you" | { handle: string }, before?: string | null) =>
     request<FeedResponse>(
       "GET",

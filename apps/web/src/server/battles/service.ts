@@ -40,12 +40,18 @@ import {
   requiredListenMs,
   submitTrack,
   seasonOf,
+  BATTLE_CODE_ALPHABET,
+  DIVISIONS,
+  LEAGUES,
+  BATTLE_CODE_LENGTH,
+  normalizeBattleCode,
 } from "@vybz/core";
 import { type Database, type Executor, newId, schema, and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "@vybz/db";
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
 import type { AiJudge, JudgeInput } from "../ai-judge";
 import { z } from "zod";
-import { socialFor } from "../social";
+import { randomInt } from "node:crypto";
+import { isBlockedBetween, socialFor } from "../social";
 import { type CatalogDeps, CatalogError, NO_CAPS, type PlaybackCaps, type StoredTrack, ensureTrack, ensureYouTubeMatch, guestViewer, refsForTracks, toTrackView, viewerContext } from "../catalog";
 import { ConflictError, insertBattle, loadBattle, saveBattle } from "./repo";
 import { voterFacts } from "./eligibility";
@@ -223,14 +229,49 @@ export async function advanceAllDue(deps: BattleDeps, limit = 200): Promise<numb
   return due.length;
 }
 
-function requireBattler(deps: BattleDeps, actor: UserRow | null): UserRow {
+/**
+ * Who may battle. Guests (no email yet) may take part in battles they were
+ * invited to or challenged into (`guestOk`), so a friend's link works with
+ * one tap; starting battles of their own needs a saved account.
+ */
+function requireBattler(deps: BattleDeps, actor: UserRow | null, opts: { guestOk?: boolean } = {}): UserRow {
   if (!actor) throw new ServiceError(401, "SIGN_IN_REQUIRED");
   if (actor.status !== "ACTIVE") throw new ServiceError(403, "ACCOUNT_RESTRICTED");
+  if (actor.isAnonymous) {
+    if (!opts.guestOk) throw new ServiceError(403, "GUEST_ACCOUNT", "Save your account to start your own battles.");
+    return actor;
+  }
   if (deps.requireVerifiedEmail && !actor.emailVerified) throw new ServiceError(403, "EMAIL_NOT_VERIFIED", "Verify your email to battle.");
   return actor;
 }
 
-export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown, opts: { dailyDate?: string; quickMatch?: boolean; ranked?: boolean } = {}): Promise<{ id: string }> {
+/** A battle code nobody's using: six letters people can read out or type. */
+async function freeJoinCode(db: Executor): Promise<string> {
+  for (let i = 0; i < 8; i++) {
+    const code = Array.from({ length: BATTLE_CODE_LENGTH }, () => BATTLE_CODE_ALPHABET[randomInt(BATTLE_CODE_ALPHABET.length)]).join("");
+    const [taken] = await db.select({ id: schema.battle.id }).from(schema.battle).where(eq(schema.battle.joinCode, code)).limit(1);
+    if (!taken) return code;
+  }
+  throw new ServiceError(503, "TRY_AGAIN");
+}
+
+const codeTries = new Map<string, number[]>();
+
+/** A private challenge by its code: what the app needs to open it (id and invite code). Codes stop working once someone takes it. */
+export async function battleByCode(deps: BattleDeps, userId: string, raw: string): Promise<{ id: string; code: string; title: string }> {
+  // 20 lookups per 10 minutes per person, so codes can't be guessed.
+  const now = Date.now();
+  const recent = (codeTries.get(userId) ?? []).filter((t) => now - t < 600_000);
+  if (recent.length >= 20) throw new ServiceError(429, "SLOW_DOWN", "Too many tries. Wait a few minutes.");
+  codeTries.set(userId, [...recent, now]);
+  const code = normalizeBattleCode(raw);
+  if (!code) throw new ServiceError(404, "BATTLE_CODE_NOT_FOUND", "No challenge with that code.");
+  const [row] = await deps.db.select().from(schema.battle).where(eq(schema.battle.joinCode, code)).limit(1);
+  if (!row || row.status !== "OPEN_CHALLENGE") throw new ServiceError(404, "BATTLE_CODE_NOT_FOUND", "No open challenge with that code. It may have been taken already.");
+  return { id: row.id, code: row.inviteCode ?? "", title: row.title };
+}
+
+export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, body: unknown, opts: { dailyDate?: string; quickMatch?: boolean; ranked?: boolean; botFallback?: boolean } = {}): Promise<{ id: string }> {
   const actor = requireBattler(deps, actorIn);
   const parsed = CreateBattleSchema.safeParse(body);
   if (!parsed.success) throw new ServiceError(400, "INVALID_REQUEST", z.prettifyError(parsed.error));
@@ -265,7 +306,7 @@ export async function createBattle(deps: BattleDeps, actorIn: UserRow | null, bo
   const theme = req.theme?.trim() || themeLabel(rulesResult.constraints);
   const visibility = req.visibility ?? "PUBLIC";
   await deps.db.transaction(async (tx) => {
-    await insertBattle(tx, battle, { title: req.title, theme, visibility, inviteCode: newInviteCode(), dailyDate: opts.dailyDate ?? null, quickMatch: opts.quickMatch ?? false, ranked: opts.ranked ?? false });
+    await insertBattle(tx, battle, { title: req.title, theme, visibility, inviteCode: newInviteCode(), dailyDate: opts.dailyDate ?? null, quickMatch: opts.quickMatch ?? false, ranked: opts.ranked ?? false, botFallback: opts.botFallback ?? true, joinCode: visibility === "PRIVATE" && !invitedUserId && duel ? await freeJoinCode(tx) : null });
     if (invitees.length) await tx.insert(schema.battleInvite).values(invitees.map((u) => ({ battleId: battle.id, userId: u.id })));
   });
 
@@ -288,7 +329,7 @@ function mapEngine<T>(fn: () => T): T {
 
 /** Multi-entry: take a seat. Private battles need access (invite or link code). */
 export async function joinBattle(deps: BattleDeps, actorIn: UserRow | null, id: string, code?: string | null) {
-  const actor = requireBattler(deps, actorIn);
+  const actor = requireBattler(deps, actorIn, { guestOk: true });
   await viewableRow(deps, id, actor, code);
   await transition(deps, id, (agg, c) => engineJoin(agg, actor.id, c));
 }
@@ -306,7 +347,7 @@ export async function startBattle(deps: BattleDeps, actor: UserRow | null, id: s
 
 /** Propose different terms; the other side then accepts or counters. */
 export async function counterBattle(deps: BattleDeps, actorIn: UserRow | null, id: string, body: unknown) {
-  const actor = requireBattler(deps, actorIn);
+  const actor = requireBattler(deps, actorIn, { guestOk: true });
   const rules = validRules(deps, (body as { rules?: unknown } | null)?.rules);
   await transition(deps, id, (agg, c) => counterOffer(agg, actor.id, rules, c));
   // Keep the theme label in step with the new genre/era terms.
@@ -315,7 +356,7 @@ export async function counterBattle(deps: BattleDeps, actorIn: UserRow | null, i
 }
 
 export async function acceptBattle(deps: BattleDeps, actor: UserRow | null, id: string, code?: string | null) {
-  const user = requireBattler(deps, actor);
+  const user = requireBattler(deps, actor, { guestOk: true });
   await viewableRow(deps, id, user, code);
   await transition(deps, id, (agg, c) => engineAccept(agg, user.id, c));
 }
@@ -331,7 +372,7 @@ export async function cancelBattle(deps: BattleDeps, actor: UserRow | null, id: 
 }
 
 export async function submitPick(deps: BattleDeps, actorIn: UserRow | null, id: string, roundIndex: number, body: unknown) {
-  const actor = requireBattler(deps, actorIn);
+  const actor = requireBattler(deps, actorIn, { guestOk: true });
   const b = (body ?? {}) as { catalogIds?: unknown; catalogId?: unknown };
   const catalogIds = Array.isArray(b.catalogIds) ? b.catalogIds : typeof b.catalogId === "string" ? [b.catalogId] : null;
   if (!catalogIds || !catalogIds.length || catalogIds.length > 3 || !catalogIds.every((c): c is string => typeof c === "string")) {
@@ -569,32 +610,75 @@ export async function castVote(deps: BattleDeps, actor: UserRow | null, id: stri
   await afterVote(deps, actor!, id, roundIndex);
 }
 
-export async function rematch(deps: BattleDeps, actorIn: UserRow | null, id: string): Promise<{ id: string }> {
-  const actor = requireBattler(deps, actorIn);
+/**
+ * Runs a finished battle back with the same rules.
+ *
+ * - A player in it: a new duel against the other player (or a new lobby for
+ *   group battles), as before.
+ * - Anyone else, from a shared result card (`against` = the sharer's handle):
+ *   a new duel challenging that player, same theme and rules. "Think you can
+ *   beat me?" made real.
+ */
+export async function rematch(deps: BattleDeps, actorIn: UserRow | null, id: string, opts: { against?: string | null; code?: string | null } = {}): Promise<{ id: string }> {
+  const actor = requireBattler(deps, actorIn, { guestOk: true });
+  await viewableRow(deps, id, actor, opts.code);
   const loaded = await loadBattle(deps.db, id);
   if (!loaded) throw notFound();
   const { aggregate: agg, row } = loaded;
   if (agg.status !== "COMPLETE") throw new ServiceError(409, "NOT_COMPLETE");
   const me = participantFor(agg, actor.id);
-  if (!me) throw new ServiceError(403, "NOT_PARTICIPANT");
-  const others = agg.participants.filter((p) => p.id !== me.id);
   const duel = isDuel(agg.rules);
-  // Multi-entry rematch: a new lobby the other players are invited to, with the requester playing.
-  const rules = duel ? agg.rules : { ...agg.rules, creatorPlays: true };
-  const { battle } = engineCreate({ creatorId: actor.id, invitedUserId: duel ? others[0]!.userId : null, rules }, ctx(deps));
-  const title = row.title.startsWith("Rematch: ") ? row.title : `Rematch: ${row.title}`.slice(0, 80);
+  const { BOT_HANDLE, botUser } = await import("../bot");
+  if (actor.isAnonymous) {
+    // Guests: a few open challenges at a time.
+    const [{ n }] = (await deps.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.battle)
+      .where(and(eq(schema.battle.creatorId, actor.id), inArray(schema.battle.status, ["OPEN_CHALLENGE", "PENDING_ACCEPT"])))) as [{ n: number }];
+    if (n >= 3) throw new ServiceError(429, "GUEST_LIMIT", "Save your account to send more challenges.");
+  }
+
+  let invitedUserId: string | null;
+  let others: { userId: string }[];
+  if (me) {
+    others = agg.participants.filter((p) => p.id !== me.id);
+    invitedUserId = duel ? (others[0]?.userId ?? null) : null;
+  } else {
+    // A challenge from a shared result: take on the player who shared it.
+    const handle = (opts.against ?? "").replace(/^@/, "").toLowerCase();
+    if (!handle) throw new ServiceError(403, "NOT_PARTICIPANT");
+    const [opp] = await deps.db.select().from(schema.user).where(eq(schema.user.handle, handle));
+    if (!opp || opp.status !== "ACTIVE" || !agg.participants.some((p) => p.userId === opp.id)) throw new ServiceError(404, "OPPONENT_NOT_FOUND", `@${handle} didn't play in this battle.`);
+    if (opp.handle === BOT_HANDLE) throw new ServiceError(409, "OPPONENT_NOT_FOUND", "Challenge a player, not the bot.");
+    others = [{ userId: opp.id }];
+    invitedUserId = opp.id;
+  }
+  if (invitedUserId && (await isBlockedBetween(deps.db, actor.id, invitedUserId))) throw new ServiceError(403, "BLOCKED", "You can't challenge this player.");
+
+  // A challenger from a shared card plays a fresh duel; group battles become a duel too.
+  const rules = me ? (duel ? agg.rules : { ...agg.rules, creatorPlays: true }) : duel ? agg.rules : { ...agg.rules, entrants: { min: 2, max: 2 }, creatorPlays: true };
+  const { battle } = engineCreate({ creatorId: actor.id, invitedUserId, rules }, ctx(deps));
+  const base = row.title.replace(/^(Rematch|Challenge): /, "");
+  const title = (me ? `Rematch: ${base}` : `Challenge: ${base}`).slice(0, 80);
   await deps.db.transaction(async (tx) => {
     await insertBattle(tx, battle, { title, theme: row.theme, rematchOfId: row.id, visibility: row.visibility, inviteCode: newInviteCode() });
-    if (!duel && others.length) await tx.insert(schema.battleInvite).values(others.map((p) => ({ battleId: battle.id, userId: p.userId })));
+    if (!invitedUserId && others.length) await tx.insert(schema.battleInvite).values(others.map((p) => ({ battleId: battle.id, userId: p.userId })));
   });
+
+  // The bot always takes a rematch.
+  const bot = invitedUserId ? await botUser(deps).catch(() => null) : null;
+  if (bot && bot.id === invitedUserId) {
+    await acceptBattle(deps, bot, battle.id);
+    return { id: battle.id };
+  }
   await createNotifications(
     deps.db,
     deps.push,
     others.map((p) => ({
       userId: p.userId,
-      type: duel ? ("CHALLENGED" as const) : ("INVITED" as const),
-      title: "Rematch?",
-      body: `@${actor.handle} wants to run "${row.title}" back.`,
+      type: invitedUserId ? ("CHALLENGED" as const) : ("INVITED" as const),
+      title: me ? "Rematch?" : "New challenger",
+      body: me ? `@${actor.handle} wants to run "${row.title}" back.` : `@${actor.handle} saw your result and wants a shot: "${base}".`,
       battleId: battle.id,
     })),
   ).catch((err) => console.error("notify failed", err));
@@ -928,6 +1012,29 @@ export async function profile(deps: BattleDeps, viewer: UserRow | null, handle: 
         const v = rankView(r[0]);
         return { rating: v.rating, divisionLabel: v.divisionLabel, icon: v.icon, placement: v.placement };
       }),
+    // This week's league (or the last one they played in) and past ranked seasons.
+    league: await deps.db
+      .select({ tier: schema.leagueMember.tier, week: schema.leagueMember.week })
+      .from(schema.leagueMember)
+      .where(eq(schema.leagueMember.userId, u.id))
+      .orderBy(desc(schema.leagueMember.week))
+      .limit(1)
+      .then((r) => {
+        const l = r[0] ? LEAGUES[r[0].tier] : null;
+        return l ? { label: l.label, icon: l.icon } : null;
+      }),
+    seasonBadges: await deps.db
+      .select()
+      .from(schema.seasonBadge)
+      .where(eq(schema.seasonBadge.userId, u.id))
+      .orderBy(desc(schema.seasonBadge.season))
+      .limit(8)
+      .then((rows) =>
+        rows.map((b) => {
+          const d = DIVISIONS.find((x) => x.key === b.division) ?? DIVISIONS[0];
+          return { season: b.season, label: d.label, icon: d.icon };
+        }),
+      ),
   };
 }
 

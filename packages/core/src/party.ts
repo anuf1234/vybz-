@@ -109,6 +109,10 @@ export interface PartyGameOption {
   rounds: readonly number[];
 }
 
+/** How long rounds run: the host picks (birthdays and lounges run relaxed; game nights run fast). */
+export const PARTY_PACES = { RELAXED: 1.5, NORMAL: 1, FAST: 0.7 } as const;
+export type PartyPace = keyof typeof PARTY_PACES;
+
 interface PartyCommon {
   code: string;
   title: string;
@@ -120,6 +124,11 @@ interface PartyCommon {
   deadline: string | null;
   serverNow: string;
   standings: PartyPlayerView[];
+  /** The host paused the clock (deadline is null while paused). */
+  paused: boolean;
+  /** No new players can join (people already in can rejoin). */
+  locked: boolean;
+  pace: PartyPace;
 }
 
 export interface PartyHostView extends PartyCommon {

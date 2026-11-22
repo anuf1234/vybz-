@@ -15,3 +15,6 @@ export * from "./wars";
 export * from "./drops";
 export * from "./ranked";
 export * from "./pro";
+export * from "./result";
+export * from "./matchmaking";
+export * from "./leagues";

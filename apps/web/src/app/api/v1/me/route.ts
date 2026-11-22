@@ -7,7 +7,7 @@ import { getDb } from "@/server/db";
 import { currentUser, noStore, readJson, route } from "@/server/http";
 
 function toMe(u: UserRow): MeView {
-  return { id: u.id, handle: u.handle, displayName: u.name, image: u.image, email: u.email, emailVerified: u.emailVerified, role: u.role, createdAt: u.createdAt.toISOString() };
+  return { id: u.id, handle: u.handle, displayName: u.name, image: u.image, email: u.email, emailVerified: u.emailVerified, role: u.role, createdAt: u.createdAt.toISOString(), guest: u.isAnonymous };
 }
 
 export const GET = route(async (req) => {

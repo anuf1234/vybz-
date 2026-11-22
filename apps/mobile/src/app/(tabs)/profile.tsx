@@ -2,6 +2,7 @@ import { Link } from "expo-router";
 import { useState } from "react";
 import * as WebBrowser from "expo-web-browser";
 import { Alert, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
+import { SaveAccountBanner } from "@/components/guest";
 import { ProfileBody } from "@/components/profile-body";
 import { color, space, type } from "@/components/theme";
 import { Button, Card, EmptyState, ErrorBanner, Field, Loading } from "@/components/ui";
@@ -67,7 +68,8 @@ export default function Profile() {
       refreshControl={<RefreshControl tintColor={color.violet} refreshing={prof.refreshing} onRefresh={() => void Promise.all([me.reload(), prof.reload()])} />}
     >
       {me.error ? <ErrorBanner message={me.error.message} onRetry={() => void me.reload()} /> : null}
-      {me.data && !me.data.emailVerified ? (
+      <SaveAccountBanner />
+      {me.data && !me.data.emailVerified && !me.data.guest ? (
         <Card style={{ borderColor: color.sideB }}>
           <Text style={type.body}>Check {me.data.email} for a link to verify your email. You'll need it to battle and vote.</Text>
         </Card>

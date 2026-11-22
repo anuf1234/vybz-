@@ -1,10 +1,11 @@
-import { DECADES, GENRES, decadeLabel } from "@vybz/core";
+import { DECADES, GENRES, MATCHMAKING, decadeLabel, themeLabel } from "@vybz/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { color, radius, space, type } from "@/components/theme";
 import { Button, Card, EmptyState } from "@/components/ui";
-import { api } from "@/lib/api";
+import { Switch } from "react-native";
+import { api, timeZone } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
 import { useServerConfig } from "@/lib/config";
 
@@ -14,13 +15,25 @@ export default function Quick() {
   const session = useSession();
   const config = useServerConfig();
   const botAvailable = Boolean(config?.aiJudge.available);
-  const params = useLocalSearchParams<{ genre?: string; ranked?: string }>();
+  const params = useLocalSearchParams<{ genre?: string; ranked?: string; solo?: string }>();
   const ranked = params.ranked === "1";
+  // Play solo: straight to the bot, no matchmaking.
+  const solo = params.solo === "1" && botAvailable;
   const [genre, setGenre] = useState<string | null>(params.genre && GENRES.some((g) => g.key === params.genre) ? params.genre : null);
   const [decade, setDecade] = useState<number | null>(null);
   const [busy, setBusy] = useState<"find" | "bot" | null>(null);
   const [waitingId, setWaitingId] = useState<string | null>(null);
+  const [waitStart, setWaitStart] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  // Asked up front, so a bot match is never a surprise.
+  const [botOk, setBotOk] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!waitingId) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [waitingId]);
 
   // While waiting, watch for someone (or the bot) to take it.
   useEffect(() => {
@@ -43,8 +56,12 @@ export default function Quick() {
     setBusy(vsBot ? "bot" : "find");
     setError(null);
     try {
-      const r = await api.quickBattle({ genre, decade, vsBot, ...(ranked ? { ranked: true } : {}) });
-      if (r.matched === "waiting") setWaitingId(r.id);
+      const r = await api.quickBattle({ genre, decade, vsBot, timeZone: timeZone(), ...(ranked ? { ranked: true } : { botFallback: botAvailable && botOk }) });
+      if (r.matched === "waiting") {
+        setWaitingId(r.id);
+        setWaitStart(Date.now());
+        setNow(Date.now());
+      }
       else router.replace({ pathname: "/battle/[id]", params: { id: r.id } });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -60,14 +77,34 @@ export default function Quick() {
   };
 
   if (waitingId) {
+    const waited = now - waitStart;
+    const vibe = themeLabel({ genres: genre ? [genre] : undefined, eraFrom: decade ?? undefined, eraTo: decade !== null ? decade + 9 : undefined });
+    const status = ranked
+      ? "Looking for players near your rating. The range widens the longer you wait."
+      : waited >= MATCHMAKING.widenGenreMs
+        ? "Widening the search: anyone looking for a battle can take yours now."
+        : waited >= MATCHMAKING.widenEraMs && decade !== null
+          ? `Widening the search to ${genre ? GENRES.find((g) => g.key === genre)?.label : "any genre"} from any era.`
+          : `Looking for ${vibe ?? "any vibe"} players near your level and time zone.`;
+    const offerBot = botAvailable && !ranked && waited >= MATCHMAKING.botOfferMs;
+    const mmss = `${Math.floor(waited / 60_000)}:${String(Math.floor((waited % 60_000) / 1000)).padStart(2, "0")}`;
     return (
       <View style={{ flex: 1, padding: space.lg, gap: space.lg, justifyContent: "center" }}>
         <ActivityIndicator color={color.violet} size="large" />
-        <Text style={[type.title, { textAlign: "center" }]}>Finding an opponent…</Text>
-        <Text style={[type.small, { textAlign: "center" }]}>
-          Your battle is open to everyone looking for the same vibe.{botAvailable ? " If nobody takes it in a couple of minutes, the VYBZ bot will." : ""}
-        </Text>
-        {botAvailable && !ranked ? <Button title="🤖 Play the VYBZ bot now" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
+        <Text style={[type.title, { textAlign: "center" }]}>Finding an opponent… {mmss}</Text>
+        <Text style={[type.small, { textAlign: "center" }]}>{status}</Text>
+        {offerBot ? (
+          <Card style={{ gap: space.sm }}>
+            <Text style={[type.body, { fontWeight: "800" }]}>No one yet. Want to play now?</Text>
+            <Text style={type.small}>The VYBZ bot is an AI player, labeled as a bot in the battle. Wins against it don't count toward Ranked.</Text>
+            <Button title="🤖 Play the VYBZ bot now" loading={busy === "bot"} onPress={() => void go(true)} />
+            <Button title="🧠 Play today's trivia instead" kind="secondary" onPress={() => router.push("/trivia")} />
+          </Card>
+        ) : botAvailable && !ranked ? (
+          <Text style={[type.small, { textAlign: "center" }]}>
+            {botOk ? `If nobody joins by ${Math.round(MATCHMAKING.botAfterMs / 60_000)} minutes, the VYBZ bot (AI) takes it.` : "We'll keep looking for a real player."}
+          </Text>
+        ) : null}
         <Button title="Open my battle" kind="secondary" onPress={() => router.replace({ pathname: "/battle/[id]", params: { id: waitingId } })} />
         <Button title="Cancel" kind="ghost" onPress={() => void cancel()} />
         {error ? <Text style={[type.small, { color: color.danger, textAlign: "center" }]}>{error}</Text> : null}
@@ -96,9 +133,24 @@ export default function Quick() {
           ))}
         </View>
       </Card>
-      <Button title={ranked ? "🏆 Find a ranked battle" : "⚡ Find a battle"} loading={busy === "find"} onPress={() => void go(false)} />
-      {botAvailable && !ranked ? <Button title="🤖 Play the VYBZ bot" kind="secondary" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
-      {ranked ? <Text style={[type.small, { textAlign: "center" }]}>Ranked battles are against people near your rating. Wins move you up the divisions.</Text> : (
+      {solo ? (
+        <>
+          <Button title="🤖 Battle the VYBZ bot" loading={busy === "bot"} onPress={() => void go(true)} />
+          <Button title="⚡ Find a real opponent instead" kind="ghost" onPress={() => router.setParams({ solo: undefined })} />
+        </>
+      ) : (
+        <>
+          <Button title={ranked ? "🏆 Find a ranked battle" : "⚡ Find a battle"} loading={busy === "find"} onPress={() => void go(false)} />
+          {botAvailable && !ranked ? <Button title="🤖 Play the VYBZ bot" kind="secondary" loading={busy === "bot"} onPress={() => void go(true)} /> : null}
+        </>
+      )}
+      {botAvailable && !ranked && !solo ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+          <Switch value={botOk} onValueChange={setBotOk} accessibilityLabel="Play the VYBZ bot if nobody joins" />
+          <Text style={[type.small, { flex: 1 }]}>If nobody joins within {Math.round(MATCHMAKING.botAfterMs / 60_000)} minutes, play the VYBZ bot (an AI player, always labeled).</Text>
+        </View>
+      ) : null}
+      {solo ? null : ranked ? <Text style={[type.small, { textAlign: "center" }]}>Ranked battles are against people near your rating. Wins move you up the divisions.</Text> : (
         <Button title="🏆 Play ranked instead" kind="ghost" onPress={() => router.setParams({ ranked: "1" })} />
       )}
       {error ? <Text style={[type.small, { color: color.danger, textAlign: "center" }]}>{error}</Text> : null}
