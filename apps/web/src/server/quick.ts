@@ -13,7 +13,7 @@ import { isBlockedBetween } from "./social";
  * as time passes. With the AI judge set up, the VYBZ bot takes a quick
  * battle nobody has taken within BOT_AFTER_MS, but only if the player said
  * yes to that up front, or straight away if they ask for it. Quick battles
- * are AI-judged when the judge is available: 3 rounds, 30 minutes to pick.
+ * are AI-judged when the judge is available: 3 rounds, 30 minutes to pick, 2 minutes between rounds when the AI judges.
  */
 
 export const BOT_AFTER_MS = MATCHMAKING.botAfterMs;
@@ -42,7 +42,7 @@ export function quickRules(o: { genre?: string | null; decade?: number | null; a
     tracksPerRound: 1,
     challengeExpiryHours: 1,
     judging: { mode: o.ai ? "AI" : "CROWD", aiWeightPercent: 30 },
-    timing: { submissionWindowMinutes: 30, votingWindowMinutes: o.ai ? 5 : 30 },
+    timing: { submissionWindowMinutes: 30, votingWindowMinutes: o.ai ? 2 : 30 },
     constraints: {
       ...(o.genre ? { genres: [o.genre as (typeof GENRE_KEYS)[number]] } : {}),
       ...(o.decade ? { eraFrom: o.decade, eraTo: o.decade + 9 } : {}),
