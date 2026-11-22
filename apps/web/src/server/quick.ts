@@ -42,7 +42,7 @@ export function quickRules(o: { genre?: string | null; decade?: number | null; a
     tracksPerRound: 1,
     challengeExpiryHours: 1,
     judging: { mode: o.ai ? "AI" : "CROWD", aiWeightPercent: 30 },
-    timing: { submissionWindowMinutes: 30, votingWindowMinutes: o.ai ? 5 : 30 },
+    timing: { submissionWindowMinutes: 30, votingWindowMinutes: o.ai ? 2 : 30 },
     constraints: {
       ...(o.genre ? { genres: [o.genre as (typeof GENRE_KEYS)[number]] } : {}),
       ...(o.decade ? { eraFrom: o.decade, eraTo: o.decade + 9 } : {}),
