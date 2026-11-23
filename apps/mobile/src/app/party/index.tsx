@@ -52,6 +52,7 @@ export default function Party() {
         </Text>
         <Button title="Send the host link" kind="secondary" onPress={() => void Share.share({ message: `Host a VYBZ party on your TV: ${hostUrl}`, url: hostUrl })} />
         <Button title="Host from this phone" kind="ghost" onPress={() => router.push({ pathname: "/party/play", params: { path: "/party", title: "Host a party" } })} />
+        <Button title="📡 Streaming the party?" kind="ghost" onPress={() => router.push({ pathname: "/go-live", params: { party: "1" } })} />
       </Card>
 
       <View style={{ gap: space.sm }}>

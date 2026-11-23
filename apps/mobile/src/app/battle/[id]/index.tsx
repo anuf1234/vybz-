@@ -6,7 +6,6 @@ import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { resultCardUrl, shareResult, shareStoryCard } from "@/lib/share-card";
-import * as WebBrowser from "expo-web-browser";
 import { AiRubricNote } from "@/components/ai-rubric";
 import { EntryPlayer } from "@/components/entry-player";
 import { LiveStrip } from "@/components/live-strip";
@@ -96,13 +95,13 @@ export default function BattleScreen() {
       <Scoreboard battle={b} />
       {b.rules.judging.mode !== "CROWD" ? <AiRubricNote /> : null}
       <OnboardingNext key={b.status} when="trivia" />
-      {(b.status === "IN_PROGRESS" || b.status === "COMPLETE") && (b.visibility === "PUBLIC" || b.inviteCode) ? (
+      {b.status !== "CANCELLED" && b.status !== "EXPIRED" && b.status !== "VOIDED" && (b.visibility === "PUBLIC" || b.inviteCode) ? (
         <Pressable
-          onPress={() => void WebBrowser.openBrowserAsync(`${API_URL}/watch/${b.id}${b.visibility === "PRIVATE" && b.inviteCode ? `?code=${b.inviteCode}` : ""}`)}
-          accessibilityRole="link"
+          onPress={() => router.push({ pathname: "/go-live", params: { battleId: b.id, ...(b.visibility === "PRIVATE" && b.inviteCode ? { code: b.inviteCode } : {}) } })}
+          accessibilityRole="button"
           style={{ alignSelf: "center", paddingVertical: 4 }}
         >
-          <Text style={[type.small, { color: color.violetSoft, fontWeight: "700" }]}>📺 Watch party: cast it to a TV or show it on your stream</Text>
+          <Text style={[type.small, { color: color.violetSoft, fontWeight: "700" }]}>📡 Go live or put it on a TV</Text>
         </Pressable>
       ) : null}
       {error ? <ErrorBanner message={error} /> : null}

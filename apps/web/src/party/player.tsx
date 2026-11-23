@@ -147,6 +147,8 @@ function PlayerStage({ v, code, playerKey, onUpdate }: { v: PartyPlayerSelfView;
         <section className="flex flex-col gap-3">
           <p className="text-lg font-bold leading-snug">{v.question.prompt}</p>
           {v.question.imageUrl ? <img src={v.question.imageUrl} alt="Album cover" className="mx-auto h-36 w-36 rounded-lg object-cover" /> : null}
+          {/* Stream-safe parties play Name That Song on phones, not the big screen. */}
+          {v.question.audioUrl && v.phase === "QUESTION" ? <audio key={`${v.round}`} src={v.question.audioUrl} autoPlay controls className="w-full" /> : null}
           <div className="grid grid-cols-1 gap-3">
             {v.question.choices.map((c, i) => {
               const mine = v.myAnswer?.choice === i;

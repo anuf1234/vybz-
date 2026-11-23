@@ -4,17 +4,19 @@ const isDev = process.env.NODE_ENV !== "production";
 
 // Only the provider origins we actually use. YouTube embeds go through the
 // privacy-enhanced youtube-nocookie.com domain; Apple previews and artwork are
-// played and shown straight from Apple's CDNs, never proxied.
+// played and shown straight from Apple's CDNs, never proxied. MusicKit JS
+// (Apple Music on a big screen, with the viewer's own sign-in) loads from
+// Apple's CDN and talks to Apple's API and sign-in pages.
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' https://js-cdn.music.apple.com${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://*.mzstatic.com https://i.ytimg.com",
-  "media-src 'self' https://*.itunes.apple.com https://*.apple.com",
-  "frame-src https://www.youtube-nocookie.com",
-  "connect-src 'self'",
+  "media-src 'self' blob: https://*.itunes.apple.com https://*.apple.com",
+  "frame-src https://www.youtube-nocookie.com https://*.apple.com",
+  "connect-src 'self' https://*.apple.com",
   "font-src 'self'",
-  "worker-src 'self'",
+  "worker-src 'self' blob:",
   "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",

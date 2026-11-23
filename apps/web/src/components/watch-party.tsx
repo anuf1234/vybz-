@@ -1,7 +1,8 @@
 "use client";
 
 import { type BattleView, type EntryView, type LiveView, REACTIONS, type RoundView } from "@vybz/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { type MusicSource, ScreenMusic, type ScreenTrack } from "./screen-music";
 
 const SIDES = ["#8B5CF6", "#F472B6", "#22D3EE", "#FBBF24", "#34D399", "#FB7185", "#60A5FA", "#A3E635"];
 
@@ -23,25 +24,55 @@ function left(iso: string | null, now: number): string | null {
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** Live view for a big screen or a stream overlay. Polls the battle every 5s and chat every 3s. */
-export function WatchParty({ initial, code, qrSvg, link }: { initial: BattleView; code: string | null; qrSvg: string; link: string }) {
+/** The current round's picks, as a play queue for the screen (only while voting is open). */
+function queueFor(round: RoundView | undefined): ScreenTrack[] {
+  if (!round || round.status !== "VOTING_OPEN") return [];
+  return round.entries.flatMap((e) =>
+    e.tracks.map((t) => {
+      const find = <T extends EntryView["tracks"][number]["sources"][number]["tier"]>(tier: T) => t.sources.find((x) => x.tier === tier);
+      const preview = find("PREVIEW");
+      const embed = find("EMBED");
+      const full = find("PROVIDER_FULL");
+      return {
+        key: `${round.index}:${t.submissionId}`,
+        title: t.track.title,
+        artist: t.track.artistName,
+        durationMs: t.track.durationMs,
+        previewUrl: preview && preview.tier === "PREVIEW" ? preview.url : null,
+        youtubeId: embed && embed.tier === "EMBED" ? embed.embed.videoId : null,
+        appleId: full && full.tier === "PROVIDER_FULL" ? full.sdk.catalogId : null,
+      };
+    }),
+  );
+}
+
+/**
+ * Live view for a big screen or a stream. Polls the battle every 5s and chat
+ * every 3s. `vertical`: a 9:16 layout for TikTok and Instagram Live. Music is
+ * off unless the person running the screen turns it on (their YouTube or
+ * Apple Music).
+ */
+export function WatchParty({ initial, code, qrSvg, link, vertical = false }: { initial: BattleView; code: string | null; qrSvg: string; link: string; vertical?: boolean }) {
   const [b, setB] = useState(initial);
   const [live, setLive] = useState<LiveView | null>(null);
+  const [music, setMusic] = useState<MusicSource>("off");
   const now = useNow(1000);
   const q = code ? `?code=${encodeURIComponent(code)}` : "";
 
   useEffect(() => {
     let alive = true;
     const pull = async () => {
-      const r = await fetch(`/api/v1/battles/${b.id}${q}`, { cache: "no-store" }).catch(() => null);
+      // With Apple Music on, ask for full-song sources (this screen's own subscription plays them).
+      const r = await fetch(`/api/v1/battles/${b.id}${q}`, { cache: "no-store", headers: music === "apple" ? { "X-VYBZ-Apple-Music": "full" } : {} }).catch(() => null);
       if (alive && r?.ok) setB(await r.json());
     };
+    if (music === "apple") void pull();
     const t = setInterval(() => void pull(), 5000);
     return () => {
       alive = false;
       clearInterval(t);
     };
-  }, [b.id, q]);
+  }, [b.id, q, music]);
 
   useEffect(() => {
     let alive = true;
@@ -62,6 +93,77 @@ export function WatchParty({ initial, code, qrSvg, link }: { initial: BattleView
   const handle = (pid: string | null) => b.participants.find((p) => p.id === pid)?.user.handle ?? null;
   const winner = handle(b.winnerParticipantId);
   const lastScored = b.rounds.filter((r) => r.status === "SCORED" && r.index !== round?.index).at(-1);
+  const queue = useMemo(() => queueFor(round), [round]);
+  // Voting is 90 seconds: split it between the picks, up to 40 seconds each.
+  const clipSec = Math.max(10, Math.min(40, Math.floor(80 / Math.max(1, queue.length))));
+  const deck = <ScreenMusic queue={queue} active={queue.length > 0} clipSec={clipSec} onSource={setMusic} vertical={vertical} />;
+
+  if (vertical) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col gap-5 overflow-hidden p-6 text-white" style={{ background: "linear-gradient(180deg,#0A0614 0%,#1E0B3A 55%,#3B0F6B 100%)" }}>
+        <header className="flex items-center justify-between">
+          <span className="font-display text-2xl font-bold tracking-[0.3em]">VYBZ</span>
+          <StatusPill b={b} round={round} now={now} winner={winner} />
+        </header>
+        <div className="text-center">
+          <h1 className="text-4xl font-bold leading-tight">{b.title}</h1>
+          {b.theme ? <p className="mt-1 text-xl text-muted">{b.theme}</p> : null}
+        </div>
+        <div className="flex items-center justify-center gap-5">
+          {players.slice(0, 2).map((p, i) => (
+            <div key={p.id} className="flex items-center gap-5">
+              {i > 0 ? <span className="text-2xl font-bold text-muted">vs</span> : null}
+              <div className="flex flex-col items-center gap-1">
+                <span className="flex h-20 w-20 items-center justify-center rounded-full text-3xl font-bold" style={{ border: `5px solid ${p.id === b.winnerParticipantId ? "#C4B5FD" : SIDES[p.side % SIDES.length]}`, background: "#2A0E4F" }}>
+                  {(p.user.displayName || p.user.handle).slice(0, 1).toUpperCase()}
+                </span>
+                <span className="text-xl font-bold">@{p.user.handle}</span>
+                {b.status !== "OPEN_CHALLENGE" ? <span className="font-display text-5xl font-bold">{p.roundsWon}</span> : null}
+              </div>
+            </div>
+          ))}
+          {players.length > 2 ? <span className="text-xl text-muted">+{players.length - 2}</span> : null}
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          {round && (round.status === "VOTING_OPEN" || round.status === "SCORED") ? (
+            round.entries.map((e, i) => {
+              const who = handle(e.participantId);
+              const won = round.status === "SCORED" && e.participantId === round.winnerParticipantId;
+              const t = e.tracks[0];
+              return (
+                <div key={e.submissionId} className={`flex items-center gap-4 rounded-2xl border-2 bg-white/5 p-3 ${won ? "border-violet-soft" : "border-transparent"}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {t?.track.artworkUrl ? <img src={t.track.artworkUrl} alt="" className="h-24 w-24 rounded-xl" /> : <span className="h-24 w-24 rounded-xl bg-white/10" />}
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-muted">{who ? `@${who}` : `Pick ${String.fromCharCode(65 + i)}`}{won ? " · wins" : ""}</p>
+                    <p className="truncate text-2xl font-bold">{t?.track.title}</p>
+                    <p className="truncate text-lg text-muted">{t?.track.artistName}</p>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="mt-6 text-center text-2xl text-muted">{round ? "Picks are sealed until everyone's in…" : "Waiting for the battle to start…"}</p>
+          )}
+        </div>
+        <div className="flex justify-between rounded-2xl bg-white/5 px-4 py-2 text-2xl">
+          {REACTIONS.map((r) => (
+            <span key={r} className={live?.recentReactions[r] ? "animate-bounce" : ""}>
+              {r}
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center gap-4 rounded-2xl bg-white p-3 text-ink">
+          <div className="h-28 w-28 shrink-0" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+          <div>
+            <p className="text-xl font-bold">Scan to listen and vote</p>
+            <p className="mt-1 break-all text-sm opacity-70">{link}</p>
+          </div>
+        </div>
+        {deck}
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col gap-6 bg-ink p-8 text-white" style={{ background: "linear-gradient(135deg,#0A0614 0%,#1E0B3A 60%,#3B0F6B 100%)" }}>
@@ -117,6 +219,7 @@ export function WatchParty({ initial, code, qrSvg, link }: { initial: BattleView
               <p className="mt-1 break-all text-sm opacity-70">{link}</p>
             </div>
           </div>
+          {deck}
           <div className="flex justify-between rounded-2xl bg-white/5 px-4 py-3 text-2xl">
             {REACTIONS.map((r) => (
               <span key={r} className="flex flex-col items-center">
