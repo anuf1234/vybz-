@@ -329,6 +329,8 @@ export const aiVerdict = pgTable("ai_verdict", {
   confidence: real("confidence").notNull(),
   reason: text("reason").notNull(),
   model: text("model").notNull(),
+  /** [{ criterion, participantId | null, note }]: who had the edge on each part of the rubric. */
+  breakdown: jsonb("breakdown"),
   createdAt: createdAt(),
 });
 

@@ -127,6 +127,8 @@ export interface AiVerdictView {
   reason: string;
   /** "claude-sonnet-5-5", or "demo" for the development stand-in. */
   model: string;
+  /** Who had the edge on each criterion (AI_RUBRIC order), with a few words why. Null participant: even. Empty on older verdicts. */
+  breakdown: { criterion: string; label: string; participantId: string | null; note: string }[];
 }
 
 export interface RoundView {

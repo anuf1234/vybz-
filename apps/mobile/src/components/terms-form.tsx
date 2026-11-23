@@ -3,6 +3,7 @@ import {
   type BattleRulesInput,
   DECADES,
   DURATION_PRESETS,
+  ROUND_TIMING,
   GENRES,
   type JudgingMode,
   MAX_ENTRANTS,
@@ -63,7 +64,6 @@ export const DEFAULT_TERMS: Terms = {
 const MAX_GENRES = 3;
 
 export function termsToRules(t: Terms, base?: BattleRules): BattleRulesInput {
-  const total = DURATION_PRESETS.find((d) => d.key === t.duration)!.minutes;
   const constraints = {
     ...(t.genres.length ? { genres: t.genres } : {}),
     ...(t.decade !== null ? { eraFrom: t.decade, eraTo: t.decade + 9 } : {}),
@@ -77,7 +77,7 @@ export function termsToRules(t: Terms, base?: BattleRules): BattleRulesInput {
     tracksPerRound: t.tracksPerRound,
     blindVoting: t.blind,
     revealTallies: t.liveTallies ? "LIVE" : "AT_ROUND_CLOSE",
-    timing: windowsForDuration(total, t.rounds),
+    timing: { submissionWindowMinutes: ROUND_TIMING.pickMaxMinutes, votingWindowMinutes: ROUND_TIMING.voteMinutes },
     entrants: t.format === "DUEL" ? { min: 2, max: 2 } : { min: Math.min(3, t.maxEntrants), max: t.maxEntrants },
     judging: { mode: t.judging, aiWeightPercent: t.aiWeight },
     ...(Object.keys(constraints).length ? { constraints } : {}),
@@ -121,9 +121,6 @@ export function TermsForm({ value, onChange, mode = "create" }: { value: Terms; 
     if (value.genres.length >= MAX_GENRES) return set("genres", [...value.genres.slice(1), key]);
     set("genres", [...value.genres, key]);
   };
-  const total = DURATION_PRESETS.find((d) => d.key === value.duration)!.minutes;
-  const perRound = windowsForDuration(total, value.rounds);
-  const fmt = (m: number) => (m >= 1440 && m % 1440 === 0 ? `${m / 1440}d` : m >= 60 ? `${Math.round((m / 60) * 10) / 10}h` : `${m}m`);
 
   return (
     <View style={{ gap: space.md }}>
@@ -213,14 +210,9 @@ export function TermsForm({ value, onChange, mode = "create" }: { value: Terms; 
         {value.judging !== "CROWD" && config ? <Text style={type.small}>{config.aiJudge.note}</Text> : null}
       </View>
 
-      <SectionTitle>Battle length</SectionTitle>
-      <View style={styles.chips}>
-        {DURATION_PRESETS.map((d) => (
-          <Chip key={d.key} label={d.label} active={value.duration === d.key} onPress={() => set("duration", d.key)} />
-        ))}
-      </View>
+      <SectionTitle>Pace</SectionTitle>
       <Text style={type.small}>
-        Each round: {fmt(perRound.submissionWindowMinutes)} to pick, then {fmt(perRound.votingWindowMinutes)} to vote.
+        Every round: {ROUND_TIMING.pickMaxMinutes} minutes to pick, then {Math.round(ROUND_TIMING.voteMinutes * 60)} seconds to vote. {value.rounds} rounds take about {Math.ceil(value.rounds * (ROUND_TIMING.pickMaxMinutes + ROUND_TIMING.voteMinutes))} minutes at most.
       </Text>
 
       <SectionTitle>Voting rules</SectionTitle>

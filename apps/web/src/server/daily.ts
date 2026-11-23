@@ -34,9 +34,9 @@ export function dailyRules(theme: { genre: string; decade: number | null }): Bat
     roundCount: 3,
     entrants: { min: 2, max: 8 },
     creatorPlays: false,
-    // Join for 6 hours, then three rounds of 2h picks + 2h voting.
+    // Join for 6 hours, then three fast rounds: 3 minutes to pick, 90 seconds to vote.
     challengeExpiryHours: 6,
-    timing: { submissionWindowMinutes: 120, votingWindowMinutes: 120 },
+    timing: { submissionWindowMinutes: 3, votingWindowMinutes: 1.5 },
     constraints: { genres: [theme.genre], ...(theme.decade !== null ? { eraFrom: theme.decade, eraTo: theme.decade + 9 } : {}) },
   };
 }
