@@ -1,5 +1,5 @@
 import { trackMatchesGenres } from "./genres";
-import { type BattleRules, isDuel } from "./rules";
+import { type BattleRules, fastTiming, isDuel } from "./rules";
 import { type RoundTally, battleOutcome, judgeRound, totalVotes } from "./scoring";
 
 /**
@@ -162,7 +162,8 @@ export interface CreateBattleInput {
   rules: BattleRules;
 }
 
-export function createBattle(input: CreateBattleInput, ctx: EngineContext): EngineResult {
+export function createBattle(inputIn: CreateBattleInput, ctx: EngineContext): EngineResult {
+  const input = { ...inputIn, rules: { ...inputIn.rules, timing: fastTiming(inputIn.rules.timing) } };
   const duel = isDuel(input.rules);
   if (input.invitedUserId && input.invitedUserId === input.creatorId) throw new EngineError("OWN_BATTLE");
   if (!duel && input.invitedUserId) throw new EngineError("NOT_A_DUEL", "direct challenges are for duels; invite people to multi-entry battles instead");
@@ -239,7 +240,8 @@ export function acceptBattle(battle: BattleAggregate, userId: string, ctx: Engin
  * Duel: propose different terms (rounds, tracks per round, genre, era,
  * judging...). Countering an open challenge makes it a direct negotiation.
  */
-export function counterOffer(battle: BattleAggregate, userId: string, rules: BattleRules, ctx: EngineContext): EngineResult {
+export function counterOffer(battle: BattleAggregate, userId: string, rulesIn: BattleRules, ctx: EngineContext): EngineResult {
+  const rules = { ...rulesIn, timing: fastTiming(rulesIn.timing) };
   const b = clone(battle);
   assertCanRespond(b, userId, ctx.now);
   if (!isDuel(rules) || !rules.creatorPlays) throw new EngineError("NOT_A_DUEL", "a counter-offer can't turn a duel into a multi-entry battle");

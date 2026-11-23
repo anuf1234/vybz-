@@ -434,11 +434,13 @@ export async function submitPick(deps: BattleDeps, actorIn: UserRow | null, id: 
  * verdict stays hidden until the round is scored.
  */
 export async function ensureAiVerdicts(deps: BattleDeps, id: string): Promise<boolean> {
+  // (Crowd rounds: asked in case the vote ties; only used then.)
   if (!deps.aiJudge) return false;
   const loaded = await loadBattle(deps.db, id);
   if (!loaded) return false;
   const { aggregate: agg, row } = loaded;
-  if (!usesAiJudge(agg.rules.judging.mode)) return false;
+  // Crowd battles too: the AI breaks a tied or empty 90-second vote.
+  if (!usesAiJudge(agg.rules.judging.mode) && agg.rules.judging.mode !== "CROWD") return false;
   const round = currentRound(agg);
   if (!round || round.status !== "VOTING_OPEN" || agg.aiVerdicts[round.id]) return false;
 
@@ -493,7 +495,7 @@ export async function ensureAllAiVerdicts(deps: BattleDeps, limit = 50): Promise
     .where(
       and(
         eq(schema.battleRound.status, "VOTING_OPEN"),
-        sql`${schema.battle.rules}->'judging'->>'mode' in ('AI','COMBINED','SEPARATE')`,
+        sql`coalesce(${schema.battle.rules}->'judging'->>'mode', 'CROWD') in ('AI','COMBINED','SEPARATE','CROWD')`,
         sql`not exists (select 1 from ${schema.aiVerdict} where ${schema.aiVerdict.roundId} = ${schema.battleRound.id})`,
       ),
     )

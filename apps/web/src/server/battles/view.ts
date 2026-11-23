@@ -135,7 +135,8 @@ export function buildBattleView(d: ViewData): BattleView {
       }
     }
 
-    const verdictRow = scored ? d.verdicts.find((v) => v.roundId === r.id) : undefined;
+    // Crowd battles only show the AI's call when it broke a tie.
+    const verdictRow = scored && (agg.rules.judging.mode !== "CROWD" || r.aiWinnerParticipantId) ? d.verdicts.find((v) => v.roundId === r.id) : undefined;
     const ai: AiVerdictView | null = verdictRow
       ? {
           submissionId: subs.filter((s) => s.participantId === verdictRow.winnerParticipantId).sort((x, y) => x.position - y.position)[0]?.id ?? "",

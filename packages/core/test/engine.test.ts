@@ -82,7 +82,8 @@ describe("challenge lifecycle", () => {
   it("accepting opens round 1 for submissions", () => {
     const b = started();
     expect(b.rounds[0]?.status).toBe("SUBMISSIONS_OPEN");
-    expect(b.rounds[0]?.submissionsCloseAt?.getTime()).toBe(T0.getTime() + 1 + min(10));
+    // Picks are capped at 3 minutes, whatever the terms ask for.
+    expect(b.rounds[0]?.submissionsCloseAt?.getTime()).toBe(T0.getTime() + 1 + min(3));
     expect(nextDeadline(b)).toEqual(b.rounds[0]?.submissionsCloseAt);
   });
 
@@ -118,7 +119,8 @@ describe("submissions", () => {
     expect(b.rounds[0]?.status).toBe("SUBMISSIONS_OPEN");
     const res = submitTrack(b, { userId: "bob", roundIndex: 0, tracks: [{ id: "t2" }] }, at(min(2)));
     expect(res.battle.rounds[0]?.status).toBe("VOTING_OPEN");
-    expect(res.battle.rounds[0]?.votingClosesAt?.getTime()).toBe(T0.getTime() + min(12));
+    // Voting always runs 90 seconds.
+    expect(res.battle.rounds[0]?.votingClosesAt?.getTime()).toBe(T0.getTime() + min(2) + min(1.5));
     expect(res.events.map((e) => e.type)).toEqual(["round.submitted", "round.voting_opened"]);
   });
 

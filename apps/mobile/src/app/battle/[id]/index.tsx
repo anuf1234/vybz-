@@ -774,6 +774,7 @@ function StatsGrid({ b }: { b: BattleView }) {
 }
 
 function formatWindow(min: number): string {
+  if (!Number.isInteger(min) || min < 5) return min < 1 || !Number.isInteger(min) ? `${Math.round(min * 60)}s` : `${min} min`;
   if (min % (24 * 60) === 0) return `${min / (24 * 60)}d`;
   if (min % 60 === 0) return `${min / 60}h`;
   return `${min}m`;

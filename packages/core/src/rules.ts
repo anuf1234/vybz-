@@ -6,7 +6,19 @@ import { GENRE_KEYS } from "./genres";
  * Phase 1 supports async Song battles with per-round submissions.
  */
 
-const minutes = (max: number, fallback: number) => z.number().int().min(1).max(max).default(fallback);
+// Minutes, in half-minute steps (90 seconds is 1.5).
+const minutes = (max: number, fallback: number) => z.number().min(0.5).max(max).multipleOf(0.5).default(fallback);
+
+/**
+ * Every battle round moves fast: at most 3 minutes to pick, then 90 seconds
+ * to vote. (Party Mode runs its own clock.) Applied when a battle is created
+ * or its terms change, so older battles keep the timing they started with.
+ */
+export const ROUND_TIMING = { pickMaxMinutes: 3, voteMinutes: 1.5 } as const;
+
+export function fastTiming(t: { submissionWindowMinutes: number; votingWindowMinutes: number }): { submissionWindowMinutes: number; votingWindowMinutes: number } {
+  return { submissionWindowMinutes: Math.min(t.submissionWindowMinutes, ROUND_TIMING.pickMaxMinutes), votingWindowMinutes: ROUND_TIMING.voteMinutes };
+}
 
 export const ROUND_COUNTS = [3, 5, 7, 10] as const;
 export type RoundCount = (typeof ROUND_COUNTS)[number];
@@ -83,11 +95,11 @@ export const BattleRulesSchema = z
     revealTallies: z.enum(["LIVE", "AT_ROUND_CLOSE", "AT_BATTLE_END"]).default("AT_ROUND_CLOSE"),
     timing: z
       .object({
-        submissionWindowMinutes: minutes(7 * 24 * 60, 24 * 60),
-        votingWindowMinutes: minutes(7 * 24 * 60, 24 * 60),
+        submissionWindowMinutes: minutes(7 * 24 * 60, ROUND_TIMING.pickMaxMinutes),
+        votingWindowMinutes: minutes(7 * 24 * 60, ROUND_TIMING.voteMinutes),
       })
       .strict()
-      .default({ submissionWindowMinutes: 24 * 60, votingWindowMinutes: 24 * 60 }),
+      .default({ submissionWindowMinutes: ROUND_TIMING.pickMaxMinutes, votingWindowMinutes: ROUND_TIMING.voteMinutes }),
     constraints: ConstraintsSchema.optional(),
     /** Below this many votes the voting window is extended (up to maxVotingExtensions). */
     minVotesToCount: z.number().int().min(0).max(1000).default(1),

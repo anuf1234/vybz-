@@ -111,9 +111,11 @@ export function judgeRound(
   participantIds: readonly string[],
 ): RoundJudgement {
   const crowd = mode === "AI" ? null : roundWinner(tally, participantIds);
-  const ai = mode === "CROWD" ? null : aiPick && participantIds.includes(aiPick) ? aiPick : null;
+  const ai = aiPick && participantIds.includes(aiPick) ? aiPick : null;
   switch (mode) {
     case "CROWD":
+      // With 90-second votes a round can close tied or empty: the AI judge breaks it when it's on.
+      if (!crowd && ai) return { winnerParticipantId: ai, aiWinnerParticipantId: ai, crowdWinnerParticipantId: null };
       return { winnerParticipantId: crowd, aiWinnerParticipantId: null, crowdWinnerParticipantId: crowd };
     case "AI":
       return { winnerParticipantId: ai, aiWinnerParticipantId: ai, crowdWinnerParticipantId: null };

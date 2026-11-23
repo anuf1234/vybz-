@@ -115,7 +115,7 @@ export default function Quick() {
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }}>
       <Text style={type.small}>
-        3 rounds, one song each, 30 minutes to pick.{botAvailable ? " The AI judge calls every round, so there's no waiting for votes." : ""}
+        3 rounds, one song each, 3 minutes to pick.{botAvailable ? " The AI judge calls every round, so there's no waiting for votes." : ""}
       </Text>
       <Card style={{ gap: space.sm }}>
         <Text style={type.label}>Genre</Text>
