@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { resultCardUrl, shareResult, shareStoryCard } from "@/lib/share-card";
 import * as WebBrowser from "expo-web-browser";
+import { AiRubricNote } from "@/components/ai-rubric";
 import { EntryPlayer } from "@/components/entry-player";
 import { LiveStrip } from "@/components/live-strip";
 import { SaveButton } from "@/components/save-button";
@@ -93,6 +94,7 @@ export default function BattleScreen() {
       </View>
 
       <Scoreboard battle={b} />
+      {b.rules.judging.mode !== "CROWD" ? <AiRubricNote /> : null}
       <OnboardingNext key={b.status} when="trivia" />
       {(b.status === "IN_PROGRESS" || b.status === "COMPLETE") && (b.visibility === "PUBLIC" || b.inviteCode) ? (
         <Pressable
@@ -659,6 +661,22 @@ function AiVerdictCard({ b, ai }: { b: BattleView; ai: NonNullable<RoundView["ai
         {ai.model === "demo" ? "Demo judge" : "AI judge"} · picked @{pick?.user.handle ?? "?"} · {Math.round(ai.confidence * 100)}% sure
       </Text>
       <Text style={type.body}>{ai.reason}</Text>
+      {ai.breakdown.length ? (
+        <View style={{ gap: 4, marginTop: space.xs }}>
+          {ai.breakdown.map((c) => {
+            const who = c.participantId ? b.participants.find((p) => p.id === c.participantId) : null;
+            return (
+              <View key={c.criterion} style={{ flexDirection: "row", gap: space.sm }} accessibilityLabel={`${c.label}: ${who ? `@${who.user.handle}` : "even"}. ${c.note}`}>
+                <Text style={[type.small, { width: 118, color: color.text, fontWeight: "700" }]}>{c.label}</Text>
+                <Text style={[type.small, { width: 86, color: who ? sideColor(who.side) : color.muted, fontWeight: "800" }]} numberOfLines={1}>
+                  {who ? `@${who.user.handle}` : "Even"}
+                </Text>
+                <Text style={[type.small, { flex: 1 }]}>{c.note}</Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }

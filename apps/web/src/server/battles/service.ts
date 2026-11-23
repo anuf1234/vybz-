@@ -45,6 +45,8 @@ import {
   LEAGUES,
   BATTLE_CODE_LENGTH,
   normalizeBattleCode,
+  isRecentRelease,
+  AI_RUBRIC,
 } from "@vybz/core";
 import { type Database, type Executor, newId, schema, and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "@vybz/db";
 import { type PlaybackTier, resolvePlayback } from "@vybz/providers";
@@ -446,6 +448,18 @@ export async function ensureAiVerdicts(deps: BattleDeps, id: string): Promise<bo
 
   const subs = agg.submissions.filter((s) => s.roundId === round.id);
   const tracks = await deps.db.select().from(schema.track).where(inArray(schema.track.id, subs.map((s) => s.trackId)));
+  // Streaming today: live YouTube views of the uploads we play (best effort; the judge never guesses numbers).
+  const ytRefs = deps.catalog.popularity
+    ? await deps.db
+        .select({ trackId: schema.trackProviderRef.trackId, videoId: schema.trackProviderRef.externalId })
+        .from(schema.trackProviderRef)
+        .where(and(inArray(schema.trackProviderRef.trackId, tracks.map((t) => t.id)), eq(schema.trackProviderRef.provider, "YOUTUBE")))
+    : [];
+  const views = ytRefs.length ? await deps.catalog.popularity!.viewCounts(ytRefs.map((r) => r.videoId)).catch(() => new Map<string, number>()) : new Map<string, number>();
+  const viewsFor = (trackId: string) => {
+    const counts = ytRefs.filter((r) => r.trackId === trackId).map((r) => views.get(r.videoId)).filter((n): n is number => typeof n === "number");
+    return counts.length ? Math.max(...counts) : null;
+  };
   // Always blind for the AI: A/B in the round's random order, no identities.
   const order = entryOrder(round.id, true);
   const labels = ["A", "B"] as const;
@@ -465,7 +479,7 @@ export async function ensureAiVerdicts(deps: BattleDeps, id: string): Promise<bo
         .sort((a, b) => a.position - b.position)
         .map((s) => {
           const t = tracks.find((x) => x.id === s.trackId)!;
-          return { title: t.title, artistName: t.artistName, albumName: t.albumName, releaseYear: t.releaseYear, genres: t.genres, durationMs: t.durationMs };
+          return { title: t.title, artistName: t.artistName, albumName: t.albumName, releaseYear: t.releaseYear, genres: t.genres, durationMs: t.durationMs, youtubeViews: viewsFor(t.id), recent: isRecentRelease(t.releaseYear, now(deps)) };
         }),
     })),
   };
@@ -475,7 +489,15 @@ export async function ensureAiVerdicts(deps: BattleDeps, id: string): Promise<bo
     const winner = sideParticipant[verdict.winner === "A" ? 0 : 1]!;
     await deps.db
       .insert(schema.aiVerdict)
-      .values({ roundId: round.id, battleId: agg.id, winnerParticipantId: winner, confidence: verdict.confidence, reason: verdict.reason, model: verdict.model })
+      .values({
+        roundId: round.id,
+        battleId: agg.id,
+        winnerParticipantId: winner,
+        confidence: verdict.confidence,
+        reason: verdict.reason,
+        model: verdict.model,
+        breakdown: (verdict.breakdown ?? []).map((b) => ({ criterion: b.criterion, participantId: b.edge === "EVEN" ? null : sideParticipant[b.edge === "A" ? 0 : 1]!, note: b.note })),
+      })
       .onConflictDoNothing();
     return true;
   } catch (err) {

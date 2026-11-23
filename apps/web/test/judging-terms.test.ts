@@ -26,7 +26,16 @@ class FakeJudge implements AiJudge {
   constructor(public pick: "A" | "B" = "A") {}
   async judge(input: JudgeInput) {
     this.inputs.push(input);
-    return { winner: this.pick, confidence: 0.8, reason: `Side ${this.pick} fits the theme better.`, model: "fake-1" };
+    return {
+      winner: this.pick,
+      confidence: 0.8,
+      reason: `Side ${this.pick} fits the theme better.`,
+      model: "fake-1",
+      breakdown: [
+        { criterion: "fit" as const, edge: this.pick, note: "Right on theme" },
+        { criterion: "recognition" as const, edge: "EVEN" as const, note: "Both award winners" },
+      ],
+    };
   }
 }
 
@@ -122,6 +131,11 @@ describe.skipIf(!TEST_DB_URL)("judging modes, negotiated terms and genre rules",
     expect(scored.crowdWinnerParticipantId).toBe(scored.winnerParticipantId);
     expect(scored.ai).toMatchObject({ reason: "Side A fits the theme better.", model: "fake-1", confidence: 0.8 });
     expect(scored.ai!.participantId).not.toBe(scored.winnerParticipantId);
+    // The breakdown names who had each edge (the AI's pick on fit; even on awards).
+    expect(scored.ai!.breakdown).toEqual([
+      { criterion: "fit", label: "Theme fit", participantId: scored.ai!.participantId, note: "Right on theme" },
+      { criterion: "recognition", label: "Awards and recognition", participantId: null, note: "Both award winners" },
+    ]);
     expect(v.aiScorecard).toEqual({ [scored.ai!.participantId]: 1, [scored.winnerParticipantId!]: 0 });
   });
 
@@ -165,7 +179,7 @@ describe("AnthropicJudge", () => {
     suddenDeath: false,
     sides: [
       { label: "A", tracks: [{ title: "Song One", artistName: "Artist X", albumName: "LP", releaseYear: 1996, genres: ["R&B/Soul"], durationMs: 240000 }] },
-      { label: "B", tracks: [{ title: "Song Two", artistName: "Artist Y", albumName: null, releaseYear: 1994, genres: [], durationMs: null }] },
+      { label: "B", tracks: [{ title: "Song Two", artistName: "Artist Y", albumName: null, releaseYear: 1994, genres: [], durationMs: null, youtubeViews: 1_240_000_000 }] },
     ],
   };
 
@@ -173,11 +187,36 @@ describe("AnthropicJudge", () => {
     let sent: { url: string; init: RequestInit } | null = null;
     const fakeFetch = (async (url: string, init: RequestInit) => {
       sent = { url, init };
-      return new Response(JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: '{"winner":"B","confidence":0.7,"reason":"B is the stronger slow jam."}' }] }), { status: 200 });
+      const verdict = {
+        winner: "B",
+        confidence: 0.7,
+        reason: "B is the stronger slow jam.",
+        // Out of order, with a repeat: kept once each, in rubric order.
+        breakdown: [
+          { criterion: "legacy", edge: "B", note: "Still a wedding staple" },
+          { criterion: "fit", edge: "EVEN", note: "Both 90s R&B" },
+          { criterion: "fit", edge: "A", note: "dupe" },
+        ],
+      };
+      return new Response(JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(verdict) }] }), { status: 200 });
     }) as unknown as typeof fetch;
     const j = new AnthropicJudge({ apiKey: "k", model: "claude-sonnet-5-5", fetch: fakeFetch });
-    expect(await j.judge(input)).toEqual({ winner: "B", confidence: 0.7, reason: "B is the stronger slow jam.", model: "claude-sonnet-5-5" });
+    expect(await j.judge(input)).toEqual({
+      winner: "B",
+      confidence: 0.7,
+      reason: "B is the stronger slow jam.",
+      model: "claude-sonnet-5-5",
+      breakdown: [
+        { criterion: "fit", edge: "EVEN", note: "Both 90s R&B" },
+        { criterion: "legacy", edge: "B", note: "Still a wedding staple" },
+      ],
+    });
     const body = JSON.parse(String(sent!.init.body));
+    // The rubric and its guardrails are in the prompt.
+    expect(body.system).toContain("Awards and recognition");
+    expect(body.system).toContain("Legacy and replay value");
+    expect(body.system).toContain("Never state other streaming numbers from memory");
+    expect(body.system).toContain("Don't count being unknown against them");
     expect(sent!.url).toBe("https://api.anthropic.com/v1/messages");
     expect((sent!.init.headers as Record<string, string>)["anthropic-version"]).toBe("2023-06-01");
     expect(body.output_config.format.type).toBe("json_schema");
@@ -189,6 +228,9 @@ describe("AnthropicJudge", () => {
     expect(text).toContain("Genre: R&B");
     expect(text).toContain("Era: 1990–1999");
     expect(text).toContain("Side A:");
+    expect(text).toContain("1.2B YouTube views today");
+    const recent = describeForJudge({ ...input, sides: [{ label: "A", tracks: [{ title: "New One", artistName: "Z", albumName: null, releaseYear: 2026, genres: [], durationMs: null, recent: true }] }, input.sides[1]!] });
+    expect(recent).toContain("2026 · recent");
   });
 
   it("surfaces refusals and malformed output as errors", async () => {

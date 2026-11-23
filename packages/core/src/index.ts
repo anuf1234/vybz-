@@ -18,3 +18,4 @@ export * from "./pro";
 export * from "./result";
 export * from "./matchmaking";
 export * from "./leagues";
+export * from "./judging-rubric";

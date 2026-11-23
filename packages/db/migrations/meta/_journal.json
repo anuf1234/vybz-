@@ -183,6 +183,13 @@
       "when": 1795305891157,
       "tag": "0025_growth_loops",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795439580026,
+      "tag": "0026_judge_breakdown",
+      "breakpoints": true
     }
   ]
 }

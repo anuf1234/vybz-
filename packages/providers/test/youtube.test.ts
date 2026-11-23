@@ -25,6 +25,17 @@ describe("cleanChannelName", () => {
 });
 
 describe("YouTubeAdapter", () => {
+  it("reads live view counts, skipping hidden ones", async () => {
+    const { fetch, calls } = stubFetch({
+      "/videos": { items: [{ id: "a", statistics: { viewCount: "1240000000" } }, { id: "b", statistics: {} }, { id: "c" }] },
+    });
+    const yt = new YouTubeAdapter({ apiKey: "k", fetch });
+    const views = await yt.viewCounts(["a", "b", "c"]);
+    expect([...views]).toEqual([["a", 1_240_000_000]]);
+    expect(calls[0]!.url.searchParams.get("part")).toBe("statistics");
+    expect(await yt.viewCounts([])).toEqual(new Map());
+  });
+
   it("searches music videos, then hydrates via videos.list in search order", async () => {
     const { fetch, calls } = stubFetch({
       "/search": { items: [{ id: { videoId: "b" } }, { id: { videoId: "a" } }, { id: {} }] },

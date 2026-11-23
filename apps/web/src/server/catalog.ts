@@ -33,6 +33,8 @@ export interface CatalogDeps {
   playback: ProviderRegistry;
   /** Used to match Apple tracks to YouTube videos at submission time. */
   youtube?: MetadataProvider | null;
+  /** Live YouTube view counts, for the AI judge's "streaming today" criterion. */
+  popularity?: { viewCounts(videoIds: string[]): Promise<Map<string, number>> } | null;
   /** Original release years for YouTube picks without an Apple Music match (MusicBrainz). */
   releaseYears?: ReleaseYearLookup | null;
   storefront: string;

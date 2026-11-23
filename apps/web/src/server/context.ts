@@ -32,7 +32,7 @@ export function getCatalogDeps(): CatalogDeps {
   const playback: ProviderRegistry = { ...registry, ...(demo ? { VYBZ_DEMO: demo } : {}) };
   // YouTube picks need a real release year; MusicBrainz is free and keyless.
   const releaseYears = youtube ? new MusicBrainzReleaseYears({ userAgent: `VYBZ/0.1 ( ${publicOrigin()} )` }) : null;
-  g.__vybzCatalog = { metadata, playback, youtube: apple ? youtube : null, releaseYears, storefront: defaultStorefront };
+  g.__vybzCatalog = { metadata, playback, youtube: apple ? youtube : null, popularity: youtube, releaseYears, storefront: defaultStorefront };
   return g.__vybzCatalog;
 }
 

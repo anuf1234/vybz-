@@ -38,6 +38,7 @@ const VideoSchema = z.object({
 });
 type Video = z.infer<typeof VideoSchema>;
 const VideosResponseSchema = z.object({ items: z.array(VideoSchema) });
+const StatsResponseSchema = z.object({ items: z.array(z.object({ id: z.string(), statistics: z.object({ viewCount: z.string().optional() }).optional() })) });
 
 const PlaylistsResponseSchema = z.object({ items: z.array(z.object({ snippet: z.object({ title: z.string() }) })) });
 const PlaylistItemsResponseSchema = z.object({
@@ -107,6 +108,18 @@ export class YouTubeAdapter implements MetadataProvider, PlaybackProvider {
     const byId = new Map(VideosResponseSchema.parse(json).items.map((v) => [v.id, toCandidate(v)]));
     // Preserve search ranking order.
     return ids.map((id) => byId.get(id)).filter((c): c is TrackCandidate => Boolean(c));
+  }
+
+  /** Live view counts for videos (1 unit per 50). Missing or hidden counts are left out. */
+  async viewCounts(ids: string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (ids.length === 0) return out;
+    const json = await this.get(`/videos?${new URLSearchParams({ part: "statistics", id: ids.slice(0, 50).join(",") })}`);
+    for (const v of StatsResponseSchema.parse(json).items) {
+      const n = Number(v.statistics?.viewCount);
+      if (Number.isFinite(n) && n >= 0) out.set(v.id, n);
+    }
+    return out;
   }
 
   /** A public or unlisted playlist's title and video ids, in order (1 unit per 50 videos). */

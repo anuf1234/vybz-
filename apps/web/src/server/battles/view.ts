@@ -25,6 +25,7 @@ import {
   standings,
   submissionsFor,
 } from "@vybz/core";
+import { AI_RUBRIC } from "@vybz/core";
 import type { schema } from "@vybz/db";
 import {
   type PlaybackSource,
@@ -144,6 +145,10 @@ export function buildBattleView(d: ViewData): BattleView {
           confidence: verdictRow.confidence,
           reason: verdictRow.reason,
           model: verdictRow.model,
+          breakdown: ((verdictRow.breakdown as { criterion: string; participantId: string | null; note: string }[] | null) ?? []).map((b) => ({
+            ...b,
+            label: AI_RUBRIC.find((r) => r.key === b.criterion)?.label ?? b.criterion,
+          })),
         }
       : null;
 
