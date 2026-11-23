@@ -283,6 +283,9 @@ export async function hostAction(deps: PartyDeps, viewer: UserRow | null, code: 
         await tx.update(schema.party).set({ deadline: new Date(now.getTime() + p.pausedLeftMs), pausedLeftMs: null }).where(eq(schema.party.id, p.id));
         return;
       }
+      case "streamsafe":
+        await tx.update(schema.party).set({ streamSafe: (b as { on?: unknown }).on === true }).where(eq(schema.party.id, p.id));
+        return;
       case "lock":
       case "unlock":
         await tx.update(schema.party).set({ locked: b.action === "lock" }).where(eq(schema.party.id, p.id));
@@ -497,7 +500,19 @@ export async function partyAnswer(deps: PartyDeps, code: string, key: unknown, b
     let song: PartySong;
     try {
       const st = await ensureTrack(deps.db, deps.catalog, b.catalogId);
-      song = { title: st.track.title, artistName: st.track.artistName, albumName: st.track.albumName, releaseYear: st.track.releaseYear, artworkUrl: st.track.artworkUrl };
+      // Enough to play it on the big screen: a preview, and the Apple Music and YouTube ids.
+      const apple = st.refs.find((r) => r.provider === "APPLE_MUSIC");
+      const yt = st.refs.find((r) => r.provider === "YOUTUBE");
+      song = {
+        title: st.track.title,
+        artistName: st.track.artistName,
+        albumName: st.track.albumName,
+        releaseYear: st.track.releaseYear,
+        artworkUrl: st.track.artworkUrl,
+        previewUrl: (apple ?? st.refs.find((r) => r.previewUrl))?.previewUrl ?? null,
+        appleId: apple?.externalId ?? null,
+        youtubeId: yt?.externalId ?? null,
+      };
     } catch (err) {
       if (err instanceof CatalogError) throw new ServiceError(400, "INVALID_PICK", "Couldn't find that song. Try another.");
       throw err;
@@ -612,6 +627,7 @@ export async function hostView(deps: PartyDeps, viewer: UserRow | null, code: st
     paused: p.pausedLeftMs !== null,
     locked: p.locked,
     pace: p.pace as PartyPace,
+    streamSafe: p.streamSafe,
     joinUrl,
     qrSvg: await QRCode.toString(joinUrl, { type: "svg", margin: 1, color: { dark: "#0A0614", light: "#FFFFFF" } }),
     players: st,
@@ -671,8 +687,11 @@ export async function playerView(deps: PartyDeps, code: string, key: unknown): P
     paused: p.pausedLeftMs !== null,
     locked: p.locked,
     pace: p.pace as PartyPace,
+    streamSafe: p.streamSafe,
     me: { id: me.id, name: me.name, score: meRow.score, rank: st.findIndex((s) => s.id === me.id) + 1 },
-    question: r.question ? { prompt: r.question.prompt, choices: r.question.choices, imageUrl: r.question.imageUrl, category: r.question.category } : null,
+    question: r.question
+      ? { prompt: r.question.prompt, choices: r.question.choices, imageUrl: r.question.imageUrl, category: r.question.category, ...(p.streamSafe ? { audioUrl: r.question.audioUrl } : {}) }
+      : null,
     myAnswer,
     reveal: reveal ? { answerIndex: r.answerIndex! } : null,
     playlist,

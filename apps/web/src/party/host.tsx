@@ -1,7 +1,8 @@
 "use client";
 
-import { GENRES, PARTY_GAMES, type PartyCreated, type PartyGame, type PartyHostView, genreLabel, partyCodeLabel } from "@vybz/core";
-import { useEffect, useRef, useState } from "react";
+import { GENRES, PARTY, PARTY_GAMES, PARTY_PACES, type PartyCreated, type PartyGame, type PartyHostView, genreLabel, partyCodeLabel } from "@vybz/core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ScreenMusic, type ScreenTrack } from "@/components/screen-music";
 import { CHOICE_COLORS, CHOICE_SHAPES, hostKeyName, partyCall, readKey, useCountdown, usePoll, writeKey } from "./client";
 
 /** /party: name the party, pick a theme, get a code. */
@@ -113,6 +114,8 @@ export function PartyHost({ code }: { code: string }) {
 
   const live = !["LOBBY", "SCORES", "FINAL"].includes(v.phase);
   return (
+    <>
+    <PlaylistMusic v={v} />
     <div className="grid min-h-dvh gap-6 py-6 lg:grid-cols-[1fr_320px]" data-embed="app">
       <main className="flex flex-col gap-5">
         <header className="flex flex-wrap items-center gap-3">
@@ -159,6 +162,16 @@ export function PartyHost({ code }: { code: string }) {
               {v.locked ? "🔓 Let people join" : "🔒 Lock the room"}
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={() => void act({ action: "streamsafe", on: !v.streamSafe })}
+            disabled={busy}
+            aria-pressed={v.streamSafe}
+            className={`rounded-xl border px-4 py-2 font-bold ${v.streamSafe ? "border-violet-soft text-violet-soft" : "border-line"}`}
+            title="For going live: no music plays from this screen, and Name That Song clips play on each player's phone."
+          >
+            {v.streamSafe ? "📡 Stream-safe: on" : "📡 Stream-safe mode"}
+          </button>
           {v.phase === "LOBBY" || v.phase === "SCORES" ? (
             <label className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm">
               Pace
@@ -210,6 +223,30 @@ export function PartyHost({ code }: { code: string }) {
           {!v.standings.length ? <p className="text-sm text-muted">Waiting for players to join…</p> : null}
         </section>
       </aside>
+    </div>
+    </>
+  );
+}
+
+/**
+ * Battle of the Playlists on the big screen: while everyone votes, play a
+ * clip of each pick (A, then B) through the host's choice of YouTube, Apple
+ * Music (their sign-in) or previews. Silent in stream-safe mode.
+ */
+function PlaylistMusic({ v }: { v: PartyHostView }) {
+  const pl = v.playlist;
+  const queue = useMemo<ScreenTrack[]>(() => {
+    if (!pl || v.game !== "PLAYLIST") return [];
+    return [pl.a, pl.b]
+      .filter((x) => x.song)
+      .map((x) => ({ key: `${v.round}:${x.playerId}`, title: x.song!.title, artist: x.song!.artistName, previewUrl: x.song!.previewUrl ?? null, appleId: x.song!.appleId ?? null, youtubeId: x.song!.youtubeId ?? null }));
+  }, [pl, v.game, v.round]);
+  if (v.game !== "PLAYLIST") return null;
+  // Split the vote between the two picks.
+  const clipSec = Math.max(8, Math.floor((PARTY.voteMs * (PARTY_PACES[v.pace] ?? 1)) / 2 / 1000) - 1);
+  return (
+    <div className="fixed bottom-4 right-4 z-[55] max-w-md">
+      <ScreenMusic queue={queue} active={v.phase === "VOTING" && !v.paused} clipSec={clipSec} disabledReason={v.streamSafe ? "Stream-safe mode is on: no music from this screen." : null} />
     </div>
   );
 }
@@ -273,7 +310,7 @@ function QuestionStage({ v }: { v: PartyHostView }) {
   const q = v.question;
   const audio = useRef<HTMLAudioElement>(null);
   useEffect(() => {
-    if (v.phase === "QUESTION" && q?.audioUrl) void audio.current?.play().catch(() => undefined);
+    if (v.phase === "QUESTION" && q?.audioUrl && !v.streamSafe) void audio.current?.play().catch(() => undefined);
     if (v.phase === "REVEAL") audio.current?.pause();
   }, [v.phase, q?.audioUrl, v.round]);
   if (!q) return null;
@@ -285,7 +322,8 @@ function QuestionStage({ v }: { v: PartyHostView }) {
         {q.imageUrl ? <img src={q.imageUrl} alt="Album cover" className="h-48 w-48 rounded-xl object-cover" /> : null}
         <h2 className="text-4xl font-black leading-tight md:text-5xl">{q.prompt}</h2>
       </div>
-      {q.audioUrl ? <audio ref={audio} src={q.audioUrl} controls className="w-full" /> : null}
+      {q.audioUrl && !v.streamSafe ? <audio ref={audio} src={q.audioUrl} controls className="w-full" /> : null}
+      {q.audioUrl && v.streamSafe ? <p className="text-xl text-violet-soft">🎧 Listen on your phone, then answer.</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         {q.choices.map((c, i) => {
           const right = v.reveal?.answerIndex === i;

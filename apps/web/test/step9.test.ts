@@ -133,6 +133,9 @@ describe.skipIf(!TEST_DB_URL)("step 9: party mode", () => {
     expect(meB.phase).toBe("VOTING");
     v = await hostView(deps, null, code, hostKey);
     expect(v.playlist!.a.song!.title).toBe(hits[0]!.title);
+    // Enough for the big screen to play it.
+    expect(v.playlist!.a.song).toHaveProperty("previewUrl");
+    expect(v.playlist!.a.song).toHaveProperty("appleId");
     await expect(partyAnswer(deps, code, keys[pickerA]!, { side: "A" })).rejects.toMatchObject({ code: "NOT_YOUR_TURN" });
     await partyAnswer(deps, code, keys[voters[0]!]!, { side: "B" });
     const res = await partyAnswer(deps, code, keys[voters[1]!]!, { side: "B" });
@@ -186,6 +189,16 @@ describe.skipIf(!TEST_DB_URL)("step 9: party mode", () => {
     expect(new Date(v.deadline!).getTime() - new Date(v.serverNow).getTime()).toBeGreaterThan(PARTY.questionMs);
     await hostAction(deps, null, c.code, c.hostKey, { action: "unlock" });
     expect((await joinParty(deps, null, c.code, { name: "Fay" })).playerKey).toBeTruthy();
+  });
+
+  it("stream-safe parties keep the big screen silent and send Name That Song to phones", async () => {
+    const c = await createParty(deps, null, { title: "Live on TikTok" }, "6.6.6.6");
+    const k = (await joinParty(deps, null, c.code, { name: "Gus" })).playerKey;
+    let v = await hostAction(deps, null, c.code, c.hostKey, { action: "streamsafe", on: true });
+    expect(v.streamSafe).toBe(true);
+    expect((await playerView(deps, c.code, k)).streamSafe).toBe(true);
+    v = await hostAction(deps, null, c.code, c.hostKey, { action: "streamsafe", on: false });
+    expect(v.streamSafe).toBe(false);
   });
 
   it("slows down mass party creation from one address", async () => {

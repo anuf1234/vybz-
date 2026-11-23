@@ -73,6 +73,7 @@ function AppStack() {
         <Stack.Screen name="challenge" options={{ title: "Battle a friend" }} />
         <Stack.Screen name="rematch/[id]" options={{ title: "Rematch" }} />
         <Stack.Screen name="leagues" options={{ title: "Leagues" }} />
+        <Stack.Screen name="go-live" options={{ title: "Go live", presentation: "modal" }} />
         <Stack.Screen name="save-account" options={{ title: "Save your account", presentation: "modal" }} />
         <Stack.Screen name="playlist/[id]/index" options={{ title: "Playlist" }} />
         <Stack.Screen name="playlist/[id]/add" options={{ title: "Add songs", presentation: "modal" }} />

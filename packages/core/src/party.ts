@@ -79,6 +79,10 @@ export interface PartySong {
   albumName: string | null;
   releaseYear: number | null;
   artworkUrl: string | null;
+  /** For playing it on the big screen: a 30-second preview, the Apple Music id, the YouTube video. */
+  previewUrl?: string | null;
+  appleId?: string | null;
+  youtubeId?: string | null;
 }
 
 export interface PartyQuestion {
@@ -129,6 +133,8 @@ interface PartyCommon {
   /** No new players can join (people already in can rejoin). */
   locked: boolean;
   pace: PartyPace;
+  /** Streaming: no music from the big screen; Name That Song plays on each phone instead. */
+  streamSafe: boolean;
 }
 
 export interface PartyHostView extends PartyCommon {
@@ -145,7 +151,8 @@ export interface PartyHostView extends PartyCommon {
 
 export interface PartyPlayerSelfView extends PartyCommon {
   me: { id: string; name: string; score: number; rank: number };
-  question: Omit<PartyQuestion, "audioUrl" | "imageUrl"> & { imageUrl: string | null } | null;
+  /** `audioUrl` only in stream-safe parties, where the clip plays on phones instead of the big screen. */
+  question: (Omit<PartyQuestion, "audioUrl" | "imageUrl"> & { imageUrl: string | null; audioUrl?: string | null }) | null;
   myAnswer: { choice: number | null; correct: boolean | null; points: number | null } | null;
   reveal: { answerIndex: number } | null;
   playlist: (PartyPlaylistRound & { role: "PICKER" | "VOTER"; myVote: "A" | "B" | null; mySide: "A" | "B" | null }) | null;

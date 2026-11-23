@@ -1071,6 +1071,8 @@ export const party = pgTable(
     locked: boolean("locked").notNull().default(false),
     pace: text("pace", { enum: ["RELAXED", "NORMAL", "FAST"] }).notNull().default("NORMAL"),
     pausedLeftMs: integer("paused_left_ms"),
+    /** Streaming: the big screen stays silent; Name That Song clips play on phones. */
+    streamSafe: boolean("stream_safe").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     endedAt: ts("ended_at"),

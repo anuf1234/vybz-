@@ -1,0 +1,1 @@
+ALTER TABLE "party" ADD COLUMN "stream_safe" boolean DEFAULT false NOT NULL;
