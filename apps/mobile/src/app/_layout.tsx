@@ -83,6 +83,7 @@ function AppStack() {
         <Stack.Screen name="mod/trivia" options={{ title: "Trivia questions" }} />
         <Stack.Screen name="mod/trivia-review" options={{ title: "Review drafts" }} />
         <Stack.Screen name="welcome" options={{ title: "Welcome", presentation: "modal", gestureEnabled: false }} />
+        <Stack.Screen name="tour" options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false }} />
         <Stack.Screen name="trivia/index" options={{ title: "Trivia" }} />
         <Stack.Screen name="trivia/[id]" options={{ title: "Trivia", gestureEnabled: false }} />
         <Stack.Screen name="trivia/leaderboard" options={{ title: "Trivia leaderboard" }} />

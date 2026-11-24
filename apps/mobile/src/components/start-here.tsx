@@ -5,21 +5,34 @@ import { Pressable, Text, View } from "react-native";
 import { color, space, type } from "./theme";
 import { Button, Card } from "./ui";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth-client";
+import { tourSeen } from "@/lib/tour";
 
 /** Home's first-run card: two steps, then it goes away. Opens the welcome flow once for brand-new players. */
 export function StartHere({ onState }: { onState?: (s: OnboardingState | null) => void }) {
   const router = useRouter();
+  const session = useSession();
+  const userId = session.data?.user.id ?? null;
   const [s, setS] = useState<OnboardingState | null>(null);
   const opened = useRef(false);
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       api.onboarding().then(
-        (o) => {
+        async (o) => {
           if (!alive) return;
           setS(o);
           onState?.(o);
-          if (o.active && o.next === "genres" && !opened.current) {
+          if (opened.current) return;
+          const brandNew = o.active && o.next === "genres";
+          // First login on this device: the quick tour, then (for new players) picking genres.
+          if (userId && !(await tourSeen(userId))) {
+            if (!alive) return;
+            opened.current = true;
+            router.push({ pathname: "/tour", params: brandNew ? { then: "welcome" } : {} });
+            return;
+          }
+          if (brandNew) {
             opened.current = true;
             router.push("/welcome");
           }
@@ -30,7 +43,7 @@ export function StartHere({ onState }: { onState?: (s: OnboardingState | null) =
         alive = false;
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
+    }, [userId]),
   );
   if (!s) return null;
   if (s.bonus) {
