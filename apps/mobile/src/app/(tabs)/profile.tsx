@@ -88,6 +88,9 @@ export default function Profile() {
         <Button title="Edit profile" kind="secondary" onPress={() => setEditing(true)} />
       )}
       <MusicServices />
+      <Link href="/tour" asChild>
+        <Button title="👋 Take the tour" kind="secondary" />
+      </Link>
       <Link href="/notifications" asChild>
         <Button title="Notifications" kind="secondary" />
       </Link>
